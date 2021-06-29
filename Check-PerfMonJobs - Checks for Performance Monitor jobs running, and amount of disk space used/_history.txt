@@ -1,0 +1,4 @@
+07-23-20 - Started script.  Testing on Bennion's HVH. We actually had a problem with a large amount of logs built up on the ServerVM, but testing hvh first. 
+         - I'd also like to get this non-dependent upon where they are saved, i.e right now it checks D:\PerfLogs, then C:\PerfLogs if that doesn't exist
+         - But I'd like to tap into the API for the PerfLog jobs so I can find them anywhere..
+

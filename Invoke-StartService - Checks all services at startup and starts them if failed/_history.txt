@@ -1,0 +1,8 @@
+Current version: 0.1
+
+2020-06-05 - Started script.  Still not logging events, but it tries to start all automatic services for 15 minutes.
+2020-06-08 - Kaler's Dolphin Scheduled job service was not stopped, but had an Unhandled Exception .NET error.  Tried adding some code to look for this error and restart the service (also create a little popup for our PSMA guys so they know).
+
+To do: 
+-Create event for script starting stuff in MME Event log
+-Interface w/ popup reporter ?

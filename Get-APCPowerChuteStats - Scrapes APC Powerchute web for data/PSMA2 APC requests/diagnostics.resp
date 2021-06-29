@@ -1,0 +1,13 @@
+HTTP/1.1 302 Found
+Connection: close
+Date: Fri, 26 Jun 2020 20:30:09 GMT
+Expires: Sat, 6 May 1995 12:00:00 GMT
+Cache-Control: no-store, no-cache, must-revalidate
+Pragma: no-cache
+X-Frame-Options: sameorigin
+Content-Language: en-US
+Content-Type: text/html;charset=utf-8
+Location: https://localhost:6547/diagnostics
+Content-Length: 0
+Server: Jetty(9.4.6.v20170531)
+
