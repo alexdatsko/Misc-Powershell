@@ -1,0 +1,1 @@
+Get-Service RomexisService64 | Restart-Service

@@ -1,0 +1,13 @@
+HTTP/1.1 200 OK
+Connection: close
+Date: Fri, 26 Jun 2020 20:34:08 GMT
+Expires: Sat, 6 May 1995 12:00:00 GMT
+Cache-Control: no-store, no-cache, must-revalidate
+Pragma: no-cache
+X-Frame-Options: sameorigin
+Content-Language: en-US
+Content-Type: application/json;charset=utf-8
+Content-Length: 966
+Server: Jetty(9.4.6.v20170531)
+
+{"iTotalRecords":11,"aaData":[{"date":"6\/26\/20","time":"13:30:27","event":"Self Test Passed"},{"date":"6\/26\/20","time":"13:30:13","event":"Self Test Initiated"},{"date":"6\/26\/20","time":"13:29:17","event":"Self Test Passed"},{"date":"6\/26\/20","time":"13:28:59","event":"Self Test Initiated"},{"date":"6\/26\/20","time":"13:09:36","event":"A new version is available. URL :<a href=https:\/\/www.apc.com\/pcbe>https:\/\/www.apc.com\/pcbe<\/a>"},{"date":"6\/26\/20","time":"13:08:44","event":"Communication Established"},{"date":"6\/26\/20","time":"13:08:36","event":"Monitoring Started "},{"date":"6\/26\/20","time":"13:08:05","event":"Monitoring Stopped"},{"date":"6\/26\/20","time":"12:54:35","event":"<a href=https:\/\/www.apc.com\/pcbe>https:\/\/www.apc.com\/pcbe<\/a>"},{"date":"6\/26\/20","time":"12:53:41","event":"Communication Established"},{"date":"6\/26\/20","time":"12:53:37","event":"Monitoring Started "}],"iTotalDisplayRecords":11,"sEcho":"3"}

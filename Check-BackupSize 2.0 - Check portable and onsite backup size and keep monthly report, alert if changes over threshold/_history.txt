@@ -1,0 +1,6 @@
+Started 5-22-20 Alex Datsko & Josh 
+
+05-22-20 - Figured out the format and logistics of data needed.  Created script to grab the sizes of files and drives and calculate stats.  Added code to save in CSV File.  
+07-01-20 - Added a function for Veeam , started one for Event logs but was running into weird issues
+         - Started some pseudocode for how I am going to handle the incremental backups, and not using a static Backup file name, Veeam and Acronis 12.5 will both have this issue
+         - Lots of code fixes getting this to run.  

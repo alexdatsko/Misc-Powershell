@@ -1,0 +1,8 @@
+Get-DellServerUpdates
+
+04-30-19 - v0.90 - Dell released 1.8.0 of DSU, which now is installed into C:\Program Files\Dell\Dell EMC Server Update\ instead of C:\Dell\Dell EMC Server Update\.  
+           Changed my script to be able to work with either path.
+05-08-20 - v0.91 - Fixed folder path of 1.7.0 and < 
+05-28-20 - v0.92 - Fixed blank $UpdatesAvailable with multiple `r`n showing that Recommended updates are available.  Added Informational event 10502 that NO updates were available. 
+           Fixed duplicate 10501 message for Starting DSU Check.. Should have been 10500.
+08-14-20 - v0.93 - Fixed the parsing of these strings to be accurate 2 liners, simplified code a lot.
