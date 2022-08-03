@@ -1,7 +1,0 @@
-HTTP/1.1 303 See Other
-Connection: close
-Date: Fri, 26 Jun 2020 20:25:10 GMT
-Location: https://localhost:6547/
-Content-Length: 0
-Server: Jetty(9.4.6.v20170531)
-
