@@ -1,0 +1,1 @@
+get-service |?{$_.Status -eq 'Running' -and $_.StartType -like "Automatic*"} |ft Name,DisplayName,Status

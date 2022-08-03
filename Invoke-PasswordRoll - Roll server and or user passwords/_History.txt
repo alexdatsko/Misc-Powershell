@@ -1,0 +1,4 @@
+v0.1 - 09-03-21 - Converted the batch script I use to powershell.  Not complete..
+v0.2 - 04-28-22 - Got this actually working and usable, added DRAC passwords etc
+v0.3 - 05-03-22 - Fixed asking for DRAC MME password if not rolling anything else, added some parameters
+v0.4 - 05-04-22 - Refactored parameters

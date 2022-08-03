@@ -10,7 +10,7 @@ foreach ($computer in $computers) {
       .\pspasswd.exe \\$computer -nobanner Administrator $NewAdminPassword 
       .\pspasswd.exe \\$computer -nobanner MME $NewMMEPassword 
     } catch {  # failed changing passwords
-      write-host "`r`nFailed!!"
+      write-host "`r`n[$computer] Failed to set passwords"
     }
   }
 }

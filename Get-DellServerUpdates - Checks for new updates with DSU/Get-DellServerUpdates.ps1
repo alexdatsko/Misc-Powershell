@@ -13,11 +13,11 @@ $date = Get-Date -Format "yyyy-MM-dd"
 # Change the below line as needed!
 $LogFolder = "D:\Backups (Do Not Delete)\Reports\"
 
-$LogLocation = $LogFolder+$Date+"DellServerUpdates.log"
+$LogLocation = "$($LogFolder)-$($Date)-DellServerUpdates.log"
 
 if (test-path($LogFolder)) {  # Folder exists, do nothing
 } else {
-  New-Item -ItemType Folder -Path $LogFolder
+  New-Item -ItemType Directory -Path $LogFolder
 }
 
 if (![System.Diagnostics.EventLog]::Exists('MME')) {
@@ -51,25 +51,30 @@ function Get-UpdateList {
 }
 
 $DSUPath = "C:\Dell\DELL EMC System Update\"
-if (!(test-path($DSUPATH+"dsu.exe"))) {   
+if (!(test-path("$($DSUPATH)dsu.exe"))) {   
   $DSUPath = "C:\Program Files\Dell\DELL EMC System Update\"  # I don't believe this will ever be Program Files (x86)..
-  if (!(test-path($DSUPATH+"dsu.exe"))) {     # Check for new install path as of DSU 1.8.0
+  if (!(test-path("$($DSUPATH)dsu.exe"))) {     # Check for new install path as of DSU 1.8.0
     $msg = "Could not DSU.exe in either path: C:\Dell\DELL EMC System Update\ or C:\Program Files\Dell\DELL EMC System Update\ .. Exiting"
     Write-Host $msg
     Write-EventLog -LogName "MME" -Source "Dell Server Updates" -EventId 502  -EntryType Error -Message $msg
     exit
   } else {  # working with 1.8.0+
     $DSUExe = $DSUPath+"DSU.exe"
-    $UpdateLog = $env:ProgramData+"\Dell\DELL EMC System Update\Log.txt"
+    $UpdateLog = "$($env:ProgramData)\Dell\DELL EMC System Update\Log.txt"
   }
 } else { # working with 1.7.0 or <
-  $UpdateLog = "$(DSUPath)dell_dup\Log.txt"
+  $UpdateLog = "$($DSUPath)dell_dup\Log.txt"
   $DSUExe = $DSUPath+"DSU.exe"
 }
 
 #Remove old dell_dup files if they exist
-if ((Get-ChildItem -Path $DSUPath+"\dell_dup").count -ge 1) {
-  Get-ChildItem -Path $DSUPath+"\dell_dup" -Include * -File -Recurse | foreach { $_.Delete()}
+if ((Get-ChildItem -Attributes Directory -Path "$($DSUPath)\dell_dup").count -ge 1) {
+  try {
+    Get-ChildItem -Path "$($DSUPath)\dell_dup" -Include * -File -Recurse | foreach { $_.Delete()}
+  } catch {
+    Write-host "Couldn't remove $DSUPATH\Dell_dup files, they might not exist"
+    # Not worried about errors..
+  }
 }
 
 if (Test-Path($UpdateLog)) {

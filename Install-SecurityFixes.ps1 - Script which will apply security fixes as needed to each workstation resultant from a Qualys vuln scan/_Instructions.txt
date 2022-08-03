@@ -1,0 +1,10 @@
+###############################################
+# Install-SecurityFixes.ps1
+# Alex Datsko - alex.datsko@mmeconsulting.com
+#
+
+Install this on a server by dropping it into  \\server\data\secaud (or equivalent)
+Also put the Qualys scan (in CSV format, directly off of BTS EAGLEi) directly in the same folder with it
+Run the script by right click- 'Run with powershell'
+It will re-launch as admin (click yes in UAC)
+The vulnerabilities that can be fixed with the script will ask a yes/no before each one.  Type Y to update.

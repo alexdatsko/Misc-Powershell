@@ -2,7 +2,7 @@ $DFSBacklogVersion = "1.0"
 
 # DFS backlog variables
 $DFSthreshold = 25
-$ScriptDriveLetter = "E" # This is usually C or D, it is the Drive letter holds the Backups DND folder
+$ScriptDriveLetter = "D" # This is usually C or D, it is the Drive letter holds the Backups DND folder
 $ScriptPath = ":\Backups (Do Not Delete)\Scripts\"  
 
 $ScriptFullPath = $ScriptDriveLetter+$ScriptPath
@@ -149,7 +149,8 @@ function Add-MMEEventLog($LogName)
   {
 	try 
     {
-      New-EventLog -LogName "MME" -Source "DFSBacklog" -ErrorAction SilentlyContinue
+      
+      New-EventLog -LogName "MME" -Source "DFSBacklog" 
       start-sleep -seconds 5 #wait 5s in case the script is being created, noticed I was having some trouble here.
       Limit-EventLog -LogName "MME" -RetentionDays $RetentionDays -OverflowAction OverwriteOlder -MaximumSize $EventLogMaxSize   # set the limitation parameters	  
       # write success msg to PSMAScripts that a log was created
@@ -397,6 +398,7 @@ Out-File -FilePath $DFSlogfile -Encoding UTF8 -InputObject "%nErrors: $Err" -App
 
 $FullEventLog = (Get-Content -Path $dfslogfile)
 
+New-EventLog -LogName "MME" -Source "DFSBacklog"
 
 # Write to actual Event log if this is not a debug run
 if (!($DebugDFSBacklog)) 
