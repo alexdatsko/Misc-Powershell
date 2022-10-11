@@ -1,3 +1,9 @@
+##################################################################
+# Get-LocalSessionManager-Code9.ps1
+# Alex Datsko @ MME Consulting Inc.
+# This script will look through the event log and show all Code 0's (disconnections)
+
+
 # -After 3/01/2021 -Before 3/11/2021
 $AfterDate = "03-01-21"
 $BeforeDate = "03-11-21"
@@ -46,5 +52,5 @@ $Results = Foreach ($Event in $Events) {
     }
   }
 } 
-
+$null = Read-Host "[Press enter to continue]"
 #| Export-Csv C:\temp\RDS.csv -NoType

@@ -31,6 +31,8 @@ Write-Output "# v0.2 - 04-28-22 - Got this actually working and usable, added DR
 Write-Output "# v0.3 - 05-03-22 - Fixed asking for DRAC MME password if not rolling anything else, added some parameters"
 Write-Output "# v0.4 - 05-04-22 - Refactored how parameters will work - add param for each password, and determine if we are rolling that subset"
 Write-Output "# v0.5 - 05-13-22 - Lots of changes, logging more information, fixing parameters, refactoring, etc"
+Write-Output "# v0.6 - 09-02-22 - Fixing parameters, fixed some variable names, control flow, little more on task/service report"
+
 Write-Output "#`r`n"
 
 ### NOT FINISHED WITH USER PASSWORD ROLL - COPY OU PICKER FROM Install-SecurityGPO.ps1
@@ -95,8 +97,10 @@ function Read-YesNoTrueFalse {
 function Get-Password {
   param(
     [string] $usernameText,
-    [int] $usernameLength
+    [int] $usernameLength,
+    [string] $defaultpw
   )
+
   $usernameVar = ""
   if ($usernameLength -lt 1) {
     Write-Error "[!] Username Length omitted - programming error! Exiting"
@@ -104,12 +108,22 @@ function Get-Password {
   }
   while ($usernameVar.Length -lt $usernameLength) {
     $usernameVar = Read-Host "  [?] $usernameText password to use? "
-    if ($Administrator.Length -lt $usernameLength) {
-      "[X] $usernameLength Password $usernameVar Too short!"
+    if ($usernameVar.Length -lt $usernameLength) {
+      
+      if ($usernameVar = "") { 
+        #First check if there is a valid default, if CR/LF was used to pick the default
+        if ($defaultpw.Length -gt ($usernameLength-1)) {
+          return $defaultpw
+        } else {
+          Write-Host "[X] Default password $defaultpw Too short, needs to be $usernameLength chars!" -ForegroundColor Red
+        }
+      }
+      Write-Host "[X] $usernameLength Password $usernameVar Too short!" -ForegroundColor Red
     }
   }
   return $usernameVar
 }
+
 function Get-SecEvents {
   param(
     [string] $SecurityEvent,
@@ -128,6 +142,29 @@ function Get-SecEvents {
     Write-Host "[!] Either no events exist, or something went wrong! .."
     # Not catching the errors right now, oh well..
   }
+}
+
+
+function CheckTasks { 
+    # TODO : Show all Scheduled tasks with Administrator, with MME, etc
+    # TODO : ROLL all Scheduled task passwords for each user appropriately!
+    Write-Host "[.] Creating preliminary task report.."
+    schtasks.exe /query /s localhost  /V /FO CSV | ConvertFrom-Csv | Where { (($_."Run As User" -like "*Administrator") -or ($_."Run As User" -like "*MME*") -or ($_."Run As User" -like "*ServiceAdmin*")) } | select-object TaskName, "Run As User"
+
+    Write-Output "[!] Opening Task scheduler, please correct any Administrator/ServiceAdmin passwords:" 
+    taskschd.msc
+}
+
+function CheckServices {
+    # TODO : Show all services with Administrator, with MME, etc
+    #Get-Service | Where { 
+    # TODO : ROLL all service passwords for each user appropriately and restart services!
+    Write-Host "[.] Creating preliminary service report.."
+    Get-WmiObject win32_Service | where {$_.StartName -like '*Administrator' -or `
+                                         $_.StartName -like '*MME' -or `
+                                         $_.StartName -like '*ServiceAdmin' }  | fl Name,StartName,DisplayName
+    Write-Output "[!] Opening Services, please correct any Administrator/ServiceAdmin/MME passwords:" 
+    services.msc
 }
 
 function Pick-OU {
@@ -190,6 +227,20 @@ function Pick-OU {
   return $DomainString
 }
 
+function Check-PasswordRollErrors {
+  param (
+    [string] $Resp1,
+    [string] $Resp2,
+    [string] $Resp3
+  )
+
+  if (($resp1 -eq "The command completed successfully.") -and ($resp1 -eq "The command completed successfully.") -and `
+      ($resp3 -eq "The command completed successfully.")) {
+      return $true
+  } else { 
+      return $false
+  }
+}
 
 Function UserPasswordRoll {
     Write-Host "`r`n------------------- Domain User Password Roll -------------------`r`n" 
@@ -218,6 +269,15 @@ Function UserPasswordRoll {
 }
 
 function DracPasswordRoll {
+  param (
+    [string] $DRACAdmin,
+    [string] $MME
+  )
+    $resp=(racadm getsysinfo)
+    if ($null -eq $resp) {
+      Write-Host "[!] Racadm command not found. Is this running on a HVH?"
+      exit
+    }
     Write-Host "`r`n------------------- DRAC Password Roll -------------------`r`n" 
     Write-Host "[.] Rolling DRAC Passwords.."
     for ($i=0; $i -lt 6; $i++) {
@@ -231,35 +291,27 @@ function DracPasswordRoll {
     $DracAdmin=""
 }
 
-function CheckServices { 
-    # TODO : Show all Scheduled tasks with Administrator, with MME, etc
-    # TODO : ROLL all Scheduled task passwords for each user appropriately!
-    Write-Output "[!] Opening Task scheduler, please correct any Administrator/ServiceAdmin passwords:" 
-    taskschd.msc
-}
-
-function CheckTasks {
-    # TODO : Show all services with Administrator, with MME, etc
-    #Get-Service | Where { 
-    # TODO : ROLL all service passwords for each user appropriately and restart services!
-    Write-Output "[!] Opening Services, please correct any Administrator/ServiceAdmin passwords:" 
-    services.msc
-}
-
 function ServerLocalPasswordRoll {
+  param (
+    [string] $LocalAdministrator,
+    [string] $MME
+  )
+
     Write-Host "`r`n------------------- Server Local User Password Roll -------------------`r`n"
     
     Write-Host "[.] Changing local Administrator password to $LocalAdministrator"
     $resp1=cmd /c 'net user Administrator $LocalAdministrator /y /expires:never'
     Write-Host "[.] Changing local MME password to $MME"
-    $resp4=cmd /c 'net user MME $MME /y  /fullname:"MME Consulting, Inc." /comment:"MME''s Alternate Admin Login" /expires:never'
+    $resp2=cmd /c 'net user MME $MME /y  /fullname:"MME Consulting, Inc." /comment:"MME''s Alternate Admin Login" /expires:never'
     Write-Host "[.] Adding MME to Local Administrators group"
-    $resp5=cmd /c 'net localgroup Administrators MME /add'
+    $resp3=cmd /c 'net localgroup Administrators MME /add'
     
     $resp1
-    $resp4
-    $resp5
-
+    $resp2
+    $resp3
+    if (Check-PasswordRollErrors $resp1 $resp2 $resp3) {
+      Write-Host "[!] Password roll successful." -ForegroundColor Green
+    }
 
     Write-Host "[!] Additional configuration steps to standardize:"
     Write-Host "[.] Turn on remote desktop"
@@ -273,12 +325,17 @@ function ServerLocalPasswordRoll {
 
     # Clear passwords
     $LocalAdministrator=""
-    $LocalServiceAdmin=""
     $MME=""
     #Clear-Host
+    return $true
 }
 
 function ServerDomainPasswordRoll {
+  param (
+    [string] $Administrator,
+    [string] $ServiceAdmin,
+    [string] $MME
+  )
     Write-Host "`r`n------------------- Server Domain User Password Roll -------------------`r`n" 
     Write-Host "[.] Changing Domain Administrator password to $Administrator"
     $resp1=cmd /c 'net user Administrator $Administrator /y /domain /expires:never'
@@ -286,6 +343,11 @@ function ServerDomainPasswordRoll {
     $resp2=cmd /c 'net user ServiceAdmin $ServiceAdmin /y /domain /expires:never /comment:"MME''s Service Admin Login"'
     Write-Host "[.] Changing Domain MME password to $MME"
     $resp3=cmd /c 'net user MME $MME /y /domain /fullname:"MME Consulting, Inc." /comment:"MME''s Alternate Admin Login" /expires:never'
+    
+    $resp1
+    $resp2
+    $resp3
+    return (Check-PasswordRollErrors $resp1 $resp2 $resp3)
 }
 
 
@@ -344,6 +406,12 @@ if ($args.Count -lt 1) {   # ask for passwords if none are given on commandline.
   # Set parameters from commandline
 }
 
+Write-Host "`r`n ________________________________________________"
+write-Host " | Rolling Server Domain Passwords: $ServerDomainPasswordRoll"
+write-Host " | Rolling Server Local Passwords: $ServerLocalPasswordRoll"
+write-Host " | Rolling User Passwords: $UserPasswordRoll"
+write-Host " | Rolling DRAC Passwords: $DracPasswordRoll"
+Write-Host " ````````````````````````````````````````````````````"
 
 Write-Host "[!] Checking status of current SMB Connections and sessions (before)..."
 Get-SmbConnection | ft
@@ -351,41 +419,39 @@ Get-SmbSession | ft
 
 
 # Get all of the required passwords once we've verified we are changing them.
-if ($ServerDomainPasswordRoll) {   
+if ($ServerDomainPasswordRoll -eq $true) {   
   $Administrator = Get-Password "Domain Administrator" 12
   $ServiceAdmin = Get-Password "Domain ServiceAdmin User" 12
-  $Administrator = Get-Password "Domain MME User" 12
+  $MME = Get-Password "Domain MME User" 12
 } else {    # If a domain roll is in effect, we are not doing a local roll!
   $ServerDomainPasswordRoll = $false
   Write-Output "[!] Not rolling Domain admin/mme/serviceadmin!"
+  
   # Maybe we roll local passwords?
-  if ($ServerLocalPasswordRoll) {
+  if ($ServerLocalPasswordRoll -eq $true) {
     $LocalAdministrator = = Get-Password "Local Administrator" 12
     #$LocalServiceAdmin = Read-Host "  [?] Local ServiceAdmin password to use? "   # We don't use this..
     $MME = Get-Password "MME Local User" 12
     # TODO : Validate passwords, reenter if blank/too short!!
   } else { 
-    $ServerLocalPasswordRoll = $false
     Write-Output "[!] Not rolling Local admin/mme/serviceadmin!"
   }
 }
-if ($UserPasswordRoll) {
-  $UserPasswordRoll = $true
+if ($UserPasswordRoll -eq $true) {
   $UserPassword = Get-Password "Role account/workstation user" 12
 } else { 
   Write-Output "[!] Not rolling workstation users!"
 }
-if ($DracPasswordRoll) {
-  $DRACAdmin = Get-Password "DRAC Administrator" 12
+if ($DracPasswordRoll -eq $true) {
+  $DRACAdmin = Get-Password "DRAC Administrator" 12 
   Write-Output "[!] (Domain/local MME user will be rolled if the user exists as well!"
   if (($MME).Length -lt 1) { 
-    $MME = Get-Password "MME local user" 12
+    $MME = Get-Password "MME DRAC user (enter for $MME)" 12 $MME
   }
 } else { 
   $DracPasswordRoll = $false
   Write-Output "[!] Not rolling DRAC users!"
 }
-
 
 # Perform the password rolls if we are doing them
 if ($DracPasswordRoll -eq $true) {
@@ -393,11 +459,11 @@ if ($DracPasswordRoll -eq $true) {
 }
 
 if ($ServerDomainPasswordRoll -eq $true) {
-  ServerDomainPasswordRoll
+  ServerDomainPasswordRoll -Administrator $Administrator -ServiceAdmin $ServiceAdmin -MME $MME
 }
 
 if ($ServerLocalPasswordRoll -eq $true) {
-  ServerLocalPasswordRoll
+  ServerLocalPasswordRoll -Administrator $Administrator -MME $MME
 }
 
 if ($UserPasswordRoll -eq $true) {
