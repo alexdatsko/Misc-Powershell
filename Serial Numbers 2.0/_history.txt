@@ -1,3 +1,8 @@
+<<<<<<< HEAD
 02-13?-20 - Updated to not include DRAC drives
 04-29-20 - Updated to not include iSCSI drives
 01-11-22 - Updated to include Drive letter
+=======
+02-13?-20 - Updated to not include DRAC drives
+04-29-20 - Updated to not include iSCSI drives
+>>>>>>> 789b4d5dde1cb51e650d191400987b7331e1195e
