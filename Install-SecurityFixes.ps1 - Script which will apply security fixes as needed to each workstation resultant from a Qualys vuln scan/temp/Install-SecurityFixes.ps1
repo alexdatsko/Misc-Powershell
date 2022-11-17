@@ -9,13 +9,12 @@ param (
 )
 
 # Configuration items:
-$ServerName = "DC-SERVER"                    # Change as needed!
+$ServerName = "DC-SERVER"                       # Change as needed!
 $tmp = "$($env:temp)\SecAud"                 # Temporary folder to save downloaded files to
 $oldPwd = $pwd                               # Grab location script was run from
 $IgnoreDaysOld = 30                          # if machine is <30 days old, we likely have a new computer and don't want to do anything..
-$QIDsListFile = "$oldpwd\QIDLists.ps1"       # List of QID vulns to check
+$QIDsListsFile = "$oldpwd\QIDLists.ps1"      # List of QID vulns to check
 $QIDsIgnoreFile = "$oldpwd\QIDIgnore.ps1"    # List of QID vulns to ignore
-$QIDsAdded = @()
 
 #Clear
 # Self-elevate the script if required
@@ -53,7 +52,7 @@ $datetimedateonly = Get-Date -Format "yyyy-MM-dd"
 $osinstalldate = ([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDate) | get-date -Format MM/dd/yyyy
 Write-Host "`r`n================================================================" -ForegroundColor DarkCyan
 Write-Host "[i] Install-SecurityFixes.ps1" -ForegroundColor Cyan
-Write-Host "[i]   v0.23 - Last modified: 11/17/22" -ForegroundColor Cyan
+Write-Host "[i]   v0.22 - Last modified: 11/16/22" -ForegroundColor Cyan
 Write-Host "[i]   Alex Datsko - alex.datsko@mmeconsulting.com" -ForegroundColor Cyan
 Write-Host "[i] Date / Time : $datetime" -ForegroundColor Cyan
 Write-Host "[i] Computername : $hostname " -ForegroundColor Cyan
@@ -76,7 +75,7 @@ if ($ServerName) {
 # Lets read in the QID list from a file instead so I can update it easier.
 # I think at this point, maybe it will just be a 2nd powershell file that will set the variables and I can search and replace as needed to update them.
 try {
-  . $($QIDsListFile)
+  . $($QIDsListsFile)
 } catch {
   Write-Output "`n`n[!] ERROR: Couldn't import QIDLists.ps1 !! Exiting"
   Exit
@@ -184,31 +183,23 @@ Function Add-VulnToQIDList {
   param ( $QIDNum,
           $QIDName,
           $QIDVar)
-  if ($QIDsAdded -notcontains $QIDNum) {
-    if (Get-YesNo "New vulnerability found: [QID$($QIDNum)] - [$($QIDName)] - Add?") {
-      Write-Verbose "[v] Adding to variable in $($QIDsListFile): Variable: $($QIDVar)"
-      if ($Automated) { Write-Output "[QID$($QIDNum)] - [$($QIDName)] - Adding" }
-      $QIDLine = (Select-String  -Path $QIDsListFile -pattern $QIDVar).Line
-      Write-Verbose "[v] Found match: $QIDLine"
-      $QIDLineNew = "$QIDLine,$QIDNum"    
-      Write-Verbose "[v] Replaced with: $QIDLineNew"
-      $QIDFileNew=@()
-      ForEach ($str in $(Get-Content -path $QIDsListFile)) {
-        if ($str -like "*$($QIDLine)*") {
-          Write-Verbose "Replaced: `n$str with: `n$QIDLineNew"
-          $QIDFileNew += $QIDLineNew
-        } else {
-          $QIDFileNew += $str
-        }
+  if (Get-YesNo "`n[!] New vulnerability found: [QID$($QIDNum)] - [$($QIDName)] - Add?") {
+    Write-Verbose "[v] Adding to variable in $($QIDsFilename): Variable: $($QIDVar)"
+    if ($Automated) { Write-Output "[QID$($QIDNum)] - [$($QIDName)] - Adding" }
+    $QIDLine = (Select-String  -Path $QIDsListFile -pattern $QIDVar).Line
+    Write-Verbose "[v] Found match: $QIDLine"
+    $QIDLineNew = "$QIDLine,$QIDNum"    
+    Write-Verbose "[v] Replaced with: $QIDLineNew"
+    $QIDFileNew=@()
+    ForEach ($str in $(Get-Content -path $QIDsListFile)) {
+      if ($str -like "*$($QIDLine)*") {
+        Write-Verbose "Replaced: `n$str with: `n$QIDLineNew"
+        $QIDFileNew += $QIDLineNew
+      } else {
+        $QIDFileNew += $str
       }
-      $QIDFileNew | Set-Content -path $QIDsListFile -Force
-      
-      $QIDsAdded += $QIDNum
-      Write-Verbose "[!] Adding $QIDNum to QIDsAdded. QIDsAdded = $QIDsAdded"
     }
-  } else {
-    Write-Output "[.] QID $QIDNum already added, skipping"
-    Write-Verbose "Found $QIDNum in $QIDsAdded"
+    $QIDFileNew | Set-Content -path $QIDsListsFile -Force
   }
 }
 
@@ -321,7 +312,7 @@ $CSVData | ForEach-Object {
     }
   }
   if ($_.Title -like "Ghostscript*") {
-    if (!($QIDsGhostscript -contains $QID)) {
+    if (!($QIDsDellCommandUpdate -contains $QID)) {
       Add-VulnToQIDList $QID $_.Title  'QIDsGhostScript'
     }
   }
@@ -580,7 +571,8 @@ foreach ($QID in $QIDs) {
         }   
       }
       { $QIDsIntelGraphicsDriver  -contains $_ } {
-        if (Get-YesNo "$_ Install newest Intel Graphics Driver? ") { 
+        if (Get-YesNo "$_ Install newest Intel Graphics Driver? "
+    ) { 
           Write-Output "[!] THIS WILL NEED TO BE RUN MANUALLY... OPENING BROWSER TO INTEL SUPPORT ASSISTANT PAGE!"
           explorer "https://www.intel.com/content/www/us/en/support/intel-driver-support-assistant.html"
            <#

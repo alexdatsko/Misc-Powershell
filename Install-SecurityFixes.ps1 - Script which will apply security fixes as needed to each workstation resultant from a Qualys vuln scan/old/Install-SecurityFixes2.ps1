@@ -3,19 +3,9 @@
 # Alex Datsko - alex.datsko@mmeconsulting.com
 #
 
-[cmdletbinding()]  # For verbose, debug etc
 param (
-  [switch] $Automated = $false   # this allows us to run without supervision and apply all changes (could be dangerous!)
+  [switch] $Automated = $false
 )
-
-# Configuration items:
-$ServerName = "DC-SERVER"                    # Change as needed!
-$tmp = "$($env:temp)\SecAud"                 # Temporary folder to save downloaded files to
-$oldPwd = $pwd                               # Grab location script was run from
-$IgnoreDaysOld = 30                          # if machine is <30 days old, we likely have a new computer and don't want to do anything..
-$QIDsListFile = "$oldpwd\QIDLists.ps1"       # List of QID vulns to check
-$QIDsIgnoreFile = "$oldpwd\QIDIgnore.ps1"    # List of QID vulns to ignore
-$QIDsAdded = @()
 
 #Clear
 # Self-elevate the script if required
@@ -31,9 +21,169 @@ if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
 # Change title of window
 $host.ui.RawUI.WindowTitle = "$($env:COMPUTERNAME) - Install-SecurityFixes.ps1"
 
+Write-Host "`r`n================================================================" -ForegroundColor DarkCyan
+Write-Host "[i] Install-SecurityFixes.ps1" -ForegroundColor Cyan
+Write-Host "[i]   v0.18 - Last modified: 9/21/22" -ForegroundColor Cyan
+Write-Host "[i]   Alex Datsko - alex.datsko@mmeconsulting.com" -ForegroundColor Cyan
+$hostname = $env:COMPUTERNAME
+$datetime = Get-Date -Format "yyyy-MM-dd HH:mm:ss K"
+Write-Host "[i] Date / Time : $datetime" -ForegroundColor Cyan
+Write-Host "[i] Computername : $hostname" -ForegroundColor Cyan
+
+# Configuration items:
+
+$ServerName = "SERVER"                       # Change as needed!
+$tmp = "$($env:temp)\SecAud"                 # Temporary folder to save downloaded files to
+$oldPwd = $pwd                               # Grab location script was run from
+
 if ($Automated) {
   Write-Host "`n[!] Running in automated mode!`n"   -ForegroundColor Red
 }
+
+# NOTATE QIDS Used for specific apps (WIP!)
+
+#    Note: to make these lists, copy large list of QIDs related to out of date app, 1 per line to a file
+#          in linux, cat filename | sort | uniq | tr -s '\n' ','
+#          delete the first and last comma if exists..
+
+$QIDsChrome = 376828,376734,115077,115149,115166,119485,119493,119539,119601,119609,119627,119708,119743,119750,119773,119872,119930,119950,120059,120198,120220,120235,120297,120338,120405,120456,120560,120697,120725,120803,120812,120988,121201,121225,121283,121317,121362,121395,121485,121517,121583,121586,121622,121719,121757,121798,121813,121825,121840,121844,121893,122052,122075,122091,122127,122366,122485,122579,122630,122695,122725,122745,122829,122842,122867,123023,123141,123188,123196,123266,123364,123385,123501,123525,123570,123596,123704,123721,123740,123798,123869,123967,124153,124185,124379,124390,124410,124589,124693,124746,124758,124772,124865,124907,370005,370014,370067,370091,370109,370124,370134,370151,370162,370226,370249,370288,370339,370356,370376,370419,370446,370485,370546,370566,370613,370619,370643,370678,370691,370741,370763,370780,370808,370829,370889,370916,370950,370970,370974,370990,371003,371097,371172,371250,371268,371319,371327,371365,371378,371614,371639,371679,371692,371758,371771,371782,371820,371848,372020,372048,372050,372073,372111,372117,372166,372177,372186,372247,372286,372323,372342,372365,372403,372408,372410,372411,372438,372455,372476,372491,372517,372525,372534,372555,372572,372575,372576,372578,372579,372584,372630,372634,372636,372638,372639,372640,372829,372873,372894,373151,373319,373342,373368,373387,373421,373485,373510,373544,373714,373995,373998,374167,374531,374832,374876,375080,375091,375119,375319,375378,375426,375445,375459,375461,375505,375546,375595,375622,375638,375718,375738,375761,375784,375821,375846,375875,375883,375923,375948,375966,376000,376055,376140,376159
+$QIDsFirefox = 376758,370739,370747,370821,370827,370836,370938,370991,371026,371173,371216,371231,371276,371374,371615,371649,371702,371797,371841,371849,371851,372001,372061,372102,372136,372176,372190,372276,372324,372325,372392,372445,372481,372490,372825,373103,373120,373320,373326,373388,373490,373542,373989,374166,374576,374827,374918,375100,375209,375408,375478,375542,375606,375642,375712,375753,375824,375833,375945
+<#
+#firefox newest
+375100
+374576
+373989
+373542
+372392
+376758
+376705
+376643
+376625
+376574
+376519
+375833
+375753
+375712
+375606
+375542
+375478
+375408
+375209
+374918
+374827
+374166
+373490
+373388
+373320
+373103
+372825
+372490
+372481
+372445
+376458
+376447
+376387
+376237
+376143
+376015
+375945
+375824
+375642
+373120
+375100
+374576
+373989
+373542
+372392
+376758
+376705
+376643
+376625
+376574
+376519
+375833
+375753
+375712
+375606
+375542
+375478
+375408
+375209
+374918
+374827
+374166
+373490
+373388
+373320
+373103
+372825
+372490
+372481
+372445
+376458
+376447
+376387
+376237
+376143
+376015
+375945
+375824
+375642
+373120
+376758
+376705
+376643
+376625
+376574
+376519
+375833
+375753
+375712
+375606
+376458
+376447
+376387
+376237
+376143
+376015
+375945
+375824
+375642
+376758
+376705
+376643
+376625
+376574
+376519
+#>
+$QIDsZoom = 376638,376624,376640,371344,372477,372832,373366,375391,375487,375805,376046,376117,376973
+$QIDsTeamviewer15 = 371174,372386,373335
+$QIDsDropbox = 111111 # Dummy entry, none found yet
+$QIDsOracleJava = 370280,370371,370469,370610,370727,370887,371079,371265,371528,371749,372013,372163,372333,372508,373156,373540,374873,375477,375729,375964
+$QIDsAdoptOpenJDK = 376436,376423
+$QIDsOracleJavaSE = 376733,376546,376252
+$QIDsVirtualBox = 375967,376255,376548,372509,372512,372542,373154,373553,374881,375481,375736,375967,376736,376255
+$QIDsAdobeReader = 116893,117797,118087,118319,118438,118486,118670,118782,118956,119053,119076,119145,119594,119768,119838,120103,120295,120777,120866,121176,121442,121711,121867,122484,122663,123021,123265,123579,123662,124151,124506,124767,370084,370154,370277,370364,370499,370650,375845,375953
+$QIDsIntelGraphicsDriver = 370842,371696,371263
+$QIDNVIDIAPrivEsc = 370263
+$QIDSpectreMeltdown = 91537,91462,91426,91428
+$QIDsMicrosoftAccessDBEngine= 106067,106069
+$QIDsSQLServerCompact4 = 106023
+$QIDsDellCommandUpdate = 376132
+$QIDsMicrosoftVisualStudioActiveTemplate = 90514
+$QIDsMicrosoftNETCoreV5 = 106089
+$QIDsMicrosoftSilverlight = 106028
+$QIDsUpdateMicrosoftStoreApps = 91914,91834,91869,91866
+#91914	Microsoft Photos App Remote Code Execution (RCE) Vulnerability for June 2022
+#91869	Microsoft Windows Codecs Library Remote Code Execution (RCE) Vulnerability for March 2022
+#91866	Microsoft Windows Codecs Library HEVC Video and VP9 Extensions Remote Code Execution (RCE) Vulnerability for February 2022
+#91834	Microsoft 3D Viewer Remote Code Execution (RCE) Vulnerability - November 2021
+
+if (!(Test-Path $tmp)) { New-Item -ItemType Directory $tmp }
+Start-Transcript "$($tmp)\Install-SecurityFixes.log"
+
+# Try to use TLS 1.2, this fixes many SSL problems with downloading files
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
 function Get-YesNo {
   param ([string] $text)
@@ -47,65 +197,11 @@ function Get-YesNo {
   }
 }
 
-$hostname = $env:COMPUTERNAME
-$datetime = Get-Date -Format "yyyy-MM-dd HH:mm:ss K"
-$datetimedateonly = Get-Date -Format "yyyy-MM-dd"
-$osinstalldate = ([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDate) | get-date -Format MM/dd/yyyy
-Write-Host "`r`n================================================================" -ForegroundColor DarkCyan
-Write-Host "[i] Install-SecurityFixes.ps1" -ForegroundColor Cyan
-Write-Host "[i]   v0.23 - Last modified: 11/17/22" -ForegroundColor Cyan
-Write-Host "[i]   Alex Datsko - alex.datsko@mmeconsulting.com" -ForegroundColor Cyan
-Write-Host "[i] Date / Time : $datetime" -ForegroundColor Cyan
-Write-Host "[i] Computername : $hostname " -ForegroundColor Cyan
-Write-Host "[i] OS Install Date : $osinstalldate " -ForegroundColor Cyan
-if (([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDate) -ge (Get-Date $datetimedateonly).AddDays(0-$IgnoreDaysOld)) {
-  if (!(Get-YesNo "$osinstalldate is within $IgnoreDaysOld days, continue?")) {
-    Write-Host "[!] Exiting" -ForegroundColor White
-    exit
-  }
-}
-
-Write-Output "`n[.] Checking $ServerName for connectivity.."
-if ($ServerName) {
-  if (!(Test-Connection $ServerName -Count 2 -Delay 2 -Quiet)) {
-    $ServerName = Read-Host "[!] Couldn't ping $ServerName .. please enter the server name where we can find the .CSV file, or press enter to read it out of the current folder: "
-    # Don't really care here, if we can't find it later we will give options.
-  }
-}
-
-# Lets read in the QID list from a file instead so I can update it easier.
-# I think at this point, maybe it will just be a 2nd powershell file that will set the variables and I can search and replace as needed to update them.
-try {
-  . $($QIDsListFile)
-} catch {
-  Write-Output "`n`n[!] ERROR: Couldn't import QIDLists.ps1 !! Exiting"
-  Exit
-}
-
-# Lets read in the list of QIDs to ignore for this site as well
-try {
-  . $($QIDsIgnoreFile)
-} catch {
-  Write-Output "`n`n[!] Warning: Couldn't import QIDIgnore.ps1 !!"
-}
-if (!($QIDsIgnored)) {
-  Write-Output "`n`n[!] Warning: No QIDs to ignore!"
-}
-
-# NOTATE QIDS Used for specific apps (WIP!)
-
-
-if (!(Test-Path $tmp)) { New-Item -ItemType Directory $tmp }
-Start-Transcript "$($tmp)\Install-SecurityFixes.log"
-
-# Try to use TLS 1.2, this fixes many SSL problems with downloading files
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
 function Remove-Software {
   param ($Products)
 
-    $Guid = $Products | Select-Object -ExpandProperty IdentifyingNumber
-    $Name = $Products | Select-Object -ExpandProperty Name
+    $Guid = $Products | Select -ExpandProperty IdentifyingNumber
+    $Name = $Products | Select -ExpandProperty Name
     if (Get-YesNo "Uninstall $Name - $Guid ") { 
         Write-Output "[.] Removing $Guid (Waiting max of 30 seconds after).."
         $x=0
@@ -115,7 +211,7 @@ function Remove-Software {
             Start-sleep 5
             Write-Host "." -ForegroundColor White -NoNewLine
             $x+=1
-            $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like "$Guid"}) 
+            $Products = (get-wmiobject Win32_Product | where { $_.IdentifyingNumber -like "$Guid"}) 
             if (!($Products)) { 
               $x=5 
               Write-Host "`n[!] $Guid removed successfully!`n" -ForegroundColor Green
@@ -128,18 +224,21 @@ function Remove-Software {
 }
 
 function Find-LocalCSVFile {
-  param ([string]$Location)    
-    #write-Host "Find-LocalCSVFile $Location $OldPwd"
+  param ([string]$Location)
+    
+    write-Host "Find-LocalCSVFile $Location $OldPwd"
+
     # FIGURE OUT CSV Filename
     $i = 0
     if (($null -eq $Location) -or ("." -eq $Location)) { $Location = $OldPwd }
-    [array]$Filenames = Get-ChildItem "$($Location)\*.csv" | ForEach-Object { $_.Name }
+    [array]$Filenames = Get-ChildItem "$($Location)\*.csv" | % { $_.Name }
     $Filenames | Foreach-Object {
       Write-Host "[$i] $_" -ForegroundColor Blue
       $i += 1
     }
-    if (!($Automated) -and ($i -gt 1)) {   # Don't bother picking if there is just one file..
+    if (!($Automated)) {
       Write-Host "[$i] EXIT" -ForegroundColor Blue
+      $Max = $i
       $Selection = Read-Host "Select file to import, [Enter=0] ?"
       if ($Selection -eq $i) { Write-Host "[-] Exiting!" -ForegroundColor Gray ; exit }
       if ($Selection -eq "") { $Selection="0" }
@@ -166,7 +265,7 @@ function Find-ServerCSVFile {
   }
   if (!($null -eq $Location)) { $Location = "data\secaud" }
   if (Test-Path "\\$($ServerName)\$($Location)") {
-    $CSVFilename=(Get-ChildItem "\\$($ServerName)\$($Location)" -Filter "*.csv" | Sort-Object LastWriteTime | Select-Object -last 1).FullName
+    $CSVFilename=(gci "\\$($ServerName)\$($Location)" -Filter "*.csv" | sort LastWriteTime | select -last 1).FullName
     Write-Host "[i] Found file: $CSVFileName" -ForegroundColor Blue
     return $CSVFilename 
   } else {
@@ -174,50 +273,11 @@ function Find-ServerCSVFile {
   }
 }
 
-function Start-Browser {
-  param ($url)
-  #Start-Process "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" -ArgumentList "$($url)"   # No, lets just load the URL in the systems default browser..
-  Start-Process "$($url)"
-}
-
-Function Add-VulnToQIDList {
-  param ( $QIDNum,
-          $QIDName,
-          $QIDVar)
-  if ($QIDsAdded -notcontains $QIDNum) {
-    if (Get-YesNo "New vulnerability found: [QID$($QIDNum)] - [$($QIDName)] - Add?") {
-      Write-Verbose "[v] Adding to variable in $($QIDsListFile): Variable: $($QIDVar)"
-      if ($Automated) { Write-Output "[QID$($QIDNum)] - [$($QIDName)] - Adding" }
-      $QIDLine = (Select-String  -Path $QIDsListFile -pattern $QIDVar).Line
-      Write-Verbose "[v] Found match: $QIDLine"
-      $QIDLineNew = "$QIDLine,$QIDNum"    
-      Write-Verbose "[v] Replaced with: $QIDLineNew"
-      $QIDFileNew=@()
-      ForEach ($str in $(Get-Content -path $QIDsListFile)) {
-        if ($str -like "*$($QIDLine)*") {
-          Write-Verbose "Replaced: `n$str with: `n$QIDLineNew"
-          $QIDFileNew += $QIDLineNew
-        } else {
-          $QIDFileNew += $str
-        }
-      }
-      $QIDFileNew | Set-Content -path $QIDsListFile -Force
-      
-      $QIDsAdded += $QIDNum
-      Write-Verbose "[!] Adding $QIDNum to QIDsAdded. QIDsAdded = $QIDsAdded"
-    }
-  } else {
-    Write-Output "[.] QID $QIDNum already added, skipping"
-    Write-Verbose "Found $QIDNum in $QIDsAdded"
-  }
-}
-
 ############################################# MAIN ###############################################
-
 if (!(Test-Path $($tmp))) {
   try {
     Write-Host "[ ] Creating $($tmp) .." -ForegroundColor Gray
-    $null=New-Item $($tmp) -ItemType Directory -ErrorAction SilentlyContinue
+    New-Item $($tmp) -ItemType Directory
   } catch {
     Write-Host "[X] Couldn't create folder $($tmp) !! This is needed for temporary storage." -ForegroundColor Red
     Exit
@@ -253,89 +313,6 @@ if ($null -eq $CSVFilename) {
   }
 }
 
-
-######## Find if there are any new vulnerabilities not listed ########
-
-$Rows = @()
-$CSVData | ForEach-Object {
-# Search by title:
-  $QID=($_.QID).Replace('.0','') 
-  if ($_.Title -like "Chrome*") {
-    if (!($QIDsTeamviewer -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsTeamViewer'
-    }
-  }
-  if ($_.Title -like "Firefox*") {
-    if (!($QIDsFirefox -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsFirefox'
-    }
-  }
-  if ($_.Title -like "Zoom*") {
-    if (!($QIDsZoom -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsZoom'
-    }
-  }
-  if ($_.Title -like "TeamViewer*") {
-    if (!($QIDsTeamviewer -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsTeamViewer'
-    }
-  }  
-  if ($_.Title -like "Dropbox*") {
-    if (!($QIDsDropbox -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsDropbox'
-    }
-  }
-  if ($_.Title -like "Oracle Java*") {            ########
-    if (!($QIDsOracleJava -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsOracleJava'
-    }
-  }
-  if ($_.Title -like "Adopt Open JDK*") {             ############
-    if (!($QIDsAdoptOpenJDK -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsAdoptOpenJDK'
-    }
-  }
-  if ($_.Title -like "VirtualBox*") {
-    if (!($QIDsVirtualBox -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsVirtualBox'
-    }
-  }
-  if ($_.Title -like "Adobe Reader*") {  
-    if (!($QIDsAdobeReader -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsAdobeReader'
-    }
-  }
-  if ($_.Title -like "Intel Graphics*") {
-    if (!($QIDsIntelGraphicsDriver -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsIntelGraphicsDriver'
-    }
-  }
-  if ($_.Title -like "NVIDIA*") {
-    if (!($QIDsNVIDIA -contains $QID)) { 
-      Add-VulnToQIDList $QID $_.Title  'QIDsNVIDIA'
-    }
-  }
-  if ($_.Title -like "Dell Client*") {
-    if (!($QIDsDellCommandUpdate -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsDellCommandUpdate'
-    }
-  }
-  if ($_.Title -like "Ghostscript*") {
-    if (!($QIDsGhostscript -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsGhostScript'
-    }
-  }
-
-# Search by title:
-  if ($_.Results -like "Microsoft vulnerable Microsoft.*") {
-    if (!($QIDsUpdateMicrosoftStoreApps -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsUpdateMicrosoftStoreApps'
-    }
-  }
-}
-Write-Output "[.] Done checking for new vulns.`n"
-
-############################### Find applicable rows to this machine #################################
 # FIND ROWS WITH HOSTNAME = $Hostname
 $Rows = @()
 $CSVData | ForEach-Object {
@@ -355,15 +332,9 @@ if ($Rows.Count -lt 1) {
 $QIDs = @()
 $QIDsVerbose = @()
 $Rows | ForEach-Object {
-  $ThisQID=[int]$_.QID.replace(".0","")
-  if ($ThisQID -notin $QIDsIgnored) {
-    $QIDs += $ThisQID
-    $QIDsVerbose += "[QID$($ThisQID) - [$($_.Title)]"
-  } else {
-    $QIDsVerbose += "[Ignored: QID$($ThisQID) - [$($_.Title)]"
-  }
+  $QIDs += [int]$_.QID
+  $QIDsVerbose += "[QID $([int]$_.QID)] - [$($_.Title)]"
 }
-# FIND QIDS TO IGNORE
 Write-Host "[i] QIDs found: $($QIDs.Count) - $QIDs" -ForegroundColor Cyan
 ForEach ($Qv in $QIDsVerbose) {
   Write-Host $Qv
@@ -381,13 +352,13 @@ Write-Host "`n"
 
 foreach ($QID in $QIDs) {
     $ThisQID = $QID
-    $ThisTitle = (($Rows | Where-Object { $_.QID -eq $ThisQID }) | Select-Object -First 1).Title
+    $ThisTitle = (($Rows | where { $_.QID -eq $ThisQID }) | select -First 1).Title
     switch ([int]$QID)
     {
       376023 { 
         if (Get-YesNo "$_ Remove SupportAssist ? ") {
-          $guid = (Get-Package | Where-Object{$_.Name -like "*SupportAssist*"})
-          if ($guid) {  ($guid | Select-Object -expand FastPackageReference).replace("}","").replace("{","")  }
+          $guid = (Get-Package | ?{$_.Name -like "*SupportAssist*"})
+          if ($guid) {  ($guid | select -expand FastPackageReference).replace("}","").replace("{","")  }
           msiexec /x $guid /qn /L*V "$($tmp)\SupportAssist.log" REBOOT=R
           
           # This might require interaction, in which case run this:
@@ -402,18 +373,18 @@ foreach ($QID in $QIDs) {
             Rename-LocalUser -Name "Guest" -NewName "NoVisitors" | Disable-LocalUser
         }
       }
-      { $QIDsSpectreMeltdown -contains $_ } {
-        if (Get-YesNo "$_ Fix spectre4/meltdown ? ") {
-            cmd /c 'reg add "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v FeatureSettingsOverride /t REG_DWORD /d 72 /f'
+      { $QIDSpectreMeltdown -contains $_ } {
+        if (Get-YesNo "$_ Fix spectre/meltdown ? ") {
+            cmd /c 'reg add "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v FeatureSettingsOverride /t REG_DWORD /d 0 /f'
             cmd /c 'reg add "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v FeatureSettingsOverrideMask /t REG_DWORD /d 3 /f'
             #cmd /c 'reg query "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization" '
             cmd /c 'reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization" /v MinVmVersionForCpuBasedMitigations /t REG_SZ /d "1.0" /f'
-            $QIDsSpectreMeltdown = 1
-        } else { $QIDsSpectreMeltdown = 1 }
+            $QIDSpectreMeltdown = 1
+        } else { $QIDSpectreMeltdown = 1 }
       }
       110414 {
         if (Get-YesNo "$_ Fix Microsoft Outlook Denial of Service (DoS) Vulnerability Security Update August 2022 ? ") { 
-          Invoke-WebRequest "https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/outlook-x-none_1763a730d8058df2248775ddd907e32694c80f52.cab" -outfile "$($tmp)\outlook-x-none.cab"
+          wget "https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/outlook-x-none_1763a730d8058df2248775ddd907e32694c80f52.cab" -outfile "$($tmp)\outlook-x-none.cab"
           cmd /c "C:\Windows\System32\expand.exe -F:* $($tmp)\outlook-x-none.cab $($tmp)"
           cmd /c "msiexec /p $($tmp)\outlook-x-none.msp /qn"
         }
@@ -421,14 +392,14 @@ foreach ($QID in $QIDs) {
       110413 {
         if (Get-YesNo "$_ Fix Microsoft Office Security Update for August 2022? ") { 
           Write-Host "[.] Downloading CAB: https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/msohevi-x-none_a317be1090606cd424132687bc627baffec45292.cab .."
-          Invoke-WebRequest "https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/msohevi-x-none_a317be1090606cd424132687bc627baffec45292.cab" -outfile "$($tmp)\msohevi-x-none.msp"
+          wget "https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/msohevi-x-none_a317be1090606cd424132687bc627baffec45292.cab" -outfile "$($tmp)\msohevi-x-none.msp"
           Write-Host "[.] Extracting cab: C:\Windows\System32\expand.exe -F: $($tmp)\msohevi-x-none.msp $($tmp)"
           cmd /c "C:\Windows\System32\expand.exe -F:* $($tmp)\msohevi-x-none.msp $($tmp)"
           Write-Host "[.] Installing patch: $($tmp)\msohevi-x-none.msp"
           cmd /c "msiexec /p $($tmp)\msohevi-x-none.msp /qn"
 
           Write-Host "[.] Downloading CAB: https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/excel-x-none_355a1faf5d9fb095c7be862eb16105cfb2f24ca2.cab .."
-          Invoke-WebRequest "https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/excel-x-none_355a1faf5d9fb095c7be862eb16105cfb2f24ca2.cab" -outfile "$($tmp)\excel-x-none.cab"
+          wget "https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/excel-x-none_355a1faf5d9fb095c7be862eb16105cfb2f24ca2.cab" -outfile "$($tmp)\excel-x-none.cab"
           Write-Host "[.] Extracting cab: C:\Windows\System32\expand.exe -F: $($tmp)\excel-x-none.msp $($tmp)"
           cmd /c "C:\Windows\System32\expand.exe -F:* $($tmp)\excel-x-none.msp $($tmp)"
           Write-Host "[.] Installing patch: $($tmp)\excel-x-none.msp"
@@ -439,7 +410,7 @@ foreach ($QID in $QIDs) {
       110412 {
         if (Get-YesNo "$_ Fix Microsoft Office Security Update for July 2022? ") { 
           Write-Host "[.] Downloading CAB: https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/excel-x-none_355a1faf5d9fb095c7be862eb16105cfb2f24ca2.cab .."
-          Invoke-WebRequest "http://catalog.s.download.windowsupdate.com/d/msdownload/update/software/secu/2022/06/vbe7-x-none_1b914b1d60119d31176614c2414c0e372756076e.cab" -outfile "$($tmp)\vbe7-x-none.cab"
+          wget "http://catalog.s.download.windowsupdate.com/d/msdownload/update/software/secu/2022/06/vbe7-x-none_1b914b1d60119d31176614c2414c0e372756076e.cab" -outfile "$($tmp)\vbe7-x-none.cab"
           Write-Host "[.] Extracting cab: C:\Windows\System32\expand.exe -F: $($tmp)\vbe7-x-none.msp $($tmp)"
           cmd /c "C:\Windows\System32\expand.exe -F:* $($tmp)\excel-x-none.msp $($tmp)"
           Write-Host "[.] Installing patch: $($tmp)\vbe7-x-none.msp"
@@ -485,8 +456,7 @@ foreach ($QID in $QIDs) {
       }
       90007 {
         if (Get-YesNo "$_ - Enabled Cached Logon Credential ? ") {
-          cmd /c 'reg query "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v CachedLogonsCount'  
-          cmd /c 'reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v CachedLogonsCount /t REG_SZ /d 0 /f'
+            cmd /c 'reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v CachedLogonsCount /t REG_SZ /d 0 /f'
         }
       }
       90043 {
@@ -553,34 +523,29 @@ foreach ($QID in $QIDs) {
         ####################################################### Installers #######################################
         # Install newest apps via Ninite
 
-      { $QIDsGhostScript -contains $_ } {
-        if (Get-YesNo "$_ Install GhostScript 10.0.0? ") {
-          Invoke-WebRequest "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs1000/gs1000w32.exe" -OutFile "$($tmp)\ghostscript.exe"
-          cmd.exe /c "$($tmp)\ghostscript.exe /S"
-        }
-      }
       110330 {  
         if (Get-YesNo "$_ - Install Microsoft Office KB4092465? ") {
-            Invoke-WebRequest "https://download.microsoft.com/download/3/6/E/36EF356E-85E4-474B-AA62-80389072081C/mso2007-kb4092465-fullfile-x86-glb.exe" -outfile "$($tmp)\kb4092465.exe"
+            wget "https://download.microsoft.com/download/3/6/E/36EF356E-85E4-474B-AA62-80389072081C/mso2007-kb4092465-fullfile-x86-glb.exe" -outfile "$($tmp)\kb4092465.exe"
             cmd.exe /c "$($tmp)\kb4092465.exe /quiet /passive /norestart"
         }
       }
       372348 {
         if (Get-YesNo "$_ - Intel Chipset INF util ? ") {
-            Invoke-WebRequest "https://downloadmirror.intel.com/30553/eng/setupchipset.exe" -OutFile "$($tmp)\setupchipset.exe"
-            cmd /c "$($tmp)\setupchipset.exe -s -accepteula  -norestart -log $($tmp)\intelchipsetinf.log"
+            wget "https://downloadmirror.intel.com/30553/eng/setupchipset.exe" -OutFile "$($tmp)\setupchipset.exe"
+            cmd /c '"$($tmp)\setupchipset.exe" -s -accepteula  -norestart -log "$($tmp)\intelchipsetinf.log"'
         }
       }
       372300 {
         if (Get-YesNo "$_ - Intel RST ? ") {
-            Invoke-WebRequest "https://downloadmirror.intel.com/655256/SetupRST.exe" -OutFile "$($tmp)\setuprst.exe"
-            cmd /c "$($tmp)\setuprst.exe -s -accepteula -norestart -log $($tmp)\intelrstinf.log"
+            wget "https://downloadmirror.intel.com/655256/SetupRST.exe" -OutFile "$($tmp)\setuprst.exe"
+            cmd /c """$($tmp)\setuprst.exe"" -s -accepteula -norestart -log ""$($tmp)\intelrstinf.log"""
             # OR, extract MSI from this exe and run: 
             # msiexec.exe /q ALLUSERS=2 /m MSIDTJBS /i “RST_x64.msi” REBOOT=ReallySuppress
         }   
       }
       { $QIDsIntelGraphicsDriver  -contains $_ } {
-        if (Get-YesNo "$_ Install newest Intel Graphics Driver? ") { 
+        if (Get-YesNo "$_ QID $_ Install newest Intel Graphics Driver? "
+    ) { 
           Write-Output "[!] THIS WILL NEED TO BE RUN MANUALLY... OPENING BROWSER TO INTEL SUPPORT ASSISTANT PAGE!"
           explorer "https://www.intel.com/content/www/us/en/support/intel-driver-support-assistant.html"
            <#
@@ -617,41 +582,46 @@ foreach ($QID in $QIDs) {
         } else { $QIDsIntelGraphicsDriver=1 }
       }
       { $QIDsChrome -contains $_ } {
-        if (Get-YesNo "$_ Install newest Google Chrome? ") { 
+        if (Get-YesNo "$_ Install newest Google Chrome? "
+    ) { 
             #  Google Chrome - https://ninite.com/chrome/ninite.exe
-            Invoke-WebRequest "https://ninite.com/chrome/ninite.exe" -OutFile "$($tmp)\ninite.exe"
+            wget "https://ninite.com/chrome/ninite.exe" -OutFile "$($tmp)\ninite.exe"
             cmd /c "$($tmp)\ninite.exe"
             $QIDsChrome = 1 # All done, remove variable to prevent this from running twice
         } else { $QIDsChrome = 1 }
       }
       { $QIDsFirefox -contains $_ } {
-        if (Get-YesNo "$_ Install newest Firefox? ") { 
+        if (Get-YesNo "$_ Install newest Firefox? "
+    ) { 
             #  Firefox - https://ninite.com/firefox/ninite.exe
-            Invoke-WebRequest "https://ninite.com/firefox/ninite.exe" -OutFile "$($tmp)\ninite.exe"
+            wget "https://ninite.com/firefox/ninite.exe" -OutFile "$($tmp)\ninite.exe"
             cmd /c "$($tmp)\ninite.exe"
             $QIDsFirefox = 1
         } else { $QIDsFirefox = 1 }
       }
       { $QIDsZoom -contains $_ } {
-        if (Get-YesNo "$_ Install newest Zoom Client? ") { 
+        if (Get-YesNo "$_ Install newest Zoom Client? "
+    ) { 
             #  Zoom client - https://ninite.com/zoom/ninite.exe
-            Invoke-WebRequest "https://ninite.com/zoom/ninite.exe" -OutFile "$($tmp)\ninite.exe"
+            wget "https://ninite.com/zoom/ninite.exe" -OutFile "$($tmp)\ninite.exe"
             cmd /c "$($tmp)\ninite.exe"
             $QIDsZoom = 1
         } else { $QIDsZoom = 1 }
       }
-      { $QIDsTeamViewer -contains $_ } {
-        if (Get-YesNo "$_ Install newest Teamviewer? ") { 
+      { $QIDsTeamViewer15 -contains $_ } {
+        if (Get-YesNo "$_ Install newest Teamviewer 15? "
+    ) { 
             #  Teamviewer - https://ninite.com/teamviewer15/ninite.exe
-            Invoke-WebRequest "https://ninite.com/teamviewer15/ninite.exe" -OutFile "$($tmp)\ninite.exe"
+            wget "https://ninite.com/teamviewer15/ninite.exe" -OutFile "$($tmp)\ninite.exe"
             cmd /c "$($tmp)\ninite.exe"
-            $QIDsTeamViewer = 1
-        } else { $QIDsTeamViewer = 1 }
+            $QIDsTeamViewer15 = 1
+        } else { $QIDsTeamViewer15 = 1 }
       }
       { $QIDsDropbox -contains $_ } {
-        if (Get-YesNo "$_ Install newest Dropbox? ") { 
+        if (Get-YesNo "$_ Install newest Dropbox? "
+    ) { 
             #  Dropbox - https://ninite.com/dropbox/ninite.exe
-            Invoke-WebRequest "https://ninite.com/dropbox/ninite.exe" -OutFile "$($tmp)\ninite.exe"
+            wget "https://ninite.com/dropbox/ninite.exe" -OutFile "$($tmp)\ninite.exe"
             cmd /c "$($tmp)\ninite.exe"
             $QIDsDropbox = 1
         } else { $QIDsDropbox = 1 }
@@ -669,16 +639,24 @@ foreach ($QID in $QIDs) {
             $QIDsOracleJava = 1
         } else { $QIDsOracleJava = 1 }
       }
+      { $QIDsOracleJavaSE -contains $_ } {
+        if (Get-YesNo "$_ Check Oracle JAva for updates? ") { 
+            #wget "https://download.oracle.com/java/18/latest/jdk-18_windows-x64_bin.msi" -OutFile "$($tmp)\java18.msi"
+            #msiexec /i "$($tmp)\java18.msi" /qn /quiet /norestart
+            . "c:\Program Files (x86)\Common Files\Java\Java Update\jucheck.exe"
+            $QIDsOracleJavaSE  = 1
+        } else { $QIDsOracleJavaSE  = 1 }
+      }
       { $QIDsAdoptOpenJDK -contains $_ } {
         if (Get-YesNo "$_ Install newest Adopt Java JDK? ") { 
-            Invoke-WebRequest "https://ninite.com/adoptjavax8/ninite.exe" -OutFile "$($tmp)\ninitejava8x64.exe"
+            wget "https://ninite.com/adoptjavax8/ninite.exe" -OutFile "$($tmp)\ninitejava8x64.exe"
             cmd /c "$($tmp)\ninitejava8x64.exe"
             $QIDsAdoptOpenJDK = 1
         } else { $QIDsAdoptOpenJDK = 1 }
       }
       { $QIDsVirtualBox -contains $_ } {
         if (Get-YesNo "$_ Install newest VirtualBox 6.1.36? ") { 
-            Invoke-WebRequest "https://download.virtualbox.org/virtualbox/6.1.36/VirtualBox-6.1.36-152435-Win.exe" -OutFile "$($tmp)\virtualbox.exe"
+            wget "https://download.virtualbox.org/virtualbox/6.1.36/VirtualBox-6.1.36-152435-Win.exe" -OutFile "$($tmp)\virtualbox.exe"
             cmd /c "$($tmp)\virtualbox.exe"
             $QIDsVirtualBox = 1
         } else { $QIDsVirtualBox = 1 } 
@@ -693,13 +671,13 @@ foreach ($QID in $QIDs) {
       { $QIDsAdobeReader -contains $_ } {
         if (Get-YesNo "$_ Install newest Adobe Reader DC? ") { 
             #  Adobe Reader DC - https://get.adobe.com/reader/download/?installer=Reader_DC_2021.007.20099_English_Windows(64Bit)&os=Windows%2010&browser_type=KHTML&browser_dist=Chrome&dualoffer=false&mdualoffer=true&cr=false&stype=7442&d=McAfee_Security_Scan_Plus&d=McAfee_Safe_Connect
-            Invoke-WebRequest "https://get.adobe.com/reader/download/?installer=Reader_DC_2021.007.20099_English_Windows(64Bit)&os=Windows%2010&browser_type=KHTML&browser_dist=Chrome&dualoffer=false&mdualoffer=true&cr=false&stype=7442&d=McAfee_Security_Scan_Plus&d=McAfee_Safe_Connect" -OutFile "$($tmp)\readerdc.exe"
+            wget "https://get.adobe.com/reader/download/?installer=Reader_DC_2021.007.20099_English_Windows(64Bit)&os=Windows%2010&browser_type=KHTML&browser_dist=Chrome&dualoffer=false&mdualoffer=true&cr=false&stype=7442&d=McAfee_Security_Scan_Plus&d=McAfee_Safe_Connect" -OutFile "$($tmp)\readerdc.exe"
             cmd /c "$($tmp)\readerdc.exe"
             $QIDsAdobeReader = 1
         } else { $QIDsAdobeReader = 1 }
       }
       { $QIDsMicrosoftSilverlight -contains $_ } {
-        $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{89F4137D-6C26-4A84-BDB8-2E5A4BB71E00}'})
+        $Products = (get-wmiobject Win32_Product | where { $_.IdentifyingNumber -like '{89F4137D-6C26-4A84-BDB8-2E5A4BB71E00}'})
         if ($Products) {
             Remove-Software $Products
             $QIDsMicrosoftSilverlight = 1
@@ -709,7 +687,7 @@ foreach ($QID in $QIDs) {
         } 
       }
       { $QIDsSQLServerCompact4 -contains $_ } {
-        $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{78909610-D229-459C-A936-25D92283D3FD}'})
+        $Products = (get-wmiobject Win32_Product | where { $_.IdentifyingNumber -like '{78909610-D229-459C-A936-25D92283D3FD}'})
         if ($Products) {
             Remove-Software $Products
             $QIDsSQLServerCompact4 = 1
@@ -719,7 +697,7 @@ foreach ($QID in $QIDs) {
         } 
       }
       { $QIDsMicrosoftAccessDBEngine -contains $_ } {
-        $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{90120000-00D1-0409-0000-0000000FF1CE}' -or `
+        $Products = (get-wmiobject Win32_Product | where { $_.IdentifyingNumber -like '{90120000-00D1-0409-0000-0000000FF1CE}' -or `
                                                            $_.IdentifyingNumber -like '{90140000-00D1-0409-1000-0000000FF1CE}'})
         if ($Products) {
             Remove-Software $Products
@@ -732,32 +710,32 @@ foreach ($QID in $QIDs) {
       { $QIDsMicrosoftVisualStudioActiveTemplate -contains $_ } {
         $notfound = $true
         if (Get-YesNo "$_ $_ Install Microsoft Visual C++ 2005/8 Service Pack 1 Redistributable Package MFC Security Update? ") { 
-          $Installed=get-wmiobject -class Win32_Product | Where-Object{ $_.Name -like '*Microsoft Visual*'} # | Format-Table IdentifyingNumber, Name, LocalPackage -AutoSize
-          if ($Installed | Where-Object {$_.IdentifyingNumber -like '{9A25302D-30C0-39D9-BD6F-21E6EC160475}'}) { 
+          $Installed=get-wmiobject -class Win32_Product | ?{ $_.Name -like '*Microsoft Visual*'} # | Format-Table IdentifyingNumber, Name, LocalPackage -AutoSize
+          if ($Installed | where {$_.IdentifyingNumber -like '{9A25302D-30C0-39D9-BD6F-21E6EC160475}'}) { 
               Write-Host "[!] Found Microsoft Visual C++ 2008 Redistributable - x86 "
               $notfound = $false
-              Invoke-WebRequest "https://download.microsoft.com/download/5/D/8/5D8C65CB-C849-4025-8E95-C3966CAFD8AE/vcredist_x86.exe" -OutFile "$($tmp)\vcredist2008x86.exe"
+              wget "https://download.microsoft.com/download/5/D/8/5D8C65CB-C849-4025-8E95-C3966CAFD8AE/vcredist_x86.exe" -OutFile "$($tmp)\vcredist2008x86.exe"
               cmd /c "$($tmp)\vcredist2008x86.exe /q"
               $QIDsMicrosoftVisualStudioActiveTemplate = 1
           }
-          if ($Installed | Where-Object { $_.IdentifyingNumber -like '{837b34e3-7c30-493c-8f6a-2b0f04e2912c}'}) {
+          if ($Installed | where { $_.IdentifyingNumber -like '{837b34e3-7c30-493c-8f6a-2b0f04e2912c}'}) {
             Write-Host "[!] Found Microsoft Visual C++ 2005 Redistributable"
             $notfound = $false
-            Invoke-WebRequest "https://download.microsoft.com/download/8/B/4/8B42259F-5D70-43F4-AC2E-4B208FD8D66A/vcredist_x86.EXE" -OutFile "$($tmp)\vcredist2005.exe"
+            wget "https://download.microsoft.com/download/8/B/4/8B42259F-5D70-43F4-AC2E-4B208FD8D66A/vcredist_x86.EXE" -OutFile "$($tmp)\vcredist2005.exe"
             cmd /c "$($tmp)\vcredist2005.exe /q"
             $QIDsMicrosoftVisualStudioActiveTemplate = 1
           }
-          if ($Installed | Where-Object { $_.IdentifyingNumber -like '{710f4c1c-cc18-4c49-8cbf-51240c89a1a2}'}) {
+          if ($Installed | where { $_.IdentifyingNumber -like '{710f4c1c-cc18-4c49-8cbf-51240c89a1a2}'}) {
             Write-Host "[!] Found Microsoft Visual C++ 2005 Redistributable - x86"
             $notfound = $false
-            Invoke-WebRequest "https://download.microsoft.com/download/8/B/4/8B42259F-5D70-43F4-AC2E-4B208FD8D66A/vcredist_x86.EXE" -OutFile "$($tmp)\vcredist2005x86.exe"
+            wget "https://download.microsoft.com/download/8/B/4/8B42259F-5D70-43F4-AC2E-4B208FD8D66A/vcredist_x86.EXE" -OutFile "$($tmp)\vcredist2005x86.exe"
             cmd /c "$($tmp)\vcredist2005x86.exe /q"
             $QIDsMicrosoftVisualStudioActiveTemplate = 1
           }
-          if ($Installed | Where-Object { $_.IdentifyingNumber -like '{6E8E85E8-CE4B-4FF5-91F7-04999C9FAE6A}'}) { #x64
+          if ($Installed | where { $_.IdentifyingNumber -like '{6E8E85E8-CE4B-4FF5-91F7-04999C9FAE6A}'}) { #x64
             Write-Host "[!] Found Microsoft Visual C++ 2005 Redistributable - x64 "
             $notfound = $false
-            Invoke-WebRequest "https://download.microsoft.com/download/8/B/4/8B42259F-5D70-43F4-AC2E-4B208FD8D66A/vcredist_x64.EXE" -OutFile "$($tmp)\vcredist2005x64.exe"
+            wget "https://download.microsoft.com/download/8/B/4/8B42259F-5D70-43F4-AC2E-4B208FD8D66A/vcredist_x64.EXE" -OutFile "$($tmp)\vcredist2005x64.exe"
             cmd /c "$($tmp)\vcredist2005x64.exe /q"
             $QIDsMicrosoftVisualStudioActiveTemplate = 1
           } 
@@ -785,20 +763,9 @@ foreach ($QID in $QIDs) {
             {8BA25391-0BE6-443A-8EBF-86A29BAFC479} Microsoft .NET Host FX Resolver - 5.0.17 (x64) C:\Windows\Installer\a3227a.msi
             {5A66E598-37BD-4C8A-A7CB-A71C32ABCD78} Microsoft .NET Runtime - 5.0.17 (x64)          C:\Windows\Installer\a32276.msi
             {E663ED1E-899C-40E8-91D0-8D37B95E3C69} Microsoft .NET Host - 5.0.17 (x64)             C:\Windows\Installer\a3227f.msi
-
-
-            For now, will remove just the Runtime which I believe is the only vulnerability..  Maybe we remove all 3 though, will find out.
             #>
-            $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{5A66E598-37BD-4C8A-A7CB-A71C32ABCD78}'})
-            if ($Products) {
-                Remove-Software $Products
-                $QIDsMicrosoftNETCoreV5 = 1
-            } else {
-              Write-Host "[!] Guids not found: $Products !!`n" -ForegroundColor Red
-              $QIDsMicrosoftNETCoreV5 = 1
-            }             
       }
-      { $QIDsNVIDIA -contains $_ } {
+      { $QIDNVIDIAPrivEsc -contains $_ } {
         if (Get-YesNo "$_ Install newest Adobe Reader DC? ") { 
             $NvidiacardFound = $false
             Write-Host "[.] Video Cards found:"
@@ -808,25 +775,18 @@ foreach ($QID in $QIDs) {
                 $NvidiacardFound = $true
               }
             }
-            if ($NvidiacardFound) {
-              Start-Browser "https://www.nvidia.com/download/index.aspx"
-              Write-Host "[!] Download and install latest NVidia drivers.. Manual fix!"
+            if ($NvidiacardFound){
+              Start-Process "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" -ArgumentList "https://www.nvidia.com/download/index.aspx"
+              Write-Host "[!] Download and install latest NVidia drivers.. Manual fix."
             } else {
               Write-Host "[!] No NVIDIA Card found, should be save to remove."
-              if (Get-YesNo "$_ Remove NVIDIA PrivEsc exe c:\windows\system32\nvvsvc.exe ? ") { 
+              if (Get-YesNo "$_ Remove NVIDIA PrivEsc exe c:\windows\system32\nvvsvc.exe ? "
+          ) { 
                 cmd.exe /c "taskkill /f /im nvvsvc.exe"
                 cmd.exe /c "del %windir%\System32\nvvsvc.exe"
               }
             }
-        } else { $QIDsNVIDIA = 1 }
-      }
-      { 370468 -contains $_ } {
-        $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Cisco WebEx*'})
-        if ($Products) {
-            Remove-Software $Products
-        } else {
-          Write-Host "[!] Product not found: 'Cisco WebEx*' !!`n" -ForegroundColor Red
-        }         
+        } else { $QIDNVIDIAPrivEsc = 1 }
       }
       19472 {
         if (Get-YesNo "$_ Install reg key for Microsoft SQL Server sqldmo.dll ActiveX Buffer Overflow Vulnerability - Zero Day (CVE-2007-4814)? ") { 
@@ -853,7 +813,7 @@ foreach ($QID in $QIDs) {
 
 Write-Host "[o] Done! Stopping transcript" -ForegroundColor Green
 Set-Location $oldpwd
-Remove-Item -Path "$tmp" -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -Path "$tmp" -Force -ErrorAction SilentlyContinue
 Stop-Transcript
 if (!($Automated)) {
   $null = Read-Host "--- Press enter to exit ---"

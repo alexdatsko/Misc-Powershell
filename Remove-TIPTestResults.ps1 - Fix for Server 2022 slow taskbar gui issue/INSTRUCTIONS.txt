@@ -1,0 +1,17 @@
+10-18-22 Alex Datsko (alexd@mmeconsulting.com)
+
+This will fix a known issue with Server 2022 Termservers, after many logons, the taskbar GUI eventually will slow down quite a bit due to tons of registry entries in HKEY_LOCAL_MACHINE\SYSTEM\Software\Microsoft\TIP\TestResults.  This will cause the GUI to slow down over time quite a bit on busier servers.
+
+So, this script will delete all of them, weekly, this will improve the performance again.
+
+1) Create a folder on your server called C:\Scripts and drop these files in it
+2) Open Task Scheduler - Win-R taskschd.msc 
+3) Right click in the white area and Import task. Select the xml file in c:\Scripts.
+4) Click on the 'Change User or Group' button, we will be selecting the Administrator.  If its a Termserver, you could run as Termserver admin if you know the local/DSRM password, otherwise, select the domain by clicking 'Locations', and the domain will be under 'Entire Directory'. Select this and hit OK
+5) Type the user name in the box and hit Check Names. Hit OK, or select the right user then hit OK.
+6) Hit OK to add the task, and type in the Administrator password
+7) You can now test this task by running it: right click it and Run.  
+8) You should be able to navigate to this in regedit to double check:
+Computer\HKEY_LOCAL_MACHINE\SYSTEM\Software\Microsoft\TIP\TestResults
+9) If the results are empty or nearly empty, you should be good to go.
+

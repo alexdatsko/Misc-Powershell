@@ -398,7 +398,7 @@ Out-File -FilePath $DFSlogfile -Encoding UTF8 -InputObject "%nErrors: $Err" -App
 
 $FullEventLog = (Get-Content -Path $dfslogfile)
 
-New-EventLog -LogName "MME" -Source "DFSBacklog"
+New-EventLog -LogName "MME" -Source "DFSBacklog" -ErrorAction SilentlyContinue
 
 # Write to actual Event log if this is not a debug run
 if (!($DebugDFSBacklog)) 
