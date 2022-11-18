@@ -798,6 +798,52 @@ foreach ($QID in $QIDs) {
               $QIDsMicrosoftNETCoreV5 = 1
             }             
       }
+      91304 {  # Microsoft Security Update for SQL Server (MS16-136)
+        $inst = (get-itemproperty 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server' -ErrorAction SilentlyContinue).InstalledInstances
+        foreach ($i in $inst)
+        {
+          $p = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL').$i
+          $SQLVersion = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\$p\Setup").Version
+          $SQLEdition = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\$p\Setup").Edition
+        }  # Version lists: https://sqlserverbuilds.blogspot.com/
+        <#
+        SQL Server 2016	13.0.1601.5				
+        Support end date: 2021-07-13	+ CU9				
+        Ext. end date: 2026-07-14					
+        
+        SQL Server 2014	12.0.2000.8				
+        Support end date: 2019-07-09	+ CU14				
+        Ext. end date: 2024-07-09					
+        
+        Obsolete versions – out of support					
+        SQL Server 2012	11.0.2100.60				
+        codename Denali	+ CU11				
+        Support end date: 2017-07-11					
+        Ext. end date: 2022-07-12					
+        
+        SQL Server 2008 R2	10.50.1600.1				
+        SQL Server 10.5					
+        codename Kilimanjaro					
+        Support end date: 2014-07-08					
+        Ext. end date: 2019-07-09					
+        
+        SQL Server 2008	10.0.1600.22				
+        SQL Server 10					
+        codename Katmai					
+        Support end date: 2014-07-08					
+        Ext. end date: 2019-07-09					
+#>
+        if (Get-YesNo "$_ Install SQL Server $SQLVersion $SQLEdition update? ") { 
+          if ("$SQLVersion $SQLEdition" -eq "12.2.5000.0 Express Edition") { # SQL Server 2014 Express
+            Invoke-WebRequest "https://www.microsoft.com/en-us/download/confirmation.aspx?id=54190&6B49FDFB-8E5B-4B07-BC31-15695C5A2143=1" -OutFile "$($tmp)\sqlupdate.exe"
+            cmd /c "$($tmp)\sqlupdate.exe /q"
+          }
+          if ("$SQLVersion $SQLEdition" -eq "12.2.5000.0 Standard Edition") { # SQL Server 2014
+            Invoke-WebRequest "https://www.microsoft.com/en-us/download/confirmation.aspx?id=57474&6B49FDFB-8E5B-4B07-BC31-15695C5A2143=1" -OutFile "$($tmp)\sqlupdate.exe"
+            cmd /c "$($tmp)\sqlupdate.exe /q"
+          }
+        }
+      }
       { $QIDsNVIDIA -contains $_ } {
         if (Get-YesNo "$_ Install newest Adobe Reader DC? ") { 
             $NvidiacardFound = $false
