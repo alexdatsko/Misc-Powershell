@@ -356,7 +356,7 @@ $QIDs = @()
 $QIDsVerbose = @()
 $Rows | ForEach-Object {
   $ThisQID=[int]$_.QID.replace(".0","")
-  if ($ThisQID -notin $QIDsIgnored) {
+  if (!($QIDsIgnored -contains $ThisQID)) {
     $QIDs += $ThisQID
     $QIDsVerbose += "[QID$($ThisQID) - [$($_.Title)]"
   } else {
@@ -568,7 +568,11 @@ foreach ($QID in $QIDs) {
       372348 {
         if (Get-YesNo "$_ - Intel Chipset INF util ? ") {
             Invoke-WebRequest "https://downloadmirror.intel.com/30553/eng/setupchipset.exe" -OutFile "$($tmp)\setupchipset.exe"
+            # "https://downloadmirror.intel.com/30553/eng/setupchipset.exe"
             cmd /c "$($tmp)\setupchipset.exe -s -accepteula  -norestart -log $($tmp)\intelchipsetinf.log"
+            # This doesn't seem to be working, lets just download it and run it for now..
+            #cmd /c "$($tmp)\setupchipset.exe -log $($tmp)\intelchipsetinf.log"
+            # may be 'Error: this platform is not supported' ..
         }
       }
       372300 {
