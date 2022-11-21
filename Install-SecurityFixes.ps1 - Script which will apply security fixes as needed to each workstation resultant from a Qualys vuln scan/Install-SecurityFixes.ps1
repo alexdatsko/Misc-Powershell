@@ -890,6 +890,62 @@ foreach ($QID in $QIDs) {
           New-ItemProperty -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_ALLOW_USER32_EXCEPTION_HANDLER_HARDENING" -Name "iexplore.exe" -Value 1
         }
       }
+      91848 {
+        if (Get-YesNo "$_ Install Store Installer app update to 1.16.13405.0 ? ") { 
+          # Requires -RunAsAdministrator
+          Begin {}
+          Process {
+            if ([version]'1.16.13405.0' -gt [version](Get-AppxPackage -Name 'Microsoft.DesktopAppInstaller' -ErrorAction SilentlyContinue).Version) {
+              $zip = (Join-Path -Path $tmp -ChildPath 'Microsoft.DesktopAppInstaller_1.16.13405.0_8wekyb3d8bbwe.zip')
+              $zipFolder = "$($zip -replace '\.zip','')"
+              if (-not(Test-Path -Path $zip)) {
+                $HT = @{
+                  Uri = 'https://download.microsoft.com/download/6/6/8/6680c5b1-3fbe-4b70-8189-90ea08609563/Microsoft.DesktopAppInstaller\_1.16.13405.0\_8wekyb3d8bbwe.zip'
+                  UseBasicParsing = $true
+                  ErrorAction = 'Stop'
+                  OutFile = $zip
+                }
+                try {
+                  Invoke-WebRequest @HT
+                } catch {
+                  Write-Warning -Message "Failed to download zip because $($_.Exception.Message)"
+                }
+              }
+              if (Test-Path -Path $zip) {
+                if ((Get-FileHash -Path $zip).Hash -eq 'e79cea914ba04b953cdeab38489b3190fcc88e566a43696aaefc0eddba1af6ab' ) {
+                  try {
+                    Expand-Archive -Path $zip -DestinationPath (Split-Path $zipFolder -Parent) -Force -ErrorAction Stop
+                  } catch {
+                    Write-Warning -Message "Failed to unzip because $($_.Exception.Message)"
+                  }
+                  if ('Valid' -in (Get-ChildItem -Path "$($zipFolder)\*" -Include * -Recurse -Exclude '*.xml' | Get-AuthenticodeSignature | Select-Object -ExpandProperty Status | Sort-Object -Unique)) {
+                    $HT = @{
+                      Online = $true
+                      PackagePath = Join-Path -Path $zipFolder -ChildPath 'Microsoft.DesktopAppInstaller_1.16.13405.0_8wekyb3d8bbwe.msixbundle'
+                      SkipLicense = $true
+                      ErrorAction = 'Stop'
+                    }
+                    try {
+                      $r = Add-AppxProvisionedPackage @HT
+                      if ($r.Online) {
+                        Write-Verbose 'Successfully provisionned Microsoft.DesktopAppInstaller' -Verbose
+                      }
+                    } catch {
+                      Write-Warning -Message "Failed to install Appx because $($_.Exception.Message)"
+                    }
+                  }
+                } else {
+                  Write-Warning -Message "Downloaded zip file thumbprint (SHA256) doesn't match"
+                }
+              } else {
+                Write-Warning -Message "Zip file $($zip) not found"
+              }
+            } else {
+              Write-Verbose -Message 'Current Microsoft.DesktopAppInstaller appx version is not vulnerable' -Verbose
+            }
+          }
+        }
+      }
       Default {
         Write-Host "[X] Skipping QID $_ : " -ForegroundColor Red -NoNewline
         Write-Host "$ThisTitle" -ForegroundColor White
