@@ -4,7 +4,7 @@ param ()
 $banner="
 <#
  # Install-MMESecurityFixes.ps1
- # Alex Datsko alexd@mmeconsulting.com 11-09-22
+ # Alex Datsko alexd@mmeconsulting.com v0.02 11-29-22
  #
  # Check for security settings and fix where possible. Script must be run with Administrative privileges.
  # Checks for (and fixes):
@@ -13,7 +13,7 @@ $banner="
 -	SMB signing
 -	Null Sessions
 -	Autoplay (2 items)
--	Cached credentials (not fixed unless line is uncommented in Set-MMESecuritySettings)
+-	Cached credentials 
 
  # Usage:
  #   ./Install-SecurityFixes.ps1 [-CheckOnly] [-Verbose]
@@ -64,14 +64,15 @@ function Run-Cmd {
 
 function Set-RequireSMBSigning {
   Write-Host "[!] Making registry changes for [SMB Signing - Require]" -ForegroundColor Yellow
-  Run-Cmd 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters"  /v EnableSecuritySignature /t REG_DWORD /d 1 /f'
-  Run-Cmd 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters"  /v RequireSecuritySignature /t REG_DWORD /d 1 /f'
+  Run-Cmd 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManWorkstation\Parameters"  /v EnableSecuritySignature /t REG_DWORD /d 1 /f'
+  # HKLM\System\CurrentControlSet\Services\LanManWorkstation\Parameters requiresecuritysignature = 0#
+  Run-Cmd 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManWorkstation\Parameters"  /v RequireSecuritySignature /t REG_DWORD /d 1 /f'
 }
 
 function Check-RequireSMBSigning {
   $check = @()
-  $check += Check-Reg -RegKey "HKLM:\System\CurrentControlSet\Services\LanManServer\Parameters" -RegName "EnableSecuritySignature" -RegValue "1" -SettingName "Enable SMB Signing"
-  $check += Check-Reg -RegKey "HKLM:\System\CurrentControlSet\Services\LanManServer\Parameters" -RegName "RequireSecuritySignature" -RegValue "1" -SettingName "Require SMB Signing"
+  $check += Check-Reg -RegKey "HKLM:\System\CurrentControlSet\Services\LanManWorkstation\Parameters" -RegName "EnableSecuritySignature" -RegValue "1" -SettingName "Enable SMB Signing"
+  $check += Check-Reg -RegKey "HKLM:\System\CurrentControlSet\Services\LanManWorkstation\Parameters" -RegName "RequireSecuritySignature" -RegValue "1" -SettingName "Require SMB Signing"
   if ($check -contains 1) { return $True } else { return $False }
 }
 
@@ -155,7 +156,7 @@ function Set-MMESecuritySettings {
   if (Check-Spectre4Meltdown) { Set-Spectre4Meltdown }
   if (Check-NullSession) { Set-NullSession }
   if (Check-WindowsExplorerAutoplay) { Set-WindowsExplorerAutoplay }
-  #if (Check-CachedCredentialsDisabled) { Set-CachedCredentialsDisabled }
+  if (Check-CachedCredentialsDisabled) { Set-CachedCredentialsDisabled }
 }
 
 function Check-MMESecuritySettings {

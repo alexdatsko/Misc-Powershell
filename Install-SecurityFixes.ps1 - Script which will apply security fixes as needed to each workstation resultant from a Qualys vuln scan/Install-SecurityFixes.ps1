@@ -9,7 +9,8 @@ param (
 )
 
 # Configuration items:
-$ServerName = "DC-SERVER"                    # Change as needed!
+$ServerName = "192.168.1.2"                    # Change as needed!
+$CSVLocation = "MME\SecAud"
 $tmp = "$($env:temp)\SecAud"                 # Temporary folder to save downloaded files to
 $oldPwd = $pwd                               # Grab location script was run from
 $IgnoreDaysOld = 30                          # if machine is <30 days old, we likely have a new computer and don't want to do anything..
@@ -53,7 +54,7 @@ $datetimedateonly = Get-Date -Format "yyyy-MM-dd"
 $osinstalldate = ([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDate) | get-date -Format MM/dd/yyyy
 Write-Host "`r`n================================================================" -ForegroundColor DarkCyan
 Write-Host "[i] Install-SecurityFixes.ps1" -ForegroundColor Cyan
-Write-Host "[i]   v0.23 - Last modified: 11/17/22" -ForegroundColor Cyan
+Write-Host "[i]   v0.24 - Last modified: 11/23/22" -ForegroundColor Cyan
 Write-Host "[i]   Alex Datsko - alex.datsko@mmeconsulting.com" -ForegroundColor Cyan
 Write-Host "[i] Date / Time : $datetime" -ForegroundColor Cyan
 Write-Host "[i] Computername : $hostname " -ForegroundColor Cyan
@@ -212,6 +213,41 @@ Function Add-VulnToQIDList {
   }
 }
 
+function Download-NewestAdobeReader {
+    # determining the latest version of Reader
+    $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+    $session.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.67 Safari/537.36"
+    $result = Invoke-RestMethod -Uri "https://rdc.adobe.io/reader/products?lang=mui&site=enterprise&os=Windows%2011&country=US&nativeOs=Windows%2010&api_key=dc-get-adobereader-cdn" `
+        -WebSession $session `
+        -Headers @{
+            "Accept"="*/*"
+            "Accept-Encoding"="gzip, deflate, br"
+            "Accept-Language"="en-US,en;q=0.9"
+            "Origin"="https://get.adobe.com"
+            "Referer"="https://get.adobe.com/"
+            "Sec-Fetch-Dest"="empty"
+            "Sec-Fetch-Mode"="cors"
+            "Sec-Fetch-Site"="cross-site"
+            "sec-ch-ua"="`" Not A;Brand`";v=`"99`", `"Chromium`";v=`"101`", `"Google Chrome`";v=`"101`""
+            "sec-ch-ua-mobile"="?0"
+            "sec-ch-ua-platform"="`"Windows`""
+            "x-api-key"="dc-get-adobereader-cdn"
+    }
+
+    $version = $result.products.reader[0].version
+    $version = $version.replace('.','')
+
+    # downloading
+    $URI = "https://ardownload2.adobe.com/pub/adobe/acrobat/win/AcrobatDC/$Version/AcroRdrDCx64$($Version)_MUI.exe"
+    #$OutFile = Join-Path $tmp "AcroRdrDCx64$($version)_MUI.exe"
+    $OutFile = "$($tmp)\readerdc.exe"
+    Write-Host "[.] Downloading version $version from $URI to $OutFile"
+    Invoke-WebRequest -Uri $URI -OutFile $OutFile -Verbose
+
+    Write-Output "[!] Download complete."
+    return $OutFile
+}
+
 ############################################# MAIN ###############################################
 
 if (!(Test-Path $($tmp))) {
@@ -230,7 +266,7 @@ if (!(Test-Path $tmp)) {
 }
 Set-Location "$($tmp)"  # Cmd.exe cannot be run from a server share
 
-$CSVFilename = Find-ServerCSVFile "$($ServerName)"
+$CSVFilename = Find-ServerCSVFile "$($ServerName)\$($CSVLocation)"
 if ($null -eq $CSVFilename) {
   $CSVFilename = Find-LocalCSVFile "."
 }
@@ -491,8 +527,8 @@ foreach ($QID in $QIDs) {
       }
       90043 {
         if (Get-YesNo "$_ - SMB Signing Disabled / Not required ? ") {
-            cmd /c 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters"  /v EnableSecuritySignature /t REG_DWORD /d 1 /f'
-            cmd /c 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters"  /v RequireSecuritySignature /t REG_DWORD /d 1 /f'
+            cmd /c 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManWorkstation\Parameters"  /v EnableSecuritySignature /t REG_DWORD /d 1 /f'
+            cmd /c 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManWorkstation\Parameters"  /v RequireSecuritySignature /t REG_DWORD /d 1 /f'
         }
       }
       91805 {
@@ -694,12 +730,25 @@ foreach ($QID in $QIDs) {
             $QIDsDellCommandUpdate  = 1
         } else { $QIDsDellCommandUpdate  = 1 }
       }
+      { 105734 -eq $_ } {
+        if (Get-YesNo "$_ Remove older versions of Adobe Reader ? ") { 
+          $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Adobe Reader*'})
+          if ($Products) {
+            Remove-Software $Products
+          } else {
+            Write-Host "[!] Adobe products not found under 'Adobe Reader*' $Products !!`n" -ForegroundColor Red
+          }  
+        }
+      }
       { $QIDsAdobeReader -contains $_ } {
-        if (Get-YesNo "$_ Install newest Adobe Reader DC? ") { 
-            #  Adobe Reader DC - https://get.adobe.com/reader/download/?installer=Reader_DC_2021.007.20099_English_Windows(64Bit)&os=Windows%2010&browser_type=KHTML&browser_dist=Chrome&dualoffer=false&mdualoffer=true&cr=false&stype=7442&d=McAfee_Security_Scan_Plus&d=McAfee_Safe_Connect
-            Invoke-WebRequest "https://get.adobe.com/reader/download/?installer=Reader_DC_2021.007.20099_English_Windows(64Bit)&os=Windows%2010&browser_type=KHTML&browser_dist=Chrome&dualoffer=false&mdualoffer=true&cr=false&stype=7442&d=McAfee_Security_Scan_Plus&d=McAfee_Safe_Connect" -OutFile "$($tmp)\readerdc.exe"
-            cmd /c "$($tmp)\readerdc.exe"
-            $QIDsAdobeReader = 1
+        if (Get-YesNo "$_ Install newest Adobe Reader DC ? ") {
+          Download-NewestAdobeReader
+          #cmd /c "$($tmp)\readerdc.exe"
+          $Outfile = "$($tmp)\readerdc.exe"
+          # silent install
+          Start-Process -FilePath $Outfile -ArgumentList "/sAll /rs /rps /msi /norestart /quiet EULA_ACCEPT=YES" -WorkingDirectory $env:TEMP -Wait -LoadUserProfile
+
+          $QIDsAdobeReader = 1
         } else { $QIDsAdobeReader = 1 }
       }
       { $QIDsMicrosoftSilverlight -contains $_ } {
@@ -849,7 +898,7 @@ foreach ($QID in $QIDs) {
         }
       }
       { $QIDsNVIDIA -contains $_ } {
-        if (Get-YesNo "$_ Install newest Adobe Reader DC? ") { 
+        if (Get-YesNo "$_ Install newest NVidia drivers ? ") { 
             $NvidiacardFound = $false
             Write-Host "[.] Video Cards found:"
             foreach($gpu in Get-WmiObject Win32_VideoController) {  
