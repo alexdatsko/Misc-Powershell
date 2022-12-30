@@ -4,13 +4,13 @@ param ()
 $banner="
 <#
  # Install-MMESecurityFixes.ps1
- # Alex Datsko alexd@mmeconsulting.com v0.02 11-29-22
+ # Alex Datsko alexd@mmeconsulting.com v0.03 12-20-22
  #
  # Check for security settings and fix where possible. Script must be run with Administrative privileges.
  # Checks for (and fixes):
 
 -	Spectre 4 / Meltdown
--	SMB signing
+-	SMB signing [Workstation/Server both added- 12-20-22]
 -	Null Sessions
 -	Autoplay (2 items)
 -	Cached credentials 
@@ -63,16 +63,20 @@ function Run-Cmd {
 }
 
 function Set-RequireSMBSigning {
-  Write-Host "[!] Making registry changes for [SMB Signing - Require]" -ForegroundColor Yellow
-  Run-Cmd 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManWorkstation\Parameters"  /v EnableSecuritySignature /t REG_DWORD /d 1 /f'
+  Write-Host "[!] Making registry changes for [SMB Signing - Require] for both LanManServer and LanManWorkstation" -ForegroundColor Yellow
   # HKLM\System\CurrentControlSet\Services\LanManWorkstation\Parameters requiresecuritysignature = 0#
+  Run-Cmd 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManWorkstation\Parameters"  /v EnableSecuritySignature /t REG_DWORD /d 1 /f'
   Run-Cmd 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManWorkstation\Parameters"  /v RequireSecuritySignature /t REG_DWORD /d 1 /f'
+  Run-Cmd 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters"  /v EnableSecuritySignature /t REG_DWORD /d 1 /f'
+  Run-Cmd 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters"  /v RequireSecuritySignature /t REG_DWORD /d 1 /f'
 }
 
 function Check-RequireSMBSigning {
   $check = @()
-  $check += Check-Reg -RegKey "HKLM:\System\CurrentControlSet\Services\LanManWorkstation\Parameters" -RegName "EnableSecuritySignature" -RegValue "1" -SettingName "Enable SMB Signing"
-  $check += Check-Reg -RegKey "HKLM:\System\CurrentControlSet\Services\LanManWorkstation\Parameters" -RegName "RequireSecuritySignature" -RegValue "1" -SettingName "Require SMB Signing"
+  $check += Check-Reg -RegKey "HKLM:\System\CurrentControlSet\Services\LanManWorkstation\Parameters" -RegName "EnableSecuritySignature" -RegValue "1" -SettingName "Enable SMB Signing - LanManWorkstation"
+  $check += Check-Reg -RegKey "HKLM:\System\CurrentControlSet\Services\LanManWorkstation\Parameters" -RegName "RequireSecuritySignature" -RegValue "1" -SettingName "Require SMB Signing - LanManWorkstation"
+  $check += Check-Reg -RegKey "HKLM:\System\CurrentControlSet\Services\LanManServer\Parameters" -RegName "EnableSecuritySignature" -RegValue "1" -SettingName "Enable SMB Signing - LanManServer"
+  $check += Check-Reg -RegKey "HKLM:\System\CurrentControlSet\Services\LanManServer\Parameters" -RegName "RequireSecuritySignature" -RegValue "1" -SettingName "Require SMB Signing - LanManServer"
   if ($check -contains 1) { return $True } else { return $False }
 }
 

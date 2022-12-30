@@ -51,7 +51,7 @@
 Param (
     [Parameter(Mandatory,ValueFromPipeline,HelpMessage="Enter UNC's to server to test (dummy file will be saved in this path)")]
     [String[]]$Path,
-    [ValidateRange(1,1000)]
+    [ValidateRange(1,8001)]
     [int]$Size = 20
 )
 
