@@ -331,6 +331,17 @@ $Rows = @()
 $CSVData | ForEach-Object {
 # Search by title:
   $QID=($_.QID).Replace('.0','') 
+
+  if ($_.Title -like "Apple iCloud for Windows*") {
+    if (!($QIDsAppleiCloud -contains $QID)) {
+      Add-VulnToQIDList $QID $_.Title  'QIDsAppleiTunes'
+    }
+  }
+  if ($_.Title -like "Apple iTunes for Windows*") {
+    if (!($QIDsAppleiTunes -contains $QID)) {
+      Add-VulnToQIDList $QID $_.Title  'QIDsAppleiTunes'
+    }
+  }
   if ($_.Title -like "Chrome*") {
     if (!($QIDsTeamviewer -contains $QID)) {
       Add-VulnToQIDList $QID $_.Title  'QIDsTeamViewer'
@@ -341,7 +352,7 @@ $CSVData | ForEach-Object {
       Add-VulnToQIDList $QID $_.Title  'QIDsFirefox'
     }
   }
-  if ($_.Title -like "Zoom*") {
+  if ($_.Title -like "Zoom Client*") {
     if (!($QIDsZoom -contains $QID)) {
       Add-VulnToQIDList $QID $_.Title  'QIDsZoom'
     }
@@ -705,6 +716,26 @@ foreach ($QID in $QIDs) {
             #>
             $QIDsIntelGraphicsDriver = 1 # All done, remove variable to prevent this from running twice
         } else { $QIDsIntelGraphicsDriver=1 }
+      }
+      
+      { $QIDsAppleiCloud -contains $_ } {
+        <#
+        if (Get-YesNo "$_ Install newest Apple iCloud? ") { 
+            Invoke-WebRequest "" -OutFile "$($tmp)\icloud.exe"
+            cmd /c "$($tmp)\icloud.exe"
+            $QIDsAppleiCloud = 1 # All done, remove variable to prevent this from running twice
+        } else { $QIDsAppleiCloud = 1 } # Do not ask again
+        #>
+        # https://silentinstallhq.com/apple-icloud-install-and-uninstall-powershell/  # THIS SHOULD BE USEFUL.....
+        "$_ Can't deploy Apple iCloud via script yet!!! Please install manually! Opening Browser to iCloud page: "
+        explorer "https://apps.microsoft.com/store/detail/icloud/9PKTQ5699M62?hl=en-us&gl=us"
+      }
+      { $QIDsAppleiTunes -contains $_ } {
+        if (Get-YesNo "$_ Install newest Apple iTunes? ") { 
+            Invoke-WebRequest "https://ninite.com/itunes/ninite.exe" -OutFile "$($tmp)\itunes.exe"
+            cmd /c "$($tmp)\itunes.exe"
+            $QIDsAppleiTunes = 1 # All done, remove variable to prevent this from running twice
+        } else { $QIDsAppleiTunes = 1 } # Do not ask again
       }
       { $QIDsChrome -contains $_ } {
         if (Get-YesNo "$_ Install newest Google Chrome? ") { 
