@@ -55,7 +55,7 @@ function Get-YesNo {
   }
 }
 
-$Version = "0.29"
+$Version = "0.28"
 $VersionInfo = "v$($Version) - Last modified: 1/24/22"
 $hostname = $env:COMPUTERNAME
 $datetime = Get-Date -Format "yyyy-MM-dd HH:mm:ss K"
@@ -79,9 +79,10 @@ if (([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDat
 
 # Lets check SERVER first as that is our default..
 if (Test-Connection "SERVER" -Count 2 -Delay 1 -Quiet) {
-  if (Get-Item "\\SERVER\data\secaud\Install-SecurityFixes.ps1")
-  $ServerName = "SERVER" # if SERVER is on the network, and I can get the script from there, lets assume that is where we are runnign it.
-} else {
+  if (Get-Item "\\SERVER\data\secaud\Install-SecurityFixes.ps1") {
+    $ServerName = "SERVER" # if SERVER is on the network, and I can get the script from there,..
+  }
+} else {  #Can't ping SERVER
   Write-Output "`n[.] Checking $ServerName for connectivity.."
   if ($ServerName) {
     if (!(Test-Connection $ServerName -Count 2 -Delay 1 -Quiet)) {
@@ -94,21 +95,22 @@ if (Test-Connection "SERVER" -Count 2 -Delay 1 -Quiet) {
 }
 
 Function Check-NewerVersion { 
-  param [string]$File
+  param ([string]$File)
+
   $FileContents = Get-Content $File 
   foreach ($line in $FileContents) {
     if ($line -like '$VersionInfo = *') {
       $VersionFound = $line.split('$VersionInfo = ')[1]
       Write-Verbose "New script Version Found: $VersionFound"
       if ($VersionFound -gt $Version) {
-        return True
+        return $true
       } else {
         Write-Verbose "Version found is not newer than $($Version)"
       }
       
     }
   }  
-  return False
+  return $false
 }
 
 # Check for updated version of script on github
