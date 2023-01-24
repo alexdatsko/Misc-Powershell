@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 ##################################################################
 # Get-LocalSessionMaanger-Code5.ps1
 # Alex Datsko @ MME Consulting Inc.
@@ -84,5 +84,4 @@ $Results = Foreach ($Event in $Events) {
   }
 } 
 
->>>>>>> 789b4d5dde1cb51e650d191400987b7331e1195e
 #| Export-Csv C:\temp\RDS.csv -NoType

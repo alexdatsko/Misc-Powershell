@@ -55,8 +55,6 @@ function Get-YesNo {
   }
 }
 
-$Version = "0.29"
-$VersionInfo = "v$($Version) - Last modified: 1/24/22"
 $hostname = $env:COMPUTERNAME
 $datetime = Get-Date -Format "yyyy-MM-dd HH:mm:ss K"
 $datetimedateonly = Get-Date -Format "yyyy-MM-dd"
@@ -64,7 +62,7 @@ $osinstalldate = ([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSyste
 $serialnumber = (wmic bios get serialnumber)
 Write-Host "`r`n================================================================" -ForegroundColor DarkCyan
 Write-Host "[i] Install-SecurityFixes.ps1" -ForegroundColor Cyan
-Write-Host "[i]   $($VersionInfo)" -ForegroundColor Cyan
+Write-Host "[i]   v0.28 - Last modified: 1/9/22" -ForegroundColor Cyan
 Write-Host "[i]   Alex Datsko - alex.datsko@mmeconsulting.com" -ForegroundColor Cyan
 Write-Host "[i] Date / Time : $datetime" -ForegroundColor Cyan
 Write-Host "[i] Computername : $hostname " -ForegroundColor Cyan
@@ -77,55 +75,13 @@ if (([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDat
   }
 }
 
-# Lets check SERVER first as that is our default..
-if (Test-Connection "SERVER" -Count 2 -Delay 1 -Quiet) {
-  if (Get-Item "\\SERVER\data\secaud\Install-SecurityFixes.ps1")
-  $ServerName = "SERVER" # if SERVER is on the network, and I can get the script from there, lets assume that is where we are runnign it.
-} else {
-  Write-Output "`n[.] Checking $ServerName for connectivity.."
-  if ($ServerName) {
-    if (!(Test-Connection $ServerName -Count 2 -Delay 1 -Quiet)) {
-      $ServerName = Read-Host "[!] Couldn't ping SERVER or $ServerName .. please enter the server name where we can find the .CSV file, or press enter to read it out of the current folder: "
-      if (!($ServerName)) { 
-        $ServerName = "$($env:computername)"
-      }
-    }
+Write-Output "`n[.] Checking $ServerName for connectivity.."
+if ($ServerName) {
+  if (!(Test-Connection $ServerName -Count 2 -Delay 2 -Quiet)) {
+    $ServerName = Read-Host "[!] Couldn't ping $ServerName .. please enter the server name where we can find the .CSV file, or press enter to read it out of the current folder: "
+    # Don't really care here, if we can't find it later we will give options.
   }
 }
-
-Function Check-NewerVersion { 
-  param [string]$File
-  $FileContents = Get-Content $File 
-  foreach ($line in $FileContents) {
-    if ($line -like '$VersionInfo = *') {
-      $VersionFound = $line.split('$VersionInfo = ')[1]
-      Write-Verbose "New script Version Found: $VersionFound"
-      if ($VersionFound -gt $Version) {
-        return True
-      } else {
-        Write-Verbose "Version found is not newer than $($Version)"
-      }
-      
-    }
-  }  
-  return False
-}
-
-# Check for updated version of script on github
-$url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/Install-SecurityFixes.ps1"
-if ((Invoke-WebRequest $url).StatusCode -eq 200) { 
-  wget $url -OutFile "$($tmp)\Install-SecurityFixes.ps1"
-  if (Check-NewerVersion -File "$($tmp)\Install-SecurityFixes.ps1") {  #Creationtime won't work here
-      # Copy the new script over this one and run..
-      Copy-Item "$($tmp)\Install-SecurityFixes.ps1" "\\$($Servername)\data\secaud\Install-SecurityFixes.ps1"
-      $(Get-Item "\\$($Servername)\data\secaud\Install-SecurityFixes.ps1").CreationTimeUtc = [DateTime]::UtcNow
-      &"\\$($Servername)\data\secaud\Install-SecurityFixes.ps1"
-      exit
-  }
-  Write-Verbose "Continuing original script; will not get here if we updated.."
-}
-
-exit
 
 # Lets read in the QID list from a file instead so I can update it easier.
 # I think at this point, maybe it will just be a 2nd powershell file that will set the variables and I can search and replace as needed to update them.
@@ -629,7 +585,6 @@ Write-Host "`n"
 foreach ($QID in $QIDs) {
     $ThisQID = $QID
     $ThisTitle = (($Rows | Where-Object { $_.QID -eq $ThisQID }) | Select-Object -First 1).Title
-    $Results = (($Rows | Where-Object { $_.QID -eq $ThisQID }) | Select-Object -First 1).Results
     switch ([int]$QID)
     {
       376023 { 
@@ -813,13 +768,6 @@ foreach ($QID in $QIDs) {
         if (Get-YesNo "$_ Install GhostScript 10.0.0? ") {
           Invoke-WebRequest "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs1000/gs1000w32.exe" -OutFile "$($tmp)\ghostscript.exe"
           cmd.exe /c "$($tmp)\ghostscript.exe /S"
-          #Delete results file, i.e        "C:\Program Files (x86)\GPLGS\gsdll32.dll found#" as lots of times the installer does not clean this up..
-          $FileToDelete=$results.split(' found')[0]
-          Write-Host "[.] Removing $($FileToDelete) .."
-          Remove-Item $FileToDelete -Force
-          if (Test-Path $FileToDelete) {
-            Write-Output "[x] Could not delete $($FileToDelete), please remove manually!"
-          }
         }
       }
       110330 {  
