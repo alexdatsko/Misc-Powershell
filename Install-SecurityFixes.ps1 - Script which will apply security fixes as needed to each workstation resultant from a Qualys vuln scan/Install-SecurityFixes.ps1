@@ -55,7 +55,7 @@ function Get-YesNo {
   }
 }
 
-$Version = "0.28"
+$Version = "0.27"
 $VersionInfo = "v$($Version) - Last modified: 1/24/22"
 $hostname = $env:COMPUTERNAME
 $datetime = Get-Date -Format "yyyy-MM-dd HH:mm:ss K"
@@ -100,7 +100,7 @@ Function Check-NewerVersion {
   $FileContents = Get-Content $File 
   foreach ($line in $FileContents) {
     if ($line -like '$VersionInfo = *') {
-      $VersionFound = $line.split('$VersionInfo = ')[1]
+      $VersionFound = $line.split('$Version = ')[1]
       Write-Verbose "New script Version Found: $VersionFound"
       if ($VersionFound -gt $Version) {
         return $true
@@ -113,11 +113,12 @@ Function Check-NewerVersion {
   return $false
 }
 
-# Check for updated version of script on github
+Write-Output "[.] Checking for updated version of script on github.."
 $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/Install-SecurityFixes.ps1"
 if ((Invoke-WebRequest $url).StatusCode -eq 200) { 
   wget $url -OutFile "$($tmp)\Install-SecurityFixes.ps1"
   if (Check-NewerVersion -File "$($tmp)\Install-SecurityFixes.ps1") {  #Creationtime won't work here
+      Write-Output "[+] Found newer version, using it instead."
       # Copy the new script over this one and run..
       Copy-Item "$($tmp)\Install-SecurityFixes.ps1" "\\$($Servername)\data\secaud\Install-SecurityFixes.ps1"
       $(Get-Item "\\$($Servername)\data\secaud\Install-SecurityFixes.ps1").CreationTimeUtc = [DateTime]::UtcNow
