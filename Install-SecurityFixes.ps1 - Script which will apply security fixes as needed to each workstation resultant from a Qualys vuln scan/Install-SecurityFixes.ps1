@@ -55,7 +55,7 @@ function Get-YesNo {
   }
 }
 
-$Version = "0.27"
+$Version = "0.29"
 $VersionInfo = "v$($Version) - Last modified: 1/24/22"
 $hostname = $env:COMPUTERNAME
 $datetime = Get-Date -Format "yyyy-MM-dd HH:mm:ss K"
@@ -99,8 +99,8 @@ Function Check-NewerVersion {
 
   $FileContents = Get-Content $File 
   foreach ($line in $FileContents) {
-    if ($line -like '$VersionInfo = *') {
-      $VersionFound = $line.split('$Version = ')[1]
+    if ($line -like '`$Version = *') {
+      $VersionFound = $line.split('=')[1].trim()
       Write-Verbose "New script Version Found: $VersionFound"
       if ($VersionFound -gt $Version) {
         return $true
@@ -125,7 +125,7 @@ if ((Invoke-WebRequest $url).StatusCode -eq 200) {
       &"\\$($Servername)\data\secaud\Install-SecurityFixes.ps1"
       exit
   }
-  Write-Verbose "Continuing original script; will not get here if we updated.."
+  Write-Verbose "Continuing script.. Will not get here if we updated."
 }
 
 exit
