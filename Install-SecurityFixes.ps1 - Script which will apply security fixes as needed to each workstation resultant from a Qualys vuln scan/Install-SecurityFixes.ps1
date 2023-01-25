@@ -10,7 +10,7 @@ param (
 #Clear
 
 # Configuration items:
-$ServerName = "dc-server"                    # Change as needed!
+$ServerName = "SERVER"                       # Change as needed!
 $CSVLocation = "Data\SecAud"
 $tmp = "$($env:temp)\SecAud"                 # Temporary folder to save downloaded files to
 $oldPwd = $pwd                               # Grab location script was run from
@@ -18,8 +18,11 @@ $IgnoreDaysOld = 30                          # if machine is <30 days old, we li
 $QIDsListFile = "$oldpwd\QIDLists.ps1"       # List of QID vulns to check
 $QIDsIgnoreFile = "$oldpwd\QIDIgnore.ps1"    # List of QID vulns to ignore
 $QIDsAdded = @()
-
 $OSVersion = ([environment]::OSVersion.Version).Major
+
+# Script specific vars:
+$Version = "0.30"
+$VersionInfo = "v$($Version) - Last modified: 1/25/22"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -44,19 +47,25 @@ if ($Automated) {
 }
 
 function Get-YesNo {
-  param ([string] $text)
-
+  param ([string] $text,
+         [string] $results)
+  
+  $done = 0
   if (!($Automated)) { 
-    $yesno = Read-Host  "[?] $text [n] "
-    if ($yesno.ToUpper()[0] -eq 'Y') { return $true } else { return $false }
+    while ($done -eq 0) {
+      $yesno = Read-Host  "[?] $text [n] "
+      if ($yesno.ToUpper()[0] -eq 'Y') { return $true } 
+      if ($yesno.ToUpper()[0] -eq 'N' -or $yesno -eq '') { return $false } 
+      if ($yesno.ToUpper()[0] -eq 'S') { Write-Output $Results }
+    }
   } else { 
-    Write-Output "[.] Applying fix for $text .."
+    Write-Output "[i] Results: "
+    Write-Output $Results 
+    Write-Output "[+] Applying fix for $text .."
     return $true
   }
 }
 
-$Version = "0.29"
-$VersionInfo = "v$($Version) - Last modified: 1/24/22"
 $hostname = $env:COMPUTERNAME
 $datetime = Get-Date -Format "yyyy-MM-dd HH:mm:ss K"
 $datetimedateonly = Get-Date -Format "yyyy-MM-dd"
@@ -100,12 +109,15 @@ Function Check-NewerVersion {
   $FileContents = Get-Content $File 
   foreach ($line in $FileContents) {
     if ($line -like '`$Version = *') {
-      $VersionFound = $line.split('=')[1].trim()
-      Write-Verbose "New script Version Found: $VersionFound"
-      if ($VersionFound -gt $Version) {
+      $VersionFound = $line.split('=')[1].trim().replace('"','')
+      Write-Verbose " New script version: $VersionFound"
+      Write-Verbose " New script version Hex: $($VersionFound | Format-Hex)"
+      Write-Verbose " Old version: $Version "
+      Write-Verbose " Old version hex: $($Version | Format-Hex)"
+      if ([version]$VersionFound -gt [version]$Version) {
         return $true
       } else {
-        Write-Verbose "Version found is not newer than $($Version)"
+        Write-Output "[.] Version found $($VersionFound) is not newer than $($Version)"
       }
       
     }
@@ -116,19 +128,22 @@ Function Check-NewerVersion {
 Write-Output "[.] Checking for updated version of script on github.."
 $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/Install-SecurityFixes.ps1"
 if ((Invoke-WebRequest $url).StatusCode -eq 200) { 
-  wget $url -OutFile "$($tmp)\Install-SecurityFixes.ps1"
+  $client = new-object System.Net.WebClient
+  $client.Encoding = [System.Text.Encoding]::ascii
+  $client.DownloadFile("$url","$($tmp)\Install-SecurityFixes.ps1")
+  $client.Dispose()
+  
   if (Check-NewerVersion -File "$($tmp)\Install-SecurityFixes.ps1") {  #Creationtime won't work here
-      Write-Output "[+] Found newer version, using it instead."
-      # Copy the new script over this one and run..
+      Write-Output "[+] Found newer version, copying over old script"
+      # Copy the new script over this one and run..  Likely this will cause issues .. Lets see..
       Copy-Item "$($tmp)\Install-SecurityFixes.ps1" "\\$($Servername)\data\secaud\Install-SecurityFixes.ps1"
       $(Get-Item "\\$($Servername)\data\secaud\Install-SecurityFixes.ps1").CreationTimeUtc = [DateTime]::UtcNow
+      Write-Output "[+] Launching new script.."
       &"\\$($Servername)\data\secaud\Install-SecurityFixes.ps1"
       exit
   }
   Write-Verbose "Continuing script.. Will not get here if we updated."
 }
-
-exit
 
 # Lets read in the QID list from a file instead so I can update it easier.
 # I think at this point, maybe it will just be a 2nd powershell file that will set the variables and I can search and replace as needed to update them.
@@ -154,8 +169,10 @@ if (!($QIDsIgnored)) {
 
 
 function Remove-Software {
-  param ($Products)
-
+  param ([string]$Products,
+         [string]$Results)
+  
+  Write-Verbose "Results: $Results"
   foreach ($Product in $Products) { # Remove multiple products if passed..
     $Guid = $Product | Select-Object -ExpandProperty IdentifyingNumber
     $Name = $Product | Select-Object -ExpandProperty Name
@@ -394,7 +411,8 @@ param ([string]$RedirectPath)
 }
 
 function Delete-Folder {
-  param ($FolderToDelete)
+  param ([string]$FolderToDelete,
+         [string]$Results)
 
   if (Test-Path $FolderToDelete -PathType Container) {
     if (Get-YesNo "Found Folder $($FolderToDelete). Try to remove? ") { 
@@ -410,7 +428,8 @@ function Delete-Folder {
 }
 
 function Delete-File {
-  param ($FileToDelete)
+  param ([string]$FileToDelete,
+         [string]$Results)
   
   if (Test-Path $FileToDelete -PathType Leaf) {
     if (Get-YesNo "Found file $($FileToDelete). Try to remove? ") { 
@@ -437,6 +456,28 @@ function Delete-File {
   } else {
     Write-Output "[!] NOT FIXED. $FileToDelete cannot be found with Test-Path, or might not be a Leaf type.  Manual intervention will be required!"
   }
+}
+
+function Parse-ResultsFolder {  
+  param ([string]$Results)
+  # Example:
+  #   %systemdrive%\Users\Ben-Doctor.CHILDERSORTHO\AppData\Roaming\Zoom\bin\Zoom.exe  Version is  5.9.1.2581#
+  # should return:
+  # C:\Users\Ben-Doctor.CHILDERSORTHO\AppData\Roaming\Zoom\bin
+  $PathResults = ($Results -split('Version is')).trim()
+  $PathRaw = Split-Path ($PathResults.replace("%appdata%","$env:appdata").replace("%computername%","$env:computername").replace("%home%","$env:home").replace("%systemroot%","$env:systemroot").replace("%systemdrive%","$env:systemdrive").replace("%programdata%","$env:programdata").replace("%programfiles%","$env:programfiles").replace("%programfiles(x86)%","$env:programfiles(x86)").replace("%programw6432%","$env:programw6432"))
+  return $PathRaw
+} 
+
+function Parse-ResultsFile {  
+  param ([string]$Results)
+  # Example:
+  #   %systemdrive%\Users\Ben-Doctor.CHILDERSORTHO\AppData\Roaming\Zoom\bin\Zoom.exe  Version is  5.9.1.2581#
+  # should return:
+  # C:\Users\Ben-Doctor.CHILDERSORTHO\AppData\Roaming\Zoom\bin
+  $PathResults = ($Results -split('Version is')).trim()
+  $PathRaw = $PathResults.replace("%appdata%","$env:appdata").replace("%computername%","$env:computername").replace("%home%","$env:home").replace("%systemroot%","$env:systemroot").replace("%systemdrive%","$env:systemdrive").replace("%programdata%","$env:programdata").replace("%programfiles%","$env:programfiles").replace("%programfiles(x86)%","$env:programfiles(x86)").replace("%programw6432%","$env:programw6432")
+  return $PathRaw
 }
 
 ############################################# MAIN ###############################################
@@ -649,7 +690,7 @@ foreach ($QID in $QIDs) {
         }
       }
       105228 { 
-        if (Get-YesNo "$_ Disable guest account and rename to NoVisitors ? ") {
+        if (Get-YesNo "$_ Disable guest account and rename to NoVisitors ? " -Results $Results) {
             if ($OSVersion -ge 7) {
               Rename-LocalUser -Name "Guest" -NewName "NoVisitors" | Disable-LocalUser
             } else {
@@ -659,7 +700,7 @@ foreach ($QID in $QIDs) {
         }
       }
       { $QIDsSpectreMeltdown -contains $_ } {
-        if (Get-YesNo "$_ Fix spectre4/meltdown ? ") {
+        if (Get-YesNo "$_ Fix spectre4/meltdown ? " -Results $Results) {
             cmd /c 'reg add "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v FeatureSettingsOverride /t REG_DWORD /d 72 /f'
             cmd /c 'reg add "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v FeatureSettingsOverrideMask /t REG_DWORD /d 3 /f'
             #cmd /c 'reg query "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization" '
@@ -668,14 +709,14 @@ foreach ($QID in $QIDs) {
         } else { $QIDsSpectreMeltdown = 1 }
       }
       110414 {
-        if (Get-YesNo "$_ Fix Microsoft Outlook Denial of Service (DoS) Vulnerability Security Update August 2022 ? ") { 
+        if (Get-YesNo "$_ Fix Microsoft Outlook Denial of Service (DoS) Vulnerability Security Update August 2022 ? " -Results $Results) { 
           Invoke-WebRequest "https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/outlook-x-none_1763a730d8058df2248775ddd907e32694c80f52.cab" -outfile "$($tmp)\outlook-x-none.cab"
           cmd /c "C:\Windows\System32\expand.exe -F:* $($tmp)\outlook-x-none.cab $($tmp)"
           cmd /c "msiexec /p $($tmp)\outlook-x-none.msp /qn"
         }
       }
       110413 {
-        if (Get-YesNo "$_ Fix Microsoft Office Security Update for August 2022? ") { 
+        if (Get-YesNo "$_ Fix Microsoft Office Security Update for August 2022? " -Results $Results) { 
           Write-Host "[.] Downloading CAB: https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/msohevi-x-none_a317be1090606cd424132687bc627baffec45292.cab .."
           Invoke-WebRequest "https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/msohevi-x-none_a317be1090606cd424132687bc627baffec45292.cab" -outfile "$($tmp)\msohevi-x-none.msp"
           Write-Host "[.] Extracting cab: C:\Windows\System32\expand.exe -F: $($tmp)\msohevi-x-none.msp $($tmp)"
@@ -693,7 +734,7 @@ foreach ($QID in $QIDs) {
         }
       }
       110412 {
-        if (Get-YesNo "$_ Fix Microsoft Office Security Update for July 2022? ") { 
+        if (Get-YesNo "$_ Fix Microsoft Office Security Update for July 2022? " -Results $Results) { 
           Write-Host "[.] Downloading CAB: https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/excel-x-none_355a1faf5d9fb095c7be862eb16105cfb2f24ca2.cab .."
           Invoke-WebRequest "http://catalog.s.download.windowsupdate.com/d/msdownload/update/software/secu/2022/06/vbe7-x-none_1b914b1d60119d31176614c2414c0e372756076e.cab" -outfile "$($tmp)\vbe7-x-none.cab"
           Write-Host "[.] Extracting cab: C:\Windows\System32\expand.exe -F: $($tmp)\vbe7-x-none.msp $($tmp)"
@@ -703,24 +744,24 @@ foreach ($QID in $QIDs) {
         }
       }
       91738 {
-        if (Get-YesNo "$_  - fix ipv4 source routing bug/ipv6 global reassemblylimit? ") { 
+        if (Get-YesNo "$_  - fix ipv4 source routing bug/ipv6 global reassemblylimit? " -Results $Results) { 
             netsh int ipv4 set global sourceroutingbehavior=drop
             Netsh int ipv6 set global reassemblylimit=0
         }
       }
       375589 {  
-        if (Get-YesNo "$_ - Delete Dell DbUtil_2_3.sys ? ") {
+        if (Get-YesNo "$_ - Delete Dell DbUtil_2_3.sys ? " -Results $Results) {
             cmd /c 'del c:\users\dbutil_2_3*.sys /s /f /q'
         }
       }
       100413 {
-        if (Get-YesNo "$_ CVE-2017-8529 - IE Feature_Enable_Print_Info_Disclosure fix ? ") {
+        if (Get-YesNo "$_ CVE-2017-8529 - IE Feature_Enable_Print_Info_Disclosure fix ? " -Results $Results) {
             cmd /c 'reg add "HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_ENABLE_PRINT_INFO_DISCLOSURE_FIX" /f'
             cmd /c 'reg add "HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_ENABLE_PRINT_INFO_DISCLOSURE_FIX" /v iexplore.exe /t REG_DWORD /d 1 /f'
         }
       }
       { 105170,105171 -contains $_ } { 
-        if (Get-YesNo "$_ - Windows Explorer Autoplay not Disabled ? ") {
+        if (Get-YesNo "$_ - Windows Explorer Autoplay not Disabled ? " -Results $Results) {
             cmd /c 'reg add "HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer\"  /v NoDriveTypeAutoRun /t REG_DWORD /d 255 /f'
             cmd /c 'reg add "HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\policies\Explorer\"  /v NoDriveTypeAutoRun /t REG_DWORD /d 255 /f'
             # QID105170,105171 - disable autoplay
@@ -733,20 +774,20 @@ foreach ($QID in $QIDs) {
         }
       }
       90044 {
-        if (Get-YesNo "$_ - Allowed SMB Null session ? ") {
+        if (Get-YesNo "$_ - Allowed SMB Null session ? " -Results $Results) {
             cmd /c 'reg add "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Lsa" /v RestrictAnonymous /t REG_DWORD /d 1 /f'
             cmd /c 'reg add "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Lsa" /v RestrictAnonymousSAM /t REG_DWORD /d 1 /f'
             cmd /c 'reg add "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Lsa" /v EveryoneIncludesAnonymous /t REG_DWORD /d 0 /f'
         }
       }
       90007 {
-        if (Get-YesNo "$_ - Enabled Cached Logon Credential ? ") {
+        if (Get-YesNo "$_ - Enabled Cached Logon Credential ? " -Results $Results) {
           cmd /c 'reg query "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v CachedLogonsCount'  
           cmd /c 'reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v CachedLogonsCount /t REG_SZ /d 0 /f'
         }
       }
       90043 {
-        if (Get-YesNo "$_ - SMB Signing Disabled / Not required (Both LanManWorkstation and LanManServer)) ? ") {
+        if (Get-YesNo "$_ - SMB Signing Disabled / Not required (Both LanManWorkstation and LanManServer)) ? " -Results $Results) {
             cmd /c 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManWorkstation\Parameters"  /v EnableSecuritySignature /t REG_DWORD /d 1 /f'
             cmd /c 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManWorkstation\Parameters"  /v RequireSecuritySignature /t REG_DWORD /d 1 /f'
             cmd /c 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters"  /v EnableSecuritySignature /t REG_DWORD /d 1 /f'
@@ -755,7 +796,7 @@ foreach ($QID in $QIDs) {
         }
       }
       91805 {
-        if (Get-YesNo "$_ - Remove Windows10 UpdateAssistant? ") {
+        if (Get-YesNo "$_ - Remove Windows10 UpdateAssistant? " -Results $Results) {
             $Name="UpdateAssistant"
             $Path = "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\{D5C69738-B486-402E-85AC-2456D98A64E4}"
 
@@ -799,13 +840,18 @@ foreach ($QID in $QIDs) {
         }
       }
       { $QIDsUpdateMicrosoftStoreApps -contains $_ } {
-        if (Get-YesNo "$_ Update all store apps? ") {
-          Write-Host "[!] Updating store apps.." -ForegroundColor Yellow
+        if (Get-YesNo "$_ Update all store apps? " -Results $Results) {
+          Write-Output "[+] Updating store apps.." 
           $namespaceName = "root\cimv2\mdm\dmmap"
           $className = "MDM_EnterpriseModernAppManagement_AppManagement01"
           $wmiObj = Get-WmiObject -Namespace $namespaceName -Class $className
           $result = $wmiObj.UpdateScanMethod()
-          Write-Host "[!] Done!" -ForegroundColor Green
+          Write-Verbose $result
+          Write-Output "[+] Trying to update via WinGet .." 
+          $result2 = winget upgrade --all --accept-source-agreements --accept-package-agreements --silent
+          Write-Verbose $result2
+          Write-Output "[!] Done!`n"    
+          
         }
       }
       
@@ -813,7 +859,7 @@ foreach ($QID in $QIDs) {
         # Install newest apps via Ninite
 
       { $QIDsGhostScript -contains $_ } {
-        if (Get-YesNo "$_ Install GhostScript 10.0.0? ") {
+        if (Get-YesNo "$_ Install GhostScript 10.0.0? " -Results $Results) {
           Invoke-WebRequest "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs1000/gs1000w32.exe" -OutFile "$($tmp)\ghostscript.exe"
           cmd.exe /c "$($tmp)\ghostscript.exe /S"
           #Delete results file, i.e        "C:\Program Files (x86)\GPLGS\gsdll32.dll found#" as lots of times the installer does not clean this up..
@@ -826,13 +872,13 @@ foreach ($QID in $QIDs) {
         }
       }
       110330 {  
-        if (Get-YesNo "$_ - Install Microsoft Office KB4092465? ") {
+        if (Get-YesNo "$_ - Install Microsoft Office KB4092465? " -Results $Results) {
             Invoke-WebRequest "https://download.microsoft.com/download/3/6/E/36EF356E-85E4-474B-AA62-80389072081C/mso2007-kb4092465-fullfile-x86-glb.exe" -outfile "$($tmp)\kb4092465.exe"
             cmd.exe /c "$($tmp)\kb4092465.exe /quiet /passive /norestart"
         }
       }
       372348 {
-        if (Get-YesNo "$_ - Intel Chipset INF util ? ") {
+        if (Get-YesNo "$_ - Intel Chipset INF util ? " -Results $Results) {
             Invoke-WebRequest "https://downloadmirror.intel.com/30553/eng/setupchipset.exe" -OutFile "$($tmp)\setupchipset.exe"
             # "https://downloadmirror.intel.com/30553/eng/setupchipset.exe"
             cmd /c "$($tmp)\setupchipset.exe -s -accepteula  -norestart -log $($tmp)\intelchipsetinf.log"
@@ -842,7 +888,7 @@ foreach ($QID in $QIDs) {
         }
       }
       372300 {
-        if (Get-YesNo "$_ - Intel RST ? ") {
+        if (Get-YesNo "$_ - Intel RST ? " -Results $Results) {
             Invoke-WebRequest "https://downloadmirror.intel.com/655256/SetupRST.exe" -OutFile "$($tmp)\setuprst.exe"
             cmd /c "$($tmp)\setuprst.exe -s -accepteula -norestart -log $($tmp)\intelrstinf.log"
             # OR, extract MSI from this exe and run: 
@@ -850,7 +896,7 @@ foreach ($QID in $QIDs) {
         }   
       }
       { $QIDsIntelGraphicsDriver  -contains $_ } {
-        if (Get-YesNo "$_ Install newest Intel Graphics Driver? ") { 
+        if (Get-YesNo "$_ Install newest Intel Graphics Driver? " -Results $Results) { 
           Write-Output "[!] THIS WILL NEED TO BE RUN MANUALLY... OPENING BROWSER TO INTEL SUPPORT ASSISTANT PAGE!"
           explorer "https://www.intel.com/content/www/us/en/support/intel-driver-support-assistant.html"
            <#
@@ -900,14 +946,14 @@ foreach ($QID in $QIDs) {
         explorer "https://apps.microsoft.com/store/detail/icloud/9PKTQ5699M62?hl=en-us&gl=us"
       }
       { $QIDsAppleiTunes -contains $_ } {
-        if (Get-YesNo "$_ Install newest Apple iTunes? ") { 
+        if (Get-YesNo "$_ Install newest Apple iTunes? " -Results $Results) { 
             Invoke-WebRequest "https://ninite.com/itunes/ninite.exe" -OutFile "$($tmp)\itunes.exe"
             cmd /c "$($tmp)\itunes.exe"
             $QIDsAppleiTunes = 1 # All done, remove variable to prevent this from running twice
         } else { $QIDsAppleiTunes = 1 } # Do not ask again
       }
       { $QIDsChrome -contains $_ } {
-        if (Get-YesNo "$_ Install newest Google Chrome? ") { 
+        if (Get-YesNo "$_ Install newest Google Chrome? " -Results $Results) { 
             #  Google Chrome - https://ninite.com/chrome/ninite.exe
             Invoke-WebRequest "https://ninite.com/chrome/ninite.exe" -OutFile "$($tmp)\ninite.exe"
             cmd /c "$($tmp)\ninite.exe"
@@ -915,23 +961,29 @@ foreach ($QID in $QIDs) {
         } else { $QIDsChrome = 1 }
       }
       { $QIDsFirefox -contains $_ } {
-        if (Get-YesNo "$_ Install newest Firefox? ") { 
+        if (Get-YesNo "$_ Install newest Firefox? " -Results $Results) { 
             #  Firefox - https://ninite.com/firefox/ninite.exe
             Invoke-WebRequest "https://ninite.com/firefox/ninite.exe" -OutFile "$($tmp)\ninite.exe"
             cmd /c "$($tmp)\ninite.exe"
+            $ResultsFolder = Parse-ResultsFolder $Results
+            if ($ResultsFolder -like "**") {
+              Remove-Folder $ResultsFolder
+            }          
             $QIDsFirefox = 1
         } else { $QIDsFirefox = 1 }
       }
       { $QIDsZoom -contains $_ } {
-        if (Get-YesNo "$_ Install newest Zoom Client? ") { 
+        if (Get-YesNo "$_ Install newest Zoom Client? " -Results $Results) { 
             #  Zoom client - https://ninite.com/zoom/ninite.exe
             Invoke-WebRequest "https://ninite.com/zoom/ninite.exe" -OutFile "$($tmp)\ninite.exe"
             cmd /c "$($tmp)\ninite.exe"
+            #If Zoom folder is in another users AppData\Local folder, this will not work
+            Remove-Folder (Parse-ResultsFolder $Results)
             $QIDsZoom = 1
         } else { $QIDsZoom = 1 }
       }
       { $QIDsTeamViewer -contains $_ } {
-        if (Get-YesNo "$_ Install newest Teamviewer? ") { 
+        if (Get-YesNo "$_ Install newest Teamviewer? " -Results $Results) { 
             #  Teamviewer - https://ninite.com/teamviewer15/ninite.exe
             Invoke-WebRequest "https://ninite.com/teamviewer15/ninite.exe" -OutFile "$($tmp)\ninite.exe"
             cmd /c "$($tmp)\ninite.exe"
@@ -939,7 +991,7 @@ foreach ($QID in $QIDs) {
         } else { $QIDsTeamViewer = 1 }
       }
       { $QIDsDropbox -contains $_ } {
-        if (Get-YesNo "$_ Install newest Dropbox? ") { 
+        if (Get-YesNo "$_ Install newest Dropbox? " -Results $Results) { 
             #  Dropbox - https://ninite.com/dropbox/ninite.exe
             Invoke-WebRequest "https://ninite.com/dropbox/ninite.exe" -OutFile "$($tmp)\ninite.exe"
             cmd /c "$($tmp)\ninite.exe"
@@ -951,7 +1003,7 @@ foreach ($QID in $QIDs) {
         # Others: (non-ninite)
   
       { $QIDsOracleJava -contains $_ } {
-        if (Get-YesNo "$_ Check Oracle Java for updates? ") { 
+        if (Get-YesNo "$_ Check Oracle Java for updates? " -Results $Results) { 
             #  Oracle Java 17 - https://download.oracle.com/java/17/latest/jdk-17_windows-x64_bin.msi
             #wget "https://download.oracle.com/java/18/latest/jdk-18_windows-x64_bin.msi" -OutFile "$($tmp)\java17.msi"
             #msiexec /i "$($tmp)\java18.msi" /qn /quiet /norestart
@@ -960,31 +1012,31 @@ foreach ($QID in $QIDs) {
         } else { $QIDsOracleJava = 1 }
       }
       { $QIDsAdoptOpenJDK -contains $_ } {
-        if (Get-YesNo "$_ Install newest Adopt Java JDK? ") { 
+        if (Get-YesNo "$_ Install newest Adopt Java JDK? " -Results $Results) { 
             Invoke-WebRequest "https://ninite.com/adoptjavax8/ninite.exe" -OutFile "$($tmp)\ninitejava8x64.exe"
             cmd /c "$($tmp)\ninitejava8x64.exe"
             $QIDsAdoptOpenJDK = 1
         } else { $QIDsAdoptOpenJDK = 1 }
       }
       { $QIDsVirtualBox -contains $_ } {
-        if (Get-YesNo "$_ Install newest VirtualBox 6.1.36? ") { 
+        if (Get-YesNo "$_ Install newest VirtualBox 6.1.36? " -Results $Results) { 
             Invoke-WebRequest "https://download.virtualbox.org/virtualbox/6.1.36/VirtualBox-6.1.36-152435-Win.exe" -OutFile "$($tmp)\virtualbox.exe"
             cmd /c "$($tmp)\virtualbox.exe"
             $QIDsVirtualBox = 1
         } else { $QIDsVirtualBox = 1 } 
       }
       { $QIDsDellCommandUpdate -contains $_ } {
-        if (Get-YesNo "$_ Install newest Dell Command Update? ") { 
+        if (Get-YesNo "$_ Install newest Dell Command Update? " -Results $Results) { 
             #wget "https://dl.dell.com/FOLDER08334704M/2/Dell-Command-Update-Windows-Universal-Application_601KT_WIN_4.5.0_A00_01.EXE" -OutFile "$($tmp)\dellcommand.exe"
             cmd /c "\\server\data\secaud\Dell-Command-Update-Application_W4HP2_WIN_4.5.0_A00_02.EXE /s"
             $QIDsDellCommandUpdate  = 1
         } else { $QIDsDellCommandUpdate  = 1 }
       }
       { 105734 -eq $_ } {
-        if (Get-YesNo "$_ Remove older versions of Adobe Reader ? ") { 
+        if (Get-YesNo "$_ Remove older versions of Adobe Reader ? " -Results $Results) { 
           $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Adobe Reader*'})
           if ($Products) {
-            Remove-Software $Products
+            Remove-Software $Products -Results $Results
           } else {
             Write-Host "[!] Adobe products not found under 'Adobe Reader*' $Products !!`n" -ForegroundColor Red
           }  
@@ -1004,7 +1056,7 @@ foreach ($QID in $QIDs) {
       { $QIDsMicrosoftSilverlight -contains $_ } {
         $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{89F4137D-6C26-4A84-BDB8-2E5A4BB71E00}'})
         if ($Products) {
-            Remove-Software $Products
+            Remove-Software $Products -Results $Results
             $QIDsMicrosoftSilverlight = 1
         } else {
           Write-Host "[!] Guids not found: $Products !!`n" -ForegroundColor Red
@@ -1014,7 +1066,7 @@ foreach ($QID in $QIDs) {
       { $QIDsSQLServerCompact4 -contains $_ } {
         $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{78909610-D229-459C-A936-25D92283D3FD}'})
         if ($Products) {
-            Remove-Software $Products
+            Remove-Software $Products -Results $Results
             $QIDsSQLServerCompact4 = 1
         } else {
           Write-Host "[!] Guids not found: $Products !!`n" -ForegroundColor Red
@@ -1025,7 +1077,7 @@ foreach ($QID in $QIDs) {
         $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{90120000-00D1-0409-0000-0000000FF1CE}' -or `
                                                            $_.IdentifyingNumber -like '{90140000-00D1-0409-1000-0000000FF1CE}'})
         if ($Products) {
-            Remove-Software $Products
+            Remove-Software $Products -Results $Results
             $QIDsMicrosoftAccessDBEngine = 1
         } else {
           Write-Host "[!] Guids not found: $Products !!`n" -ForegroundColor Red
@@ -1034,7 +1086,7 @@ foreach ($QID in $QIDs) {
       }
       { $QIDsMicrosoftVisualStudioActiveTemplate -contains $_ } {
         $notfound = $true
-        if (Get-YesNo "$_ $_ Install Microsoft Visual C++ 2005/8 Service Pack 1 Redistributable Package MFC Security Update? ") { 
+        if (Get-YesNo "$_ $_ Install Microsoft Visual C++ 2005/8 Service Pack 1 Redistributable Package MFC Security Update? " -Results $Results) { 
           $Installed=get-wmiobject -class Win32_Product | Where-Object{ $_.Name -like '*Microsoft Visual*'} # | Format-Table IdentifyingNumber, Name, LocalPackage -AutoSize
           if ($Installed | Where-Object {$_.IdentifyingNumber -like '{9A25302D-30C0-39D9-BD6F-21E6EC160475}'}) { 
               Write-Host "[!] Found Microsoft Visual C++ 2008 Redistributable - x86 "
@@ -1094,7 +1146,7 @@ foreach ($QID in $QIDs) {
             #>
             $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{5A66E598-37BD-4C8A-A7CB-A71C32ABCD78}'})
             if ($Products) {
-                Remove-Software $Products
+                Remove-Software $Products -Results $Results
                 $QIDsMicrosoftNETCoreV5 = 1
             } else {
               Write-Host "[!] Guids not found: $Products !!`n" -ForegroundColor Red
@@ -1136,7 +1188,7 @@ foreach ($QID in $QIDs) {
         Support end date: 2014-07-08					
         Ext. end date: 2019-07-09					
 #>
-        if (Get-YesNo "$_ Install SQL Server $SQLVersion $SQLEdition update? ") { 
+        if (Get-YesNo "$_ Install SQL Server $SQLVersion $SQLEdition update? " -Results $Results) { 
           if ("$SQLVersion $SQLEdition" -eq "12.2.5000.0 Express Edition") { # SQL Server 2014 Express
             Invoke-WebRequest "https://www.microsoft.com/en-us/download/confirmation.aspx?id=54190&6B49FDFB-8E5B-4B07-BC31-15695C5A2143=1" -OutFile "$($tmp)\sqlupdate.exe"
             cmd /c "$($tmp)\sqlupdate.exe /q"
@@ -1148,7 +1200,7 @@ foreach ($QID in $QIDs) {
         }
       }
       { $QIDsNVIDIA -contains $_ } {
-        if (Get-YesNo "$_ Install newest NVidia drivers ? ") { 
+        if (Get-YesNo "$_ Install newest NVidia drivers ? " -Results $Results) { 
             $NvidiacardFound = $false
             Write-Host "[.] Video Cards found:"
             foreach($gpu in Get-WmiObject Win32_VideoController) {  
@@ -1172,13 +1224,13 @@ foreach ($QID in $QIDs) {
       { 370468 -contains $_ } {
         $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Cisco WebEx*'})
         if ($Products) {
-            Remove-Software $Products
+            Remove-Software $Products  -Results $Results
         } else {
           Write-Host "[!] Product not found: 'Cisco WebEx*' !!`n" -ForegroundColor Red
         }         
       }
       19472 {
-        if (Get-YesNo "$_ Install reg key for Microsoft SQL Server sqldmo.dll ActiveX Buffer Overflow Vulnerability - Zero Day (CVE-2007-4814)? ") { 
+        if (Get-YesNo "$_ Install reg key for Microsoft SQL Server sqldmo.dll ActiveX Buffer Overflow Vulnerability - Zero Day (CVE-2007-4814)? " -Results $Results) { 
           # Set: HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Internet Explorer\ActiveX Compatibility\{10020200-E260-11CF-AE68-00AA004A34D5}  Compatibility Flags 0x400
           New-Item -Path "HKLM:\SOFTWARE\Microsoft\Internet Explorer\ActiveX Compatibility" -Name "{10020200-E260-11CF-AE68-00AA004A34D5}"
           New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Internet Explorer\ActiveX Compatibility\{10020200-E260-11CF-AE68-00AA004A34D5}" -Name "Compatibility Flags" -Value 0x400
@@ -1186,7 +1238,7 @@ foreach ($QID in $QIDs) {
       }
 	
       100269 {
-        if (Get-YesNo "$_ Install reg keys for Microsoft Internet Explorer Cumulative Security Update (MS15-124)? ") { 
+        if (Get-YesNo "$_ Install reg keys for Microsoft Internet Explorer Cumulative Security Update (MS15-124)? " -Results $Results) { 
           New-Item -Path "HKLM:\SOFTWARE\Microsoft\Internet Explorer\Main\FeatureControl" -Name "FEATURE_ALLOW_USER32_EXCEPTION_HANDLER_HARDENING"
           New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_ALLOW_USER32_EXCEPTION_HANDLER_HARDENING" -Name "iexplore.exe" -Value 1
           New-Item -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Internet Explorer\Main\FeatureControl" -Name "FEATURE_ALLOW_USER32_EXCEPTION_HANDLER_HARDENING"
@@ -1194,21 +1246,24 @@ foreach ($QID in $QIDs) {
         } 
       }
       90954 {
-        if (Get-YesNo "$_ Install reg key for 2012 Windows Update For Credentials Protection and Management (Microsoft Security Advisory 2871997) (WDigest plaintext remediation)? ") { 
+        if (Get-YesNo "$_ Install reg key for 2012 Windows Update For Credentials Protection and Management (Microsoft Security Advisory 2871997) (WDigest plaintext remediation)? " -Results $Results) { 
           New-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\SecurityProviders\WDigest" -Name "UseLogonCredential" -Value 0
         }
       }
       91621 {
-        Write-Output "$_ Microsoft Defender Elevation of Privilege Vulnerability April 2020"
-        Delete-File "C:\WINDOWS\System32\MpSigStub.exe"
+        if (Get-YesNo "$_ Microsoft Defender Elevation of Privilege Vulnerability April 2020? " -Results $Results) { 
+          # This will ask twice due to Delete-File, but I want to offer results first. Could technically add -Results to Delete-File..
+          Delete-File "C:\WINDOWS\System32\MpSigStub.exe"
+        }
       }
       91649 {
-        Write-Output "$_ Microsoft Defender Elevation of Privilege Vulnerability June 2020"
-        Delete-File "$($env:ProgramFiles)\Windows Defender\MpCmdRun.exe"
+        if (Get-YesNo "$_ Microsoft Defender Elevation of Privilege Vulnerability June 2020? " -Results $Results) { 
+          Delete-File "$($env:ProgramFiles)\Windows Defender\MpCmdRun.exe"
+        }
       }
 
       372294 {
-        if (Get-YesNo "$_ Fix service permissions issues? ") {
+        if (Get-YesNo "$_ Fix service permissions issues? " -Results $Results) {
           #Write-Verbose $ServicePermIssues
           foreach ($file in $ServicePermIssues) {
             if (!(Check-ServiceFilePerms $file)) {
@@ -1302,7 +1357,7 @@ foreach ($QID in $QIDs) {
         }
       }
       91848 {
-        if (Get-YesNo "$_ Install Store Installer app update to 1.16.13405.0 ? ") { 
+        if (Get-YesNo "$_ Install Store Installer app update to 1.16.13405.0 ? " -Results $Results) { 
           # Requires -RunAsAdministrator
           Begin {}
           Process {
