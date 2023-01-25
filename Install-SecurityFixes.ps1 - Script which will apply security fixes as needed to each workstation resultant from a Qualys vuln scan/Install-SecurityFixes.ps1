@@ -140,7 +140,7 @@ if ((Invoke-WebRequest $url).StatusCode -eq 200) {
       $(Get-Item "\\$($Servername)\data\secaud\Install-SecurityFixes.ps1").CreationTimeUtc = [DateTime]::UtcNow
       Write-Output "[+] Launching new script.."
       #&"\\$($Servername)\data\secaud\Install-SecurityFixes.ps1"
-      &"$($tmp)\Install-SecurityFixes.ps1"  # Run from tmp location for now, looping..
+      . "$($tmp)\Install-SecurityFixes.ps1"  # Run from tmp location for now, looping..
       exit
   }
   Write-Verbose "Continuing script.. Will not get here if we updated."
