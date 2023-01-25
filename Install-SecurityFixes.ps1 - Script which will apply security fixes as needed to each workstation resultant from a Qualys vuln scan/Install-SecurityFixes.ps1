@@ -125,6 +125,7 @@ Function Check-NewerVersion {
   return $false
 }
 
+<#
 Write-Output "[.] Checking for updated version of script on github.."
 $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/Install-SecurityFixes.ps1"
 if ((Invoke-WebRequest $url).StatusCode -eq 200) { 
@@ -145,6 +146,7 @@ if ((Invoke-WebRequest $url).StatusCode -eq 200) {
   }
   Write-Verbose "Continuing script.. Will not get here if we updated."
 }
+#>
 
 # Lets read in the QID list from a file instead so I can update it easier.
 # I think at this point, maybe it will just be a 2nd powershell file that will set the variables and I can search and replace as needed to update them.
@@ -968,7 +970,7 @@ foreach ($QID in $QIDs) {
             cmd /c "$($tmp)\ninite.exe"
             $ResultsFolder = Parse-ResultsFolder $Results
             if ($ResultsFolder -like "**") {
-              Remove-Folder $ResultsFolder
+              Delete-Folder $ResultsFolder
             }          
             $QIDsFirefox = 1
         } else { $QIDsFirefox = 1 }
@@ -979,7 +981,7 @@ foreach ($QID in $QIDs) {
             Invoke-WebRequest "https://ninite.com/zoom/ninite.exe" -OutFile "$($tmp)\ninite.exe"
             cmd /c "$($tmp)\ninite.exe"
             #If Zoom folder is in another users AppData\Local folder, this will not work
-            Remove-Folder (Parse-ResultsFolder $Results)
+            Delete-Folder (Parse-ResultsFolder $Results)
             $QIDsZoom = 1
         } else { $QIDsZoom = 1 }
       }
@@ -1429,6 +1431,3 @@ Stop-Transcript
 if (!($Automated)) {
   $null = Read-Host "--- Press enter to exit ---"
 }
-
-
-
