@@ -9,20 +9,14 @@ param (
 )
 #Clear
 
-# Configuration items:
-$ServerName = "SERVER"                       # Change as needed!
-$CSVLocation = "Data\SecAud"
-$tmp = "$($env:temp)\SecAud"                 # Temporary folder to save downloaded files to
 $oldPwd = $pwd                               # Grab location script was run from
-$IgnoreDaysOld = 30                          # if machine is <30 days old, we likely have a new computer and don't want to do anything..
-$QIDsListFile = "$oldpwd\QIDLists.ps1"       # List of QID vulns to check
-$QIDsIgnoreFile = "$oldpwd\QIDIgnore.ps1"    # List of QID vulns to ignore
-$QIDsAdded = @()
+$ConfigFile = "$oldpwd\_config.ps1"          # Configuration file 
 $OSVersion = ([environment]::OSVersion.Version).Major
+$QIDsAdded = @()
 
 # Script specific vars:
-$Version = "0.30"
-$VersionInfo = "v$($Version) - Last modified: 1/25/22"
+$Version = "0.31"
+$VersionInfo = "v$($Version) - Last modified: 2/15/22"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -36,6 +30,23 @@ if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
 
 # Change title of window
 $host.ui.RawUI.WindowTitle = "$($env:COMPUTERNAME) - Install-SecurityFixes.ps1"
+
+if ($ConfigFile -like "*.ps1") {
+  try {
+    . $($ConfigFile)
+  } catch {
+    Write-Output "`n`n[!] ERROR: Couldn't import $($ConfigFile) !! Exiting"
+    Exit
+  }
+}
+
+if (!($QIDsIgnored)) {
+  Write-Output "`n`n[!] Warning: No QIDs to ignore!"
+}
+
+# Try to use TLS 1.2, this fixes many SSL problems with downloading files, before TLS 1.2 is not secure any longer.
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
 
 #Start a transscript of what happens while the script is running
 if (!(Test-Path $tmp)) { New-Item -ItemType Directory $tmp }
@@ -148,28 +159,7 @@ if ((Invoke-WebRequest $url).StatusCode -eq 200) {
 }
 #>
 
-# Lets read in the QID list from a file instead so I can update it easier.
-# I think at this point, maybe it will just be a 2nd powershell file that will set the variables and I can search and replace as needed to update them.
-try {
-  . $($QIDsListFile)
-} catch {
-  Write-Output "`n`n[!] ERROR: Couldn't import QIDLists.ps1 !! Exiting"
-  Exit
-}
-
-# Lets read in the list of QIDs to ignore for this site as well
-try {
-  . $($QIDsIgnoreFile)
-} catch {
-  Write-Output "`n`n[!] Warning: Couldn't import QIDIgnore.ps1 !!"
-}
-if (!($QIDsIgnored)) {
-  Write-Output "`n`n[!] Warning: No QIDs to ignore!"
-}
-
-# Try to use TLS 1.2, this fixes many SSL problems with downloading files
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
+################################################# FUNCTIONS ###############################################
 
 function Remove-Software {
   param ([string]$Products,
@@ -238,7 +228,7 @@ function Find-ServerCSVFile {
     Write-Host "[!] Can't access $($serverName), skipping Find-ServerCSVFile!"
     return $null
   }
-  if (!($null -eq $Location)) { $Location = "data\secaud" }
+  if (!($null -eq $Location)) { $Location = "data\secaud" }  # Default to \\$servername\data\secaud if can't read from config..
   if (Test-Path "\\$($ServerName)\$($Location)") {
     $CSVFilename=(Get-ChildItem "\\$($ServerName)\$($Location)" -Filter "*.csv" | Sort-Object LastWriteTime | Select-Object -last 1).FullName
     Write-Host "[i] Found file: $CSVFileName" -ForegroundColor Blue
@@ -259,6 +249,7 @@ Function Add-VulnToQIDList {
           $QIDName,
           $QIDVar)
   if ($QIDsAdded -notcontains $QIDNum) {
+    $QIDsListFile = $ConfigFile  # Default to using the ConfigFile.. fix this later!
     if (Get-YesNo "New vulnerability found: [QID$($QIDNum)] - [$($QIDName)] - Add?") {
       Write-Verbose "[v] Adding to variable in $($QIDsListFile): Variable: $($QIDVar)"
       if ($Automated) { Write-Output "[QID$($QIDNum)] - [$($QIDName)] - Adding" }

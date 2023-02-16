@@ -1,6 +1,17 @@
-# QIDLists.ps1 - This file contains the list of vulnerabilities that can be fixed by the script. It is kept in a separate file so it can be updated programatically.
+Write-Output "[.] Loading Configuration items.."
 
-#    Note: to make these lists, copy large list of QIDs related to out of date app, 1 per line to a file
+# Configuration file in v0.31+ should have the following information:
+$ServerName = "SERVER"                       # Change as needed, this is the server name to check for the Qualys CSV file.
+$CSVLocation = "Data\SecAud"                 # Location to check for the Qualys results CSV file.
+$tmp = "$($env:temp)\SecAud"                 # Temporary folder to save downloaded files to
+$IgnoreDaysOld = 30                          # X number of days to warn if the machine has been reimaged or replaced since: (last scan may be a different host with more active vulns!)
+$QIDsIgnore = @()                            # List of Qualys vulnerabilities to ignore
+$QIDsIgnore += @(105170,105171,90007)        # This will ignore Cached Credentials
+
+Write-Output "[+] Done Loading Configuration items.."
+
+# QIDLists - These variables contain the list of vulnerabilities that can be fixed by the script. It is kept in a separate file so it can be updated programatically.
+#    Note: to make these lists, copy large list of QIDs related to out of date app, 1 per line to a file, which you can copy from Excel and paste into a txt file. 
 #          in linux, cat filename | sort | uniq | tr -s '\n' ','
 #          delete the first and last comma if exists..
 
@@ -31,3 +42,4 @@ $QIDsMicrosoftSilverlight = 106028
 $QIDsGhostScript = 371157
 
 Write-Output "[.] Done loading QID lists."
+
