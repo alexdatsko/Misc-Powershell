@@ -15,7 +15,7 @@ $OSVersion = ([environment]::OSVersion.Version).Major
 $QIDsAdded = @()
 
 # Script specific vars:
-$Version = "0.32"
+$Version = "0.33"
 $VersionInfo = "v$($Version) - Last modified: 2/16/22"
 
 # Self-elevate the script if required
@@ -97,11 +97,71 @@ if (([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDat
   }
 }
 
+# Check for newer version of script before anything..
+function Check-NewerVersion { 
+  param ([string]$Filename)
+
+  $FileContents = Get-Content $Filename
+  $TotalLines = $FileContents.Length
+  Write-Verbose "[.] Loaded $TotalLines lines from $($Filename) .."
+  foreach ($line in $FileContents) {
+    if ($line -like '$Version = *') {
+      $VersionFound = $line.split('=')[1].trim().replace('"','')
+      Write-Verbose " New script version: $([version]$VersionFound)"
+      Write-Verbose " New script version Hex: $($VersionFound | Format-Hex)"
+      Write-Verbose " Current version: $([version]$Version) "
+      Write-Verbose " Current version hex: $($Version | Format-Hex)"
+      if ([version]$VersionFound -gt [version]$Version) {
+        Write-Verbose "[+] Version found $($VersionFound) is newer than $($Version)"
+        return $true;
+      }
+      if ([version]$VersionFound -eq [version]$Version) {
+        Write-Verbose "[=] Version found is the same: $([version]$VersionFound)"
+        return $false;
+      }
+      if ([version]$VersionFound -lt [version]$Version) {
+        Write-Verbose "[-] Version found $($VersionFound) is older than $($Version)"
+        return $false;
+      }
+    }
+  }
+  Write-Output "[.] ERROR: Script version not found in version from Github!?! Not good, github or internet issue?"
+  return $false;
+}
+
+# $ScriptPath = Get-ScriptPath
+# For 0.32 I am assuming $pwd is going to be the correct path
+Write-Output "[.] Checking for updated version of script on github.."
+$url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/Install-SecurityFixes.ps1"
+if ((Invoke-WebRequest $url).StatusCode -eq 200) { 
+  $client = new-object System.Net.WebClient
+  $client.Encoding = [System.Text.Encoding]::ascii
+  $client.DownloadFile("$url","$($tmp)\Install-SecurityFixes.ps1")
+  $client.Dispose()
+  Write-Output "[.] File downloading, checking version.."
+  Write-Host "[.] Checking downloaded file $($Filename) .."
+  $NewVersionCheck = (Check-NewerVersion -Filename "$($tmp)\Install-SecurityFixes.ps1")
+  Write-Verbose "var = $NewVersionCheck"
+  #Write-Verbose "[boolean]var = $([boolean]$NewVersionCheck)"
+  if ($true -eq $NewVersionCheck) {  
+      if (Get-YesNo "[+] Found newer version, would you like to copy over this one and re-run? ") {
+        Copy-Item "$($tmp)\Install-SecurityFixes.ps1" "$($pwd)\Install-SecurityFixes.ps1"    # THIS MAY NEED A FIX -MAY NEED A $SCRIPTPATH VARIABLE!!
+        $(Get-Item "$($pwd)\Install-SecurityFixes.ps1").CreationTimeUtc = [DateTime]::UtcNow
+        Write-Output "[+] Launching new script.."
+        . "$($pwd)\Install-SecurityFixes.ps1"   # Dot source and run from here once, then exit.
+        exit
+      }
+      # Copy the new script over this one and run..  Likely this will cause issues .. Lets see..
+  } else {
+    Write-Verbose "Continuing script.. Will not get here if we updated."
+  }
+}
+
 # Lets check SERVER first as that is our default..
 if (Test-Connection "SERVER" -Count 2 -Delay 1 -Quiet) {
   if (Get-Item "\\SERVER\data\secaud\Install-SecurityFixes.ps1") {
     $ServerName = "SERVER" # if SERVER is on the network, and I can get the script from there,..
-  }
+  } 
 } else {  #Can't ping SERVER
   Write-Output "`n[.] Checking $ServerName for connectivity.."
   if ($ServerName) {
@@ -112,48 +172,6 @@ if (Test-Connection "SERVER" -Count 2 -Delay 1 -Quiet) {
       }
     }
   }
-}
-
-Function Check-NewerVersion { 
-  param ([string]$File)
-
-  $FileContents = Get-Content $File 
-  foreach ($line in $FileContents) {
-    if ($line -like '`$Version = *') {
-      $VersionFound = $line.split('=')[1].trim().replace('"','')
-      Write-Verbose " New script version: $VersionFound"
-      Write-Verbose " New script version Hex: $($VersionFound | Format-Hex)"
-      Write-Verbose " Old version: $Version "
-      Write-Verbose " Old version hex: $($Version | Format-Hex)"
-      if ([version]$VersionFound -gt [version]$Version) {
-        return $true
-      } else {
-        Write-Output "[.] Version found $($VersionFound) is not newer than $($Version)"
-      }
-      
-    }
-  }  
-  return $false
-}
-
-Write-Output "[.] Checking for updated version of script on github.."
-$url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/Install-SecurityFixes.ps1"
-if ((Invoke-WebRequest $url).StatusCode -eq 200) { 
-  $client = new-object System.Net.WebClient
-  $client.Encoding = [System.Text.Encoding]::ascii
-  $client.DownloadFile("$url","$($tmp)\Install-SecurityFixes.ps1")
-  $client.Dispose()
-  
-  if (Check-NewerVersion -File "$($tmp)\Install-SecurityFixes.ps1") {  #Creationtime won't work here
-      Write-Output "[+] Found newer version, copying over old script"
-      # Copy the new script over this one and run..  Likely this will cause issues .. Lets see..
-      Copy-Item "$($tmp)\Install-SecurityFixes.ps1" "\\$($Servername)\data\secaud\Install-SecurityFixes.ps1"
-      $(Get-Item "\\$($Servername)\data\secaud\Install-SecurityFixes.ps1").CreationTimeUtc = [DateTime]::UtcNow
-      Write-Output "[+] Launching new script.."
-      . "\\$($Servername)\data\secaud\Install-SecurityFixes.ps1"   # Dot source and run from here once, then exit.
-      exit
-  }
-  Write-Verbose "Continuing script.. Will not get here if we updated."
 }
 
 ################################################# FUNCTIONS ###############################################
@@ -308,6 +326,7 @@ function Download-NewestAdobeReader {
     Write-Output "[!] Download complete."
     return $OutFile
 }
+
 function Get-ServicePermIssues {
   param ([string]$Results)
   <#  Example:
@@ -471,7 +490,7 @@ function Parse-ResultsFile {
   return $PathRaw
 }
 
-############################################# MAIN ###############################################
+################# ( READ IN CSV AND PROCESS ) #####################
 
 if (!(Test-Path $($tmp))) {
   try {
@@ -482,11 +501,7 @@ if (!(Test-Path $($tmp))) {
     Exit
   }
 }
-
 $oldpwd=(Get-Location).Path
-if (!(Test-Path $tmp)) {
-  New-Item -Type Directory "$tmp" -Force -ErrorAction SilentlyContinue
-}
 Set-Location "$($tmp)"  # Cmd.exe cannot be run from a server share
 
 $CSVFilename = Find-ServerCSVFile "$($ServerName)\$($CSVLocation)"
