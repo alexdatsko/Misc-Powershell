@@ -15,8 +15,8 @@ $OSVersion = ([environment]::OSVersion.Version).Major
 $QIDsAdded = @()
 
 # Script specific vars:
-$Version = "0.31"
-$VersionInfo = "v$($Version) - Last modified: 2/15/22"
+$Version = "0.32"
+$VersionInfo = "v$($Version) - Last modified: 2/16/22"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -136,7 +136,6 @@ Function Check-NewerVersion {
   return $false
 }
 
-<#
 Write-Output "[.] Checking for updated version of script on github.."
 $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/Install-SecurityFixes.ps1"
 if ((Invoke-WebRequest $url).StatusCode -eq 200) { 
@@ -151,13 +150,11 @@ if ((Invoke-WebRequest $url).StatusCode -eq 200) {
       Copy-Item "$($tmp)\Install-SecurityFixes.ps1" "\\$($Servername)\data\secaud\Install-SecurityFixes.ps1"
       $(Get-Item "\\$($Servername)\data\secaud\Install-SecurityFixes.ps1").CreationTimeUtc = [DateTime]::UtcNow
       Write-Output "[+] Launching new script.."
-      #&"\\$($Servername)\data\secaud\Install-SecurityFixes.ps1"
-      . "$($tmp)\Install-SecurityFixes.ps1"  # Run from tmp location for now, looping..
+      . "\\$($Servername)\data\secaud\Install-SecurityFixes.ps1"   # Dot source and run from here once, then exit.
       exit
   }
   Write-Verbose "Continuing script.. Will not get here if we updated."
 }
-#>
 
 ################################################# FUNCTIONS ###############################################
 
@@ -756,11 +753,19 @@ foreach ($QID in $QIDs) {
       }
       { 105170,105171 -contains $_ } { 
         if (Get-YesNo "$_ - Windows Explorer Autoplay not Disabled ? " -Results $Results) {
-            cmd /c 'reg add "HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer\"  /v NoDriveTypeAutoRun /t REG_DWORD /d 255 /f'
-            cmd /c 'reg add "HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\policies\Explorer\"  /v NoDriveTypeAutoRun /t REG_DWORD /d 255 /f'
+            #cmd /c 'reg add "HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer\"  /v NoDriveTypeAutoRun /t REG_DWORD /d 255 /f'
+            #cmd /c 'reg add "HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\policies\Explorer\"  /v NoDriveTypeAutoRun /t REG_DWORD /d 255 /f'
             # QID105170,105171 - disable autoplay
             $path ='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer'
             $path2 = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\policies\Explorer'
+            if (!(Test-Path $path)) {
+              Write-Output "[.] Creating $($path) as it was not found.."
+              New-Item -Path $path –Force
+            }
+            if (!(Test-Path $path2)) {
+              Write-Output "[.] Creating $($path2) as it was not found.."
+              New-Item -Path $path2 –Force
+            }
             Set-ItemProperty $path -Name NoDriveTypeAutorun -Type DWord -Value 0xFF
             Set-ItemProperty $path -Name NoAutorun -Type DWord -Value 0x1
             Set-ItemProperty $path2 -Name NoDriveTypeAutorun -Type DWord -Value 0xFF
