@@ -27,6 +27,6 @@ while (!($path)) {
     Write-Host "[.] Editing config file, please make any changes necessary.
     notepad.exe "$($path)\_config.ps1"
     Write-Host "[!] Done! Running script..
-    . '$($path)\Install-SecurityFixes.ps1'
+    . "$($path)\Install-SecurityFixes.ps1"
   }
 }
