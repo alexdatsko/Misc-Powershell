@@ -7,6 +7,8 @@ $tmp = "$($env:temp)\SecAud"                 # Temporary folder to save download
 $IgnoreDaysOld = 30                          # X number of days to warn if the machine has been reimaged or replaced since: (last scan may be a different host with more active vulns!)
 $QIDsIgnore = @()                            # List of Qualys vulnerabilities to ignore
 $QIDsIgnore += @(105170,105171,90007)        # This will ignore Cached Credentials
+$InstallDellBIOSProvider = $true             # This will install the DellBIOSProvider.ps1 powershell module if not found
+$SetWOL = $true                              # This will use the DellBIOSProvider module to turn on WakeOnLan
 
 Write-Output "[+] Done Loading Configuration items.."
 

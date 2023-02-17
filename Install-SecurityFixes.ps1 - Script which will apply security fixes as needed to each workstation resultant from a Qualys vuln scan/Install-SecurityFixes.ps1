@@ -15,7 +15,7 @@ $OSVersion = ([environment]::OSVersion.Version).Major
 $QIDsAdded = @()
 
 # Script specific vars:
-$Version = "0.34"
+$Version = "0.35.00"
 $VersionInfo = "v$($Version) - Last modified: 2/17/22"
 
 # Self-elevate the script if required
@@ -173,19 +173,57 @@ if (Test-Connection "SERVER" -Count 2 -Delay 1 -Quiet) {
     }
   }
 }
+# install the DellBIOSProvider powershell module if set in the config
+if ($InstallDellBIOSProvider) {
+  if (!(Get-InstalledModule -Name DellBIOSProvider -ErrorAction SilentlyContinue)) {
+    Write-Host "[.] Trying to install the NuGet package provider.. [this may take a minute..]" 
+    try { Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force } catch { Write-Host "[!] Couldn't install NuGet provider!" }
+    Write-Host "[.] Trying to install the Dell BIOS provider module.. [this may take a minute..]" 
+    try { Install-Module DellBIOSProvider -Force } catch { Write-Host "[!] Couldn't install DellBIOSProvder! " }
+    Write-Host "[+] Done!" -ForegroundColor Green
+  } else {
+    Write-Host "[.] DellBIOSProvider already installed." 
+  }
+}
+
+if ($InstallDellBIOSProvider -and $SetWOL) {  # Set WOL settings per model
+  if (!(Get-InstalledModule -Name DellBIOSProvider)) {
+    Write-Host "[!] No DellBIOSProvder - Can't set WOL"
+  } else {
+    # For testing, just check and set these 2..
+    Import-Module DellBIOSProvider
+    Write-Host "[.] Checking for AcPwrRcvry=On & WakeonLAN=Enabled in DellSMBios:\ .." 
+    $AcPwrRcvry=Get-Item -Path DellSMBios:\PowerManagement\AcPwrRcvry
+    $WakeonLAN=Get-Item -Path DellSMBios:\PowerManagement\WakeonLAN
+    if (!($AcPwrRcvry)) { 
+      Write-Host "[.] Setting AcPwrRcvry=On in DellSMBios:\ .."
+      try { Set-Item -Path DellSMBios:\PowerManagement\AcPwrRcvry -Value "On" } catch { Write-Host "[.] Couldn't set AcPwrRecvry=On !!" -ForegroundColor Red }
+    } else {
+      Write-Host "[+] Found AcPwrRcvry=On already"
+    }
+    if (!($WakeonLAN)) {
+      Write-Host "[.] Setting WakeonLAN=Enabled in DellSMBios:\ .."
+      try { Set-Item -Path DellSMBios:\PowerManagement\WakeonLAN -Value "Enabled" } catch { Write-Host "[.] Couldn't set WakeonLAN=Enabled !!" -ForegroundColor Red }
+    } else {
+      Write-Host "[+] Found WakeonLAN=Enabled already"
+    }
+    Write-Host "[+] Done!" -ForegroundColor Green
+  }
+}
+
 
 ################################################# FUNCTIONS ###############################################
 
 function Remove-Software {
-  param ([string]$Products,
-         [string]$Results)
+  param ($Products,
+         $Results)
   
   Write-Verbose "Results: $Results"
   foreach ($Product in $Products) { # Remove multiple products if passed..
     $Guid = $Product | Select-Object -ExpandProperty IdentifyingNumber
     $Name = $Product | Select-Object -ExpandProperty Name
     if (Get-YesNo "Uninstall $Name - $Guid ") { 
-        Write-Output "[.] Removing $Guid (Waiting max of 30 seconds after).."
+        Write-Host "[.] Removing $Guid (Waiting max of 30 seconds after).."
         $x=0
         cmd /c "msiexec /x $Guid /quiet /qn"
         Write-Host "[.] Checking for removal of $Guid .." -ForegroundColor White -NoNewline
@@ -203,6 +241,40 @@ function Remove-Software {
             Write-Host "[!] Error removing $($Products.Guid) (or may have taken longer than 30s) !!`n" -ForegroundColor Red
         }
     }
+  }
+}
+
+function Remove-RegistryItem {
+  param ([string]$Path)
+
+  Write-Host "[ ] Checking registry for: `n  $Path  :" -ForegroundColor Gray
+  try {
+    $result = (Get-ItemProperty -Path $Path -ErrorAction SilentlyContinue)
+  } catch { 
+    Write-Host "[!] Couldn't find Registry entry!! `r`n  $Path" -ForegroundColor Green
+  }
+  if ($result) {
+    Write-Host "[.] Removing registry item: `n  $Path  :" -ForegroundColor White
+    try { # Remove $Path\*
+      Remove-Item -Path $Path\* -Recurse
+    } catch {
+      Write-Host "[!] Couldn't run Remove-Item -Path $Path\* -Recurse !!" -ForegroundColor Red
+    }
+    try { # Remove $Path itself
+      Remove-Item -Path $Path 
+    } catch {
+      Write-Host "[!] Couldn't run Remove-Item -Path $Path !!" -ForegroundColor Red
+    }
+    try { # Check and make sure its removed?
+      $result = (Get-ItemProperty -Path $Path -ErrorAction SilentlyContinue)
+    } catch {
+      Write-Host "[.] Complete. Registry entry verified removed: `n  $Path" -ForegroundColor Green
+    }
+    if ($result) {
+      Write-Host "[!] Something went wrong. Not successful removing $Path .."  -ForegroundColor Red
+    }
+  } else {
+    Write-Host "[.] Couldn't find Registry entry. Clean." -ForegroundColor Green
   }
 }
 
@@ -438,8 +510,8 @@ function Delete-Folder {
 }
 
 function Delete-File {
-  param ([string]$FileToDelete,
-         [string]$Results)
+  param ($FileToDelete,
+         $Results)
   
   if (Test-Path $FileToDelete -PathType Leaf) {
     if (Get-YesNo "Found file $($FileToDelete). Try to remove? ") { 
@@ -683,7 +755,7 @@ foreach ($QID in $QIDs) {
     switch ([int]$QID)
     {
       376023 { 
-        if (Get-YesNo "$_ Remove SupportAssist ? ") {
+        if (Get-YesNo "$_ Remove Dell SupportAssist ? " -Results $Results) {
           $guid = (Get-Package | Where-Object{$_.Name -like "*SupportAssist*"})
           if ($guid) {  ($guid | Select-Object -expand FastPackageReference).replace("}","").replace("{","")  }
           msiexec /x $guid /qn /L*V "$($tmp)\SupportAssist.log" REBOOT=R
@@ -818,39 +890,14 @@ foreach ($QID in $QIDs) {
             #Write-Host "[ ] Finding GUID for $Name .. Please wait"  -ForegroundColor Gray
             #$GUID = (get-wmiobject -class Win32_Product | ?{ $_.Name -like $Name}).IdentifyingNumber
             $GUID= "{D5C69738-B486-402E-85AC-2456D98A64E4}"
-
-            if ($GUID) {
-                Write-Host "[ ] Removing $Name / $GUID .." -ForegroundColor White
-                if (msiexec /x $GUID /qn) {
-                  Write-Host "[o] Removed!" -ForegroundColor Green
-                } else {
-                  Write-Host "[x] Couldn't remove!" -ForegroundColor Red
-                }
+            $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like $GUID})
+            if ($Products) {
+              Remove-Software -Products $Products -Results $Results
             } else {
-              Write-Host "[x] Couldn't find $Name ! Exiting" -ForegroundColor White
-            }
-
-            Write-Host "[ ] Checking registry: `r`n  $Path  :" -ForegroundColor Gray
-            try {
-              $result = (Get-ItemProperty -Path $Path -ErrorAction SilentlyContinue)
-            } catch { 
-              Write-Host "Couldn't find Registry entry!! `r`n  $Path" -ForegroundColor Green
-            }
-            if ($result) {
-              Write-Host "[ ] Removing registry: `r`n  $Path  :" -ForegroundColor White
-              try {
-                Remove-Item -Path $Path\* -Recurse
-              } catch {
-                Write-Host "Couldn't run Remove-Item -Path $Path\* -Recurse" -ForegroundColor Red
-              }
-              try {
-                Remove-Item -Path $Path -Recurse
-              } catch {
-                Write-Host "Couldn't run Remove-Item -Path $Path -Recurse"  -ForegroundColor Red
-              }
-            } else {
-              Write-Host "Couldn't find Registry entry!! `r`n  $Path" -ForegroundColor Green
-            }
+              Write-Host "[!] Guids not found: $Products !!`n" -ForegroundColor Red
+            } 
+            # Try to delete from registry, if it exists
+            Remove-RegistryItem $Path
         }
       }
       { $QIDsUpdateMicrosoftStoreApps -contains $_ } {
@@ -1055,7 +1102,8 @@ foreach ($QID in $QIDs) {
       { $QIDsDellCommandUpdate -contains $_ } {
         if (Get-YesNo "$_ Install newest Dell Command Update? " -Results $Results) { 
             #wget "https://dl.dell.com/FOLDER08334704M/2/Dell-Command-Update-Windows-Universal-Application_601KT_WIN_4.5.0_A00_01.EXE" -OutFile "$($tmp)\dellcommand.exe"
-            cmd /c "\\server\data\secaud\Dell-Command-Update-Application_W4HP2_WIN_4.5.0_A00_02.EXE /s"
+            $DCUExe = (GCI "\\server\data\secaud\" | Where {$_.Name -like "Dell-Command-Update-*"}).FullName
+            cmd /c "$($DCUExe) /s"
             $QIDsDellCommandUpdate  = 1
         } else { $QIDsDellCommandUpdate  = 1 }
       }
@@ -1063,7 +1111,7 @@ foreach ($QID in $QIDs) {
         if (Get-YesNo "$_ Remove older versions of Adobe Reader ? " -Results $Results) { 
           $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Adobe Reader*'})
           if ($Products) {
-            Remove-Software $Products -Results $Results
+            Remove-Software -Products $Products -Results $Results
           } else {
             Write-Host "[!] Adobe products not found under 'Adobe Reader*' $Products !!`n" -ForegroundColor Red
           }  
@@ -1083,7 +1131,7 @@ foreach ($QID in $QIDs) {
       { $QIDsMicrosoftSilverlight -contains $_ } {
         $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{89F4137D-6C26-4A84-BDB8-2E5A4BB71E00}'})
         if ($Products) {
-            Remove-Software $Products -Results $Results
+            Remove-Software -Products $Products -Results $Results
             $QIDsMicrosoftSilverlight = 1
         } else {
           Write-Host "[!] Guids not found: $Products !!`n" -ForegroundColor Red
@@ -1093,7 +1141,7 @@ foreach ($QID in $QIDs) {
       { $QIDsSQLServerCompact4 -contains $_ } {
         $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{78909610-D229-459C-A936-25D92283D3FD}'})
         if ($Products) {
-            Remove-Software $Products -Results $Results
+            Remove-Software -Products $Products -Results $Results
             $QIDsSQLServerCompact4 = 1
         } else {
           Write-Host "[!] Guids not found: $Products !!`n" -ForegroundColor Red
@@ -1104,7 +1152,7 @@ foreach ($QID in $QIDs) {
         $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{90120000-00D1-0409-0000-0000000FF1CE}' -or `
                                                            $_.IdentifyingNumber -like '{90140000-00D1-0409-1000-0000000FF1CE}'})
         if ($Products) {
-            Remove-Software $Products -Results $Results
+            Remove-Software -Products $Products -Results $Results
             $QIDsMicrosoftAccessDBEngine = 1
         } else {
           Write-Host "[!] Guids not found: $Products !!`n" -ForegroundColor Red
@@ -1173,7 +1221,7 @@ foreach ($QID in $QIDs) {
             #>
             $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{5A66E598-37BD-4C8A-A7CB-A71C32ABCD78}'})
             if ($Products) {
-                Remove-Software $Products -Results $Results
+                Remove-Software -Products $Products -Results $Results
                 $QIDsMicrosoftNETCoreV5 = 1
             } else {
               Write-Host "[!] Guids not found: $Products !!`n" -ForegroundColor Red
@@ -1251,7 +1299,7 @@ foreach ($QID in $QIDs) {
       { 370468 -contains $_ } {
         $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Cisco WebEx*'})
         if ($Products) {
-            Remove-Software $Products  -Results $Results
+            Remove-Software -Products $Products  -Results $Results
         } else {
           Write-Host "[!] Product not found: 'Cisco WebEx*' !!`n" -ForegroundColor Red
         }         
