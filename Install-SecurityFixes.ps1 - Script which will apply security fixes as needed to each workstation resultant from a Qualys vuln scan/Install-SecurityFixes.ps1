@@ -15,8 +15,8 @@ $OSVersion = ([environment]::OSVersion.Version).Major
 $QIDsAdded = @()
 
 # Script specific vars:
-$Version = "0.33"
-$VersionInfo = "v$($Version) - Last modified: 2/16/22"
+$Version = "0.34"
+$VersionInfo = "v$($Version) - Last modified: 2/17/22"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -484,7 +484,7 @@ function Parse-ResultsFile {
   # Example:
   #   %systemdrive%\Users\Ben-Doctor.CHILDERSORTHO\AppData\Roaming\Zoom\bin\Zoom.exe  Version is  5.9.1.2581#
   # should return:
-  # C:\Users\Ben-Doctor.CHILDERSORTHO\AppData\Roaming\Zoom\bin
+  # C:\Users\Ben-Doctor.CHILDERSORTHO\AppData\Roaming\Zoom\bin\Zoom.exe
   $PathResults = ($Results -split('Version is')).trim()
   $PathRaw = $PathResults.replace("%appdata%","$env:appdata").replace("%computername%","$env:computername").replace("%home%","$env:home").replace("%systemroot%","$env:systemroot").replace("%systemdrive%","$env:systemdrive").replace("%programdata%","$env:programdata").replace("%programfiles%","$env:programfiles").replace("%programfiles(x86)%","$env:programfiles(x86)").replace("%programw6432%","$env:programw6432")
   return $PathRaw
@@ -855,16 +855,29 @@ foreach ($QID in $QIDs) {
       }
       { $QIDsUpdateMicrosoftStoreApps -contains $_ } {
         if (Get-YesNo "$_ Update all store apps? " -Results $Results) {
-          Write-Output "[+] Updating store apps.." 
+          <#
           $namespaceName = "root\cimv2\mdm\dmmap"
           $className = "MDM_EnterpriseModernAppManagement_AppManagement01"
           $wmiObj = Get-WmiObject -Namespace $namespaceName -Class $className
           $result = $wmiObj.UpdateScanMethod()
           Write-Verbose $result
-          Write-Output "[+] Trying to update via WinGet .." 
+
+          Write-Output "[+] Trying to update Apps via WinGet .." 
           $result2 = winget upgrade --all --accept-source-agreements --accept-package-agreements --silent
           Write-Verbose $result2
-          Write-Output "[!] Done!`n"    
+          #>
+          # Get the list of installed apps
+          Write-Host "[+] Getting list of Store apps.." 
+          $appList = Get-AppxPackage -AllUsers # | Where-Object {$_.PackageFamilyName -like "Microsoft.WindowsStore*"}
+          
+          # Loop through each app and update it
+          foreach ($app in $appList) {
+              Write-Host "Updating $($app.Name)..."
+              $appPackageLoc = $app.InstallLocation
+              Add-AppxPackage -register "$appPackageLoc\AppxManifest.xml" -DisableDevelopmentMode -ForceApplicationShutdown
+          }
+          # Show message when all updates are complete
+          Write-Host "[!] All app updates are complete.`n"    
           
         }
       }
