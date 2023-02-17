@@ -17,7 +17,7 @@ while (!($path)) {
   } 
   if (!(Test-Path $path)) { # Make sure path is valid or can be created
     try { 
-      mkdir $path 
+      New-Item -ItemType Directory -Name "$($path)"
     } catch {
       Write-Host "[!] Couldn't create path $($path) !! Not able to move to this location, please try again.."   
       $path="" 
