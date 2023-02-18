@@ -15,7 +15,7 @@ $OSVersion = ([environment]::OSVersion.Version).Major
 $QIDsAdded = @()
 
 # Script specific vars:
-$Version = "0.35.00"
+$Version = "0.35.01"
 $VersionInfo = "v$($Version) - Last modified: 2/17/22"
 
 # Self-elevate the script if required
@@ -67,12 +67,19 @@ function Get-YesNo {
       $yesno = Read-Host  "[?] $text [n] "
       if ($yesno.ToUpper()[0] -eq 'Y') { return $true } 
       if ($yesno.ToUpper()[0] -eq 'N' -or $yesno -eq '') { return $false } 
-      if ($yesno.ToUpper()[0] -eq 'S') { Write-Output $Results }
+      if ($yesno.ToUpper()[0] -eq 'S') { 
+          Write-Host "[i] Results: " -ForegroundColor Yellow
+          foreach ($result in $Results) {
+            Write-Host "$($result)" -ForegroundColor Yellow
+          }
+       }
     }
-  } else { 
-    Write-Output "[i] Results: "
-    Write-Output $Results 
-    Write-Output "[+] Applying fix for $text .."
+  } else {  # Automated mode. Show results for -Verbose, then apply fix
+    Write-Verbose "[i] Results: "
+    foreach ($result in $Results) {
+      Write-Verbose "$($result)"
+    }
+    Write-Host "[+] Applying fix for $text .."
     return $true
   }
 }
@@ -494,7 +501,7 @@ param ([string]$RedirectPath)
 
 function Delete-Folder {
   param ([string]$FolderToDelete,
-         [string]$Results)
+         $Results)
 
   if (Test-Path $FolderToDelete -PathType Container) {
     if (Get-YesNo "Found Folder $($FolderToDelete). Try to remove? ") { 
@@ -541,23 +548,25 @@ function Delete-File {
 }
 
 function Parse-ResultsFolder {  
-  param ([string]$Results)
+  param ($Results)
   # Example:
   #   %systemdrive%\Users\Ben-Doctor.CHILDERSORTHO\AppData\Roaming\Zoom\bin\Zoom.exe  Version is  5.9.1.2581#
   # should return:
   # C:\Users\Ben-Doctor.CHILDERSORTHO\AppData\Roaming\Zoom\bin
-  $PathResults = ($Results -split('Version is')).trim()
+  Write-Verbose "Results: $Results"
+  $PathResults = ($Results -split('Version is')[0]).trim()
   $PathRaw = Split-Path ($PathResults.replace("%appdata%","$env:appdata").replace("%computername%","$env:computername").replace("%home%","$env:home").replace("%systemroot%","$env:systemroot").replace("%systemdrive%","$env:systemdrive").replace("%programdata%","$env:programdata").replace("%programfiles%","$env:programfiles").replace("%programfiles(x86)%","$env:programfiles(x86)").replace("%programw6432%","$env:programw6432"))
   return $PathRaw
 } 
 
 function Parse-ResultsFile {  
-  param ([string]$Results)
+  param ($Results)
   # Example:
   #   %systemdrive%\Users\Ben-Doctor.CHILDERSORTHO\AppData\Roaming\Zoom\bin\Zoom.exe  Version is  5.9.1.2581#
   # should return:
   # C:\Users\Ben-Doctor.CHILDERSORTHO\AppData\Roaming\Zoom\bin\Zoom.exe
-  $PathResults = ($Results -split('Version is')).trim()
+  Write-Verbose "Results: $Results"
+  $PathResults = ($Results -split('Version is')[0]).trim()
   $PathRaw = $PathResults.replace("%appdata%","$env:appdata").replace("%computername%","$env:computername").replace("%home%","$env:home").replace("%systemroot%","$env:systemroot").replace("%systemdrive%","$env:systemdrive").replace("%programdata%","$env:programdata").replace("%programfiles%","$env:programfiles").replace("%programfiles(x86)%","$env:programfiles(x86)").replace("%programw6432%","$env:programw6432")
   return $PathRaw
 }
@@ -1052,7 +1061,7 @@ foreach ($QID in $QIDs) {
             Invoke-WebRequest "https://ninite.com/zoom/ninite.exe" -OutFile "$($tmp)\ninite.exe"
             cmd /c "$($tmp)\ninite.exe"
             #If Zoom folder is in another users AppData\Local folder, this will not work
-            Delete-Folder (Parse-ResultsFolder $Results)
+            Delete-Folder (Parse-ResultsFolder -Results $Results)
             $QIDsZoom = 1
         } else { $QIDsZoom = 1 }
       }
