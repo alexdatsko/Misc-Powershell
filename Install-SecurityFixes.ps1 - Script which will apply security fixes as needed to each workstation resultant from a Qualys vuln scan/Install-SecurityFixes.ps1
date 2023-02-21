@@ -1,7 +1,6 @@
-﻿#########################################
+#########################################
 # Install-SecurityFixes.ps1
 # Alex Datsko - alex.datsko@mmeconsulting.com
-#
 
 [cmdletbinding()]  # For verbose, debug etc
 param (
@@ -11,12 +10,19 @@ param (
 
 $oldPwd = $pwd                               # Grab location script was run from
 $ConfigFile = "$oldpwd\_config.ps1"          # Configuration file 
+$QIDsListFile = "$oldpwd\QIDLists.ps1"       # QID List file 
 $OSVersion = ([environment]::OSVersion.Version).Major
 $QIDsAdded = @()
 
+$tmp = "$($env:temp)\SecAud"                 # "temp" Temporary folder to save downloaded files to, this will be overwritten when checking config ..
+#Start a transscript of what happens while the script is running
+if (!(Test-Path $tmp)) { New-Item -ItemType Directory $tmp }
+$dateshort= Get-Date -Format "yyyy-MM-dd"
+Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
+
 # Script specific vars:
-$Version = "0.35.01"
-$VersionInfo = "v$($Version) - Last modified: 2/17/22"
+$Version = "0.35.04"
+$VersionInfo = "v$($Version) - Last modified: 2/21/22"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -31,27 +37,8 @@ if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
 # Change title of window
 $host.ui.RawUI.WindowTitle = "$($env:COMPUTERNAME) - Install-SecurityFixes.ps1"
 
-if ($ConfigFile -like "*.ps1") {
-  try {
-    . $($ConfigFile)
-  } catch {
-    Write-Output "`n`n[!] ERROR: Couldn't import $($ConfigFile) !! Exiting"
-    Exit
-  }
-}
-
-if (!($QIDsIgnored)) {
-  Write-Output "`n`n[!] Warning: No QIDs to ignore!"
-}
-
 # Try to use TLS 1.2, this fixes many SSL problems with downloading files, before TLS 1.2 is not secure any longer.
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-
-#Start a transscript of what happens while the script is running
-if (!(Test-Path $tmp)) { New-Item -ItemType Directory $tmp }
-$dateshort= Get-Date -Format "yyyy-MM-dd"
-Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 
 if ($Automated) {
   Write-Host "`n[!] Running in automated mode!`n"   -ForegroundColor Red
@@ -84,35 +71,20 @@ function Get-YesNo {
   }
 }
 
-$hostname = $env:COMPUTERNAME
-$datetime = Get-Date -Format "yyyy-MM-dd HH:mm:ss K"
-$datetimedateonly = Get-Date -Format "yyyy-MM-dd"
-$osinstalldate = ([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDate) | get-date -Format MM/dd/yyyy
-$serialnumber = (wmic bios get serialnumber)
-Write-Host "`r`n================================================================" -ForegroundColor DarkCyan
-Write-Host "[i] Install-SecurityFixes.ps1" -ForegroundColor Cyan
-Write-Host "[i]   $($VersionInfo)" -ForegroundColor Cyan
-Write-Host "[i]   Alex Datsko - alex.datsko@mmeconsulting.com" -ForegroundColor Cyan
-Write-Host "[i] Date / Time : $datetime" -ForegroundColor Cyan
-Write-Host "[i] Computername : $hostname " -ForegroundColor Cyan
-Write-Host "[i] SerialNumber : $serialnumber " -ForegroundColor Cyan
-Write-Host "[i] OS Install Date : $osinstalldate " -ForegroundColor Cyan
-if (([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDate) -ge (Get-Date $datetimedateonly).AddDays(0-$IgnoreDaysOld)) {
-  if (!(Get-YesNo "$osinstalldate is within $IgnoreDaysOld days, continue?")) {
-    Write-Host "[!] Exiting" -ForegroundColor White
-    exit
-  }
-}
+# skip to # MAIN # 
 
-# Check for newer version of script before anything..
-function Check-NewerVersion { 
-  param ([string]$Filename)
+################################################# SCRIPT FUNCTIONS ###############################################
+
+
+function Check-NewerScriptVersion { 
+  param ([string]$Filename,
+         [string]$VersionStr)
 
   $FileContents = Get-Content $Filename
   $TotalLines = $FileContents.Length
   Write-Verbose "[.] Loaded $TotalLines lines from $($Filename) .."
   foreach ($line in $FileContents) {
-    if ($line -like '$Version = *') {
+    if ($line -like $VersionStr) {
       $VersionFound = $line.split('=')[1].trim().replace('"','')
       Write-Verbose " New script version: $([version]$VersionFound)"
       Write-Verbose " New script version Hex: $($VersionFound | Format-Hex)"
@@ -136,90 +108,327 @@ function Check-NewerVersion {
   return $false;
 }
 
-# $ScriptPath = Get-ScriptPath
-# For 0.32 I am assuming $pwd is going to be the correct path
-Write-Output "[.] Checking for updated version of script on github.."
-$url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/Install-SecurityFixes.ps1"
-if ((Invoke-WebRequest $url).StatusCode -eq 200) { 
-  $client = new-object System.Net.WebClient
-  $client.Encoding = [System.Text.Encoding]::ascii
-  $client.DownloadFile("$url","$($tmp)\Install-SecurityFixes.ps1")
-  $client.Dispose()
-  Write-Output "[.] File downloading, checking version.."
-  Write-Host "[.] Checking downloaded file $($Filename) .."
-  $NewVersionCheck = (Check-NewerVersion -Filename "$($tmp)\Install-SecurityFixes.ps1")
-  Write-Verbose "var = $NewVersionCheck"
-  #Write-Verbose "[boolean]var = $([boolean]$NewVersionCheck)"
-  if ($true -eq $NewVersionCheck) {  
-      if (Get-YesNo "[+] Found newer version, would you like to copy over this one and re-run? ") {
-        Copy-Item "$($tmp)\Install-SecurityFixes.ps1" "$($pwd)\Install-SecurityFixes.ps1"    # THIS MAY NEED A FIX -MAY NEED A $SCRIPTPATH VARIABLE!!
-        $(Get-Item "$($pwd)\Install-SecurityFixes.ps1").CreationTimeUtc = [DateTime]::UtcNow
-        Write-Output "[+] Launching new script.."
-        . "$($pwd)\Install-SecurityFixes.ps1"   # Dot source and run from here once, then exit.
-        exit
-      }
-      # Copy the new script over this one and run..  Likely this will cause issues .. Lets see..
-  } else {
-    Write-Verbose "Continuing script.. Will not get here if we updated."
-  }
-}
-
-# Lets check SERVER first as that is our default..
-if (Test-Connection "SERVER" -Count 2 -Delay 1 -Quiet) {
-  if (Get-Item "\\SERVER\data\secaud\Install-SecurityFixes.ps1") {
-    $ServerName = "SERVER" # if SERVER is on the network, and I can get the script from there,..
-  } 
-} else {  #Can't ping SERVER
-  Write-Output "`n[.] Checking $ServerName for connectivity.."
-  if ($ServerName) {
-    if (!(Test-Connection $ServerName -Count 2 -Delay 1 -Quiet)) {
-      $ServerName = Read-Host "[!] Couldn't ping SERVER or $ServerName .. please enter the server name where we can find the .CSV file, or press enter to read it out of the current folder: "
-      if (!($ServerName)) { 
-        $ServerName = "$($env:computername)"
-      }
-    }
-  }
-}
-# install the DellBIOSProvider powershell module if set in the config
-if ($InstallDellBIOSProvider) {
-  if (!(Get-InstalledModule -Name DellBIOSProvider -ErrorAction SilentlyContinue)) {
-    Write-Host "[.] Trying to install the NuGet package provider.. [this may take a minute..]" 
-    try { Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force } catch { Write-Host "[!] Couldn't install NuGet provider!" }
-    Write-Host "[.] Trying to install the Dell BIOS provider module.. [this may take a minute..]" 
-    try { Install-Module DellBIOSProvider -Force } catch { Write-Host "[!] Couldn't install DellBIOSProvder! " }
-    Write-Host "[+] Done!" -ForegroundColor Green
-  } else {
-    Write-Host "[.] DellBIOSProvider already installed." 
-  }
-}
-
-if ($InstallDellBIOSProvider -and $SetWOL) {  # Set WOL settings per model
-  if (!(Get-InstalledModule -Name DellBIOSProvider)) {
-    Write-Host "[!] No DellBIOSProvder - Can't set WOL"
-  } else {
-    # For testing, just check and set these 2..
-    Import-Module DellBIOSProvider
-    Write-Host "[.] Checking for AcPwrRcvry=On & WakeonLAN=Enabled in DellSMBios:\ .." 
-    $AcPwrRcvry=Get-Item -Path DellSMBios:\PowerManagement\AcPwrRcvry
-    $WakeonLAN=Get-Item -Path DellSMBios:\PowerManagement\WakeonLAN
-    if (!($AcPwrRcvry)) { 
-      Write-Host "[.] Setting AcPwrRcvry=On in DellSMBios:\ .."
-      try { Set-Item -Path DellSMBios:\PowerManagement\AcPwrRcvry -Value "On" } catch { Write-Host "[.] Couldn't set AcPwrRecvry=On !!" -ForegroundColor Red }
+function Update-ScriptFile {   # Need a copy of this, to re-run main script
+  param ([string]$url,
+        [string]$FilenameTmp,
+        [string]$FilenamePerm, 
+        [string]$VersionStr)
+  if ((Invoke-WebRequest $url).StatusCode -eq 200) { 
+    $client = new-object System.Net.WebClient
+    $client.Encoding = [System.Text.Encoding]::ascii
+    $client.DownloadFile("$url","$($Filename)")
+    $client.Dispose()
+    Write-Verbose "[.] File downloaded, checking version.."
+    Write-Verbose "[.] Checking downloaded file $($Filename) .."
+    $NewVersionCheck = (Check-NewerScriptVersion -Filename "$($Filename)" -VersionStr '$Version = *')
+    Write-Verbose "var = $NewVersionCheck"
+    #Write-Verbose "[boolean]var = $([boolean]$NewVersionCheck)"
+    if ($true -eq $NewVersionCheck) {  
+        if (Get-YesNo "[+] Found newer version, would you like to copy over this one and re-run? ") {
+          Copy-Item "$($filename)" "$($pwd)\Install-SecurityFixes.ps1"    # THIS MAY NEED A FIX -MAY NEED A $SCRIPTPATH VARIABLE!!
+          #$(Get-Item "$($filename)").CreationTimeUtc = [DateTime]::UtcNow
+          Write-Output "[+] Launching new script.."
+          . "$($FilenamePerm)"   # Dot source and run from here once, then exit.
+          Stop-Transcript
+          exit
+        }
+        # Copy the new script over this one and run..  Likely this will cause issues .. Lets see..
     } else {
-      Write-Host "[+] Found AcPwrRcvry=On already"
+      Write-Verbose "Continuing script.. Will not get here if we updated."
     }
-    if (!($WakeonLAN)) {
-      Write-Host "[.] Setting WakeonLAN=Enabled in DellSMBios:\ .."
-      try { Set-Item -Path DellSMBios:\PowerManagement\WakeonLAN -Value "Enabled" } catch { Write-Host "[.] Couldn't set WakeonLAN=Enabled !!" -ForegroundColor Red }
+  }  
+}
+
+function Update-File {
+  param ([string]$url,
+        [string]$FilenameTmp,
+        [string]$FilenamePerm, 
+        [string]$VersionStr)
+  if ((Invoke-WebRequest $url).StatusCode -eq 200) { 
+    $client = new-object System.Net.WebClient
+    $client.Encoding = [System.Text.Encoding]::ascii
+    $client.DownloadFile("$url","$($FilenameTmp)")
+    $client.Dispose()
+    Write-Verbose "[.] File downloaded, checking version.."
+    Write-Verbose "[.] Checking downloaded file $($FilenameTmp) .."
+    $NewVersionCheck = (Check-NewerScriptVersion -Filename "$($FilenameTmp)" -VersionStr $VersionStr)
+    if ($true -eq $NewVersionCheck) {  
+        Write-Host "[+] Found newer version, would you like to copy over this one and re-run? "
+        Copy-Item "$($FilenameTmp)" "$($FilenamePerm)" 
     } else {
-      Write-Host "[+] Found WakeonLAN=Enabled already"
+      Write-Verbose "Continuing script.. Will not get here if we updated."
     }
-    Write-Host "[+] Done!" -ForegroundColor Green
+  }  
+}
+
+Function Update-Script {
+  # $ScriptPath = Get-ScriptPath
+  # For 0.32 I am assuming $pwd is going to be the correct path
+  Write-Output "[.] Checking for updated version of script on github.."
+  $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/Install-SecurityFixes.ps1"
+  if ((Invoke-WebRequest $url).StatusCode -eq 200) { 
+    $client = new-object System.Net.WebClient
+    $client.Encoding = [System.Text.Encoding]::ascii
+    $client.DownloadFile("$url","$($tmp)\Install-SecurityFixes.ps1")
+    $client.Dispose()
+    Write-Verbose "[.] File downloading, checking version.."
+    Write-Verbose "[.] Checking downloaded file $($Filename) .."
+    $NewVersionCheck = (Check-NewerScriptVersion -Filename "$($tmp)\Install-SecurityFixes.ps1" -VersionStr '$Version = *')
+    Write-Verbose "var = $NewVersionCheck"
+    #Write-Verbose "[boolean]var = $([boolean]$NewVersionCheck)"
+    if ($true -eq $NewVersionCheck) {  
+        if (Get-YesNo "[+] Found newer version, would you like to copy over this one and re-run? ") {
+          Copy-Item "$($tmp)\Install-SecurityFixes.ps1" "$($pwd)\Install-SecurityFixes.ps1"    
+          $(Get-Item "$($pwd)\Install-SecurityFixes.ps1").CreationTimeUtc = [DateTime]::UtcNow
+          Write-Output "[+] Launching new script.."
+          . "$($pwd)\Install-SecurityFixes.ps1"   # Dot source and run from here once, then exit.
+          Stop-Transcript
+          exit
+        }
+    } else {
+      Write-Verbose "Continuing script.. Will not get here if we updated."
+    }
+  }
+}
+
+Function Update-QIDLists {
+  # $ScriptPath = Get-ScriptPath
+  # For 0.32 I am assuming $pwd is going to be the correct path
+  Write-Output "[.] Checking for updated QIDLists.ps1 file on github.."
+  $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/QIDLists.ps1"
+  if (Update-ScriptFile $url "$($tmp)\QIDLists.ps1" "$($pwd)\QIDLists.ps1" -VersionStr '$QIDsVersion = *') {
+    Write-Output "[+] Updates found, reloading QIDLists.ps1 .."
+    Read-QIDLists
+  } else {
+    Write-Output "[-] No updates found."
   }
 }
 
 
-################################################# FUNCTIONS ###############################################
+<#   # Unused due to improper scoping!
+function Read-ConfigFile {
+  if ($ConfigFile -like "*.ps1") {
+    Write-Host "Reading in values from $($ConfigFile) .." 
+    try {
+      . $($ConfigFile)
+    } catch {
+      Write-Host "`n`n[!] ERROR: Couldn't import $($ConfigFile) !! Exiting"
+      Stop-Transcript
+      Exit
+    }
+  }
+  if (!($QIDsIgnored)) {
+    Write-Verbose "`n`n[.] No QIDs to ignore."
+  }  
+}
+#>
+
+function Read-QIDLists {
+  # READ IN VALUES FROM QIDsList 
+  if ($QIDsListFile -like "*.ps1") {
+    if (Test-Path $QIDsListFile) {
+      try {
+        . $($QIDsListFile)
+      } catch {
+        Write-Output "`n`n[!] ERROR: Couldn't import $($QIDsListFile) !! Exiting"
+        Stop-Transcript
+        Exit
+      }
+    } else {
+      Write-Output "`n`n[!] Warning: Couldn't find $($QIDsListFile) .. Will try to update.."
+    }
+    # Update will be done separately..
+  }
+}
+Function Install-DellBiosProvider {
+  # install the DellBIOSProvider powershell module if set in the config
+  if ($InstallDellBIOSProvider) {
+    if (!(Get-InstalledModule -Name DellBIOSProvider -ErrorAction SilentlyContinue)) {
+      Write-Host "[.] Trying to install the NuGet package provider.. [this may take a minute..]" 
+      try { Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force } catch { Write-Host "[!] Couldn't install NuGet provider!" }
+      Write-Host "[.] Trying to install the Dell BIOS provider module.. [this may take a minute..]" 
+      try { Install-Module DellBIOSProvider -Force } catch { Write-Host "[!] Couldn't install DellBIOSProvder! " }
+      Write-Host "[+] Done!" -ForegroundColor Green
+    } else {
+      Write-Host "[.] DellBIOSProvider already installed." 
+    }
+  }
+}
+Function Set-DellBiosProviderDefaults {
+  if ($InstallDellBIOSProvider -and $SetWOL) {  # Set WOL settings per model
+    if (!(Get-InstalledModule -Name DellBIOSProvider)) {
+      Write-Host "[!] No DellBIOSProvder - Can't set WOL"
+    } else {
+      # For testing, just check and set these 2..
+      Import-Module DellBIOSProvider
+      Write-Host "[.] Checking for AcPwrRcvry=On & WakeonLAN=Enabled in DellSMBios:\ .." 
+      $AcPwrRcvry=Get-Item -Path DellSMBios:\PowerManagement\AcPwrRcvry
+      $WakeonLAN=Get-Item -Path DellSMBios:\PowerManagement\WakeonLAN
+      if (!($AcPwrRcvry)) { 
+        Write-Host "[.] Setting AcPwrRcvry=On in DellSMBios:\ .."
+        try { Set-Item -Path DellSMBios:\PowerManagement\AcPwrRcvry -Value "On" } catch { Write-Host "[.] Couldn't set AcPwrRecvry=On !!" -ForegroundColor Red }
+      } else {
+        Write-Host "[+] Found AcPwrRcvry=On already"
+      }
+      if (!($WakeonLAN)) {
+        Write-Host "[.] Setting WakeonLAN=Enabled in DellSMBios:\ .."
+        try { Set-Item -Path DellSMBios:\PowerManagement\WakeonLAN -Value "Enabled" } catch { Write-Host "[.] Couldn't set WakeonLAN=Enabled !!" -ForegroundColor Red }
+      } else {
+        Write-Host "[+] Found WakeonLAN=Enabled already"
+      }
+      Write-Host "[+] Done!" -ForegroundColor Green
+    }
+  }
+}
+
+################################################# CONFIG FUNCTIONS ###############################################
+
+
+function Find-ConfigFileLine {  # CONTEXT Search, a match needs to be found but NOT need to be exact line, i.e '$QIDsFlash = 1,2,3,4' returns true if '#$QIDsFlash = 1,2,3,4,9999,12345' is found
+  param ([string]$ConfigLine)
+
+  $ConfigContents = (Get-Content -path $ConfigFile)
+  ForEach ($str in $ConfigContents) {
+    if ($str -like "*$($ConfigLine)*") {
+      return $true
+    }
+  }
+  return $false
+}
+
+function Change-ConfigFileLine {
+  param ([string]$ConfigOldLine,
+         [string]$ConfigNewLine)
+  if (Get-YesNo "Change [$($ConfigOldLine)] in $($ConfigFile) to [$($ConfigNewLine)] ?") {
+    Write-Verbose "Changing line in $($ConfigFile): `n  Old: [$($ConfigOldLine)] `n  New: [$($ConfigNewLine)]"
+    $ConfigLine = (Select-String  -Path $ConfigFile -pattern $ConfigOldLine).Line
+    Write-Verbose "  Found match: [$($ConfigOldLine)]"  
+    Write-Verbose "  Replaced with: [$($ConfigNewLine)]"
+    $ConfigContents = (Get-Content -path $ConfigFile)
+    $ConfigFileNew=@()
+    ForEach ($str in $ConfigContents) {
+      if ($str -like "*$($ConfigLine)*") {
+        Write-Verbose "Replaced: `n$str with: `n$ConfigNewLine"
+        $ConfigFileNew += $ConfigNewLine
+      } else {
+        $ConfigFileNew += $str
+      }
+    }
+    $ConfigFileNew | Set-Content -path $ConfigFile -Force
+  }
+}
+
+function Add-ConfigFileLine {
+  param ([string]$ConfigNewLine)
+  if (Get-YesNo "Add [$($ConfigLine)] to $($ConfigFile) ?") {
+    $ConfigContents = Get-Content -Path $ConfigFile
+    $ConfigFileNew=@()
+    ForEach ($str in $ConfigContents) {
+      $ConfigFileNew += $str
+    }
+    Write-Verbose "Adding line to $($ConfigFile): `nLine: [$($ConfigNewLine)]"
+    $ConfigFileNew += $ConfigNewLine
+    $ConfigFileNew | Set-Content -path $ConfigFile -Force
+  } else { 
+    Write-Host "Skipping!"
+  }
+}
+
+function Remove-ConfigFileLine {  # Wrapper for Change-ConfigFileLine 
+  param ([string]$ConfigOldLine)
+  Change-ConfigFileLine $ConfigOldLine ""
+}
+
+function Find-LocalCSVFile {
+  param ([string]$Location)    
+    #write-Host "Find-LocalCSVFile $Location $OldPwd"
+    # FIGURE OUT CSV Filename
+    $i = 0
+    if (($null -eq $Location) -or ("." -eq $Location)) { $Location = $OldPwd }
+    [array]$Filenames = Get-ChildItem "$($Location)\*.csv" | ForEach-Object { $_.Name }
+    $Filenames | Foreach-Object {
+      Write-Host "[$i] $_" -ForegroundColor Blue
+      $i += 1
+    }
+    if (!($Automated) -and ($i -gt 1)) {   # Don't bother picking if there is just one file..
+      Write-Host "[$i] EXIT" -ForegroundColor Blue
+      $Selection = Read-Host "Select file to import, [Enter=0] ?"
+      if ($Selection -eq $i) { Write-Host "[-] Exiting!" -ForegroundColor Gray ; exit }
+      if ($Selection -eq "") { $Selection="0" }
+      $Sel = [int]$Selection
+    } else { 
+      $Sel=0
+    }
+    if (@($Filenames).length -gt 1) {
+      $CSVFilename = "$($Location)\$($Filenames[$Sel])"
+    } else {
+      if (@($Filenames).length -gt 0) {
+        $CSVFilename = "$($Location)\$($Filenames)"  # If there is only 1, we are only grabbing the first letter above.. This will get the whole filename.
+      }
+    }
+    Write-Host "[i] Using file: $CSVFileName" -ForegroundColor Blue
+    Return $CSVFileName
+}
+
+function Find-ServerCSVFile {
+  param ([string]$Location)
+  if (!(Test-Path "\\$($ServerName)")) {
+    Write-Host "[!] Can't access '$($serverName)', skipping Find-ServerCSVFile!"
+    return $null
+  }
+  if (!($null -eq $Location)) { $Location = "data\secaud" }  # Default to \\$servername\data\secaud if can't read from config..
+  if (Test-Path "\\$($ServerName)\$($Location)") {
+    $CSVFilename=(Get-ChildItem "\\$($ServerName)\$($Location)" -Filter "*.csv" | Sort-Object LastWriteTime | Select-Object -last 1).FullName
+    Write-Host "[i] Found file: $CSVFileName" -ForegroundColor Blue
+    return $CSVFilename 
+  } else {
+    return $null
+  }
+}
+
+function Start-Browser {
+  param ($url)
+  #Start-Process "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" -ArgumentList "$($url)"   
+  Start-Process "$($url)"  # Lets just load the URL in the system default browser..
+}
+
+Function Add-VulnToQIDList {
+  param ( $QIDNum,
+          $QIDName,
+          $QIDVar,
+          $QIDsAdded)
+  if ($QIDsAdded -notcontains $QIDNum) {
+    #$QIDsListFile = $ConfigFile  # Default to using the ConfigFile.. Probably want to split this out again.. but leave for now
+    if (Get-YesNo "New vulnerability found: [QID$($QIDNum)] - [$($QIDName)] - Add?") {
+      Write-Verbose "[v] Adding to variable in $($QIDsListFile): Variable: $($QIDVar)"
+      if ($Automated) { Write-Output "[QID$($QIDNum)] - [$($QIDName)] - Adding" }
+      $QIDLine = (Select-String  -Path $QIDsListFile -pattern $QIDVar).Line
+      Write-Verbose "[v] Found match: $QIDLine"
+      $QIDLineNew = "$QIDLine,$QIDNum"    
+      Write-Verbose "[v] Replaced with: $QIDLineNew"
+      $QIDFileNew=@()
+      ForEach ($str in $(Get-Content -path $QIDsListFile)) {
+        if ($str -like "*$($QIDLine)*") {
+          Write-Verbose "Replaced: `n$str with: `n$QIDLineNew"
+          $QIDFileNew += $QIDLineNew
+        } else {
+          $QIDFileNew += $str
+        }
+      }
+      
+      $QIDFileNew | Set-Content -path $QIDsListFile -Force
+      # Can't run this here as the scope is local vs global..
+      $QIDsAdded += $QIDNum
+      Write-Verbose "[!] Adding $QIDNum to QIDsAdded. QIDsAdded = $QIDsAdded"
+    }
+  } else {
+    Write-Output "[.] QID $QIDNum already added, skipping"
+    Write-Verbose "Found $QIDNum in $QIDsAdded"
+  }
+}
+
+
+################################################# VULN REMED FUNCTIONS ###############################################
 
 function Remove-Software {
   param ($Products,
@@ -285,92 +494,6 @@ function Remove-RegistryItem {
   }
 }
 
-function Find-LocalCSVFile {
-  param ([string]$Location)    
-    #write-Host "Find-LocalCSVFile $Location $OldPwd"
-    # FIGURE OUT CSV Filename
-    $i = 0
-    if (($null -eq $Location) -or ("." -eq $Location)) { $Location = $OldPwd }
-    [array]$Filenames = Get-ChildItem "$($Location)\*.csv" | ForEach-Object { $_.Name }
-    $Filenames | Foreach-Object {
-      Write-Host "[$i] $_" -ForegroundColor Blue
-      $i += 1
-    }
-    if (!($Automated) -and ($i -gt 1)) {   # Don't bother picking if there is just one file..
-      Write-Host "[$i] EXIT" -ForegroundColor Blue
-      $Selection = Read-Host "Select file to import, [Enter=0] ?"
-      if ($Selection -eq $i) { Write-Host "[-] Exiting!" -ForegroundColor Gray ; exit }
-      if ($Selection -eq "") { $Selection="0" }
-      $Sel = [int]$Selection
-    } else { 
-      $Sel=0
-    }
-    if (@($Filenames).length -gt 1) {
-      $CSVFilename = "$($Location)\$($Filenames[$Sel])"
-    } else {
-      if (@($Filenames).length -gt 0) {
-        $CSVFilename = "$($Location)\$($Filenames)"  # If there is only 1, we are only grabbing the first letter above.. This will get the whole filename.
-      }
-    }
-    Write-Host "[i] Using file: $CSVFileName" -ForegroundColor Blue
-    Return $CSVFileName
-}
-
-function Find-ServerCSVFile {
-  param ([string]$Location)
-  if (!(Test-Path "\\$($Servername)")) {
-    Write-Host "[!] Can't access $($serverName), skipping Find-ServerCSVFile!"
-    return $null
-  }
-  if (!($null -eq $Location)) { $Location = "data\secaud" }  # Default to \\$servername\data\secaud if can't read from config..
-  if (Test-Path "\\$($ServerName)\$($Location)") {
-    $CSVFilename=(Get-ChildItem "\\$($ServerName)\$($Location)" -Filter "*.csv" | Sort-Object LastWriteTime | Select-Object -last 1).FullName
-    Write-Host "[i] Found file: $CSVFileName" -ForegroundColor Blue
-    return $CSVFilename 
-  } else {
-    return $null
-  }
-}
-
-function Start-Browser {
-  param ($url)
-  #Start-Process "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" -ArgumentList "$($url)"   # No, lets just load the URL in the systems default browser..
-  Start-Process "$($url)"
-}
-
-Function Add-VulnToQIDList {
-  param ( $QIDNum,
-          $QIDName,
-          $QIDVar)
-  if ($QIDsAdded -notcontains $QIDNum) {
-    $QIDsListFile = $ConfigFile  # Default to using the ConfigFile.. fix this later!
-    if (Get-YesNo "New vulnerability found: [QID$($QIDNum)] - [$($QIDName)] - Add?") {
-      Write-Verbose "[v] Adding to variable in $($QIDsListFile): Variable: $($QIDVar)"
-      if ($Automated) { Write-Output "[QID$($QIDNum)] - [$($QIDName)] - Adding" }
-      $QIDLine = (Select-String  -Path $QIDsListFile -pattern $QIDVar).Line
-      Write-Verbose "[v] Found match: $QIDLine"
-      $QIDLineNew = "$QIDLine,$QIDNum"    
-      Write-Verbose "[v] Replaced with: $QIDLineNew"
-      $QIDFileNew=@()
-      ForEach ($str in $(Get-Content -path $QIDsListFile)) {
-        if ($str -like "*$($QIDLine)*") {
-          Write-Verbose "Replaced: `n$str with: `n$QIDLineNew"
-          $QIDFileNew += $QIDLineNew
-        } else {
-          $QIDFileNew += $str
-        }
-      }
-      $QIDFileNew | Set-Content -path $QIDsListFile -Force
-      
-      $QIDsAdded += $QIDNum
-      Write-Verbose "[!] Adding $QIDNum to QIDsAdded. QIDsAdded = $QIDsAdded"
-    }
-  } else {
-    Write-Output "[.] QID $QIDNum already added, skipping"
-    Write-Verbose "Found $QIDNum in $QIDsAdded"
-  }
-}
-
 function Download-NewestAdobeReader {
     # determining the latest version of Reader
     $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
@@ -408,22 +531,7 @@ function Download-NewestAdobeReader {
 
 function Get-ServicePermIssues {
   param ([string]$Results)
-  <#  Example:
-$str=@'
-------------------------------------------------------------	 	 	 	
-c:\dolphin\dolphintaskservice.exe	 	 	 	
-------------------------------------------------------------	 	 	 	
-Users	access-allowed	INHERITED_ACE	append_data execute standard_write_dac standard_read standard_delete standard_write_owner read_extended_attributes read_data synchronize write_data write_extended_attributes write_attributes read_attributes delete_child	
-------------------------------------------------------------	 	 	 	
-c:\dolphin\dolphinserver.exe	 	 	 	
-------------------------------------------------------------	 	 	 	
-Users	access-allowed	INHERITED_ACE	append_data execute standard_write_dac standard_read standard_delete standard_write_owner read_extended_attributes read_data synchronize write_data write_extended_attributes write_attributes read_attributes delete_child	
-------------------------------------------------------------	 	 	 	
-c:\dolphin\dolphinoceanservice.exe	 	 	 	
-------------------------------------------------------------	 	 	 	
-Users	access-allowed	INHERITED_ACE	append_data execute standard_write_dac standard_read standard_delete standard_write_owner read_extended_attributes read_data synchronize write_data write_extended_attributes write_attributes read_attributes delete_child#
-'@
-  #>
+
   $ServicePermIssues = @()
   $maxresults = (([regex]::Matches($Results, "------------------------------------------------------------")).count / 2) # Determine the number of service permission issues
   $ResultsSplit=$Results.split("`n").split("`r")
@@ -571,6 +679,91 @@ function Parse-ResultsFile {
   return $PathRaw
 }
 
+function Backup-BitlockerKeys {
+  if ($BackupBitlocker) {
+    $BLVs = (Get-BitLockerVolume).MountPoint
+    foreach ($BLV in $BLVs) { 
+      if (Get-BitLockerVolume -MountPoint $BLV -ErrorAction SilentlyContinue) {
+        try {
+          Write-Output "[.] Backing up Bitlocker Keys to AD.."
+          Backup-BitLockerKeyProtector -MountPoint $BLV -KeyProtectorId (Get-BitLockerVolume -MountPoint $BLV).KeyProtector[1].KeyProtectorId
+        } catch { 
+          Write-Output "[!] ERROR: Could not access BitlockerKeyProtector. Is drive $BLV encrypted? "
+          Get-BitLockerVolume
+        }
+      }
+    }
+  } else {
+    Write-Output "[-] Skipping backup of Bitlocker keys."
+  }
+}
+
+################################################################################################################## MAIN ############################################################################################################
+################################################################################################################## MAIN ############################################################################################################
+################################################################################################################## MAIN ############################################################################################################
+
+$hostname = $env:COMPUTERNAME
+$datetime = Get-Date -Format "yyyy-MM-dd HH:mm:ss K"
+$datetimedateonly = Get-Date -Format "yyyy-MM-dd"
+$osinstalldate = ([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDate) | get-date -Format MM/dd/yyyy
+$serialnumber = (wmic bios get serialnumber)
+Write-Host "`r`n================================================================" -ForegroundColor DarkCyan
+Write-Host "[i] Install-SecurityFixes.ps1" -ForegroundColor Cyan
+Write-Host "[i]   $($VersionInfo)" -ForegroundColor Cyan
+Write-Host "[i]   Alex Datsko - alex.datsko@mmeconsulting.com" -ForegroundColor Cyan
+Write-Host "[i] Date / Time : $datetime" -ForegroundColor Cyan
+Write-Host "[i] Computername : $hostname " -ForegroundColor Cyan
+Write-Host "[i] SerialNumber : $serialnumber " -ForegroundColor Cyan
+Write-Host "[i] OS Install Date : $osinstalldate " -ForegroundColor Cyan
+if (([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDate) -ge (Get-Date $datetimedateonly).AddDays(0-$IgnoreDaysOld)) {
+  if (!(Get-YesNo "$osinstalldate is within $IgnoreDaysOld days, continue?")) {
+    Write-Host "[!] Exiting" -ForegroundColor White
+    Stop-Transcript
+    exit
+  }
+}
+
+# Read-ConfigFile 
+# This is pissing me off, its not working being called from here. It's not due to Write-Output. Going to just run this here for now:
+. $($ConfigFile)
+Read-QIDLists
+
+# Check for newer version of script before anything..
+Update-Script  # CHECKS FOR SCRIPT UPDATES, UPDATES AND RERUNS IF POSSIBLE
+Update-QIDLists 
+
+# Lets check the Config first for $ServerName, as that is our default..
+if ($ServerName) {
+  if (Test-Connection -ComputerName $ServerName -Count 2 -Delay 1 -Quiet -ErrorAction SilentlyContinue) {
+    Write-Output "[.] Checking location \\$($ServerName)\$($CSVLocation) .."
+    if (Get-Item "\\$($ServerName)\$($CSVLocation)\Install-SecurityFixes.ps1") {
+      Write-Host "[.] Found \\$($ServerName)\$($CSVLocation)\Install-SecurityFixes.ps1 .. Cleared to proceed." -ForegroundColor Green
+    }
+  } else {
+    # Lets also check SERVER in case config is wrong?
+    Write-Output "[.] Checking default location \\SERVER\Data\SecAud .."
+    if (Test-Connection -ComputerName "SERVER" -Count 2 -Delay 1 -Quiet -ErrorAction SilentlyContinue) {
+      if (Get-Item "\\SERVER\Data\SecAud\Install-SecurityFixes.ps1") {
+        $ServerName = "SERVER"
+        $CSVLocation = "Data\SecAud"
+        Write-Host "[.] Found \\$($ServerName)\$($CSVLocation)}\Install-SecurityFixes.ps1 .. Cleared to proceed." -ForegroundColor Green
+      }
+    }    
+  }
+} else {  # Can't ping $ServerName, lets see if there is a good location, or localhost?
+  $ServerName = Read-Host "[!] Couldn't ping SERVER or '$($ServerName)' .. please enter the server name where we can find the .CSV file, or press enter to read it out of the current folder: "
+  if (!($ServerName)) { 
+    $ServerName = "$($env:computername)"
+  }
+}
+
+Install-DellBiosProvider  # Will only run if value is set in Config
+Write-Host "ServerName: $ServerName"
+Set-DellBiosProviderDefaults # Will only run if value is set in Config
+Write-Host "ServerName: $ServerName"
+Backup-BitlockerKeys # Try to Backup Bitlocker recovery keys to AD
+Write-Host "ServerName: $ServerName"
+
 ################# ( READ IN CSV AND PROCESS ) #####################
 
 if (!(Test-Path $($tmp))) {
@@ -611,90 +804,123 @@ if ($null -eq $CSVFilename) {
 ######## Find if there are any new vulnerabilities not listed ########
 
 $Rows = @()
+$QIDsAdded = @()
 $CSVData | ForEach-Object {
 # Search by title:
   $QID=($_.QID).Replace('.0','') 
+  if ($QIDsAdded -notcontains [int]$QID) {
+    if ($_.Title -like "Apple iCloud for Windows*") {
+      if (!($QIDsAppleiCloud -contains $QID)) {
+        Add-VulnToQIDList $QID $_.Title  'QIDsAddedQIDsAppleiTunes' 
+        . $($QIDsListFile)
+        $QIDsAdded+=[int]$QID
+      }
+    }
+    if ($_.Title -like "Apple iTunes for Windows*") {
+      if (!($QIDsAppleiTunes -contains $QID)) {
+        Add-VulnToQIDList $QID $_.Title  'QIDsAppleiTunes' 
+        . $($QIDsListFile)
+        $QIDsAdded+=[int]$QID
+      }
+    }
+    if ($_.Title -like "Chrome*") {
+      if (!($QIDsTeamviewer -contains $QID)) {
+        Add-VulnToQIDList $QID $_.Title  'QIDsTeamViewer' 
+        . $($QIDsListFile)
+        $QIDsAdded+=[int]$QID
+      }
+    }
+    if ($_.Title -like "Firefox*") {
+      if (!($QIDsFirefox -contains $QID)) {
+        Add-VulnToQIDList $QID $_.Title  'QIDsFirefox'
+        . $($QIDsListFile)
+        $QIDsAdded+=[int]$QID
+      }
+    }
+    if ($_.Title -like "Zoom Client*") {
+      if (!($QIDsZoom -contains $QID)) {
+        Add-VulnToQIDList $QID $_.Title  'QIDsZoom'
+        . $($QIDsListFile)
+        $QIDsAdded+=[int]$QID
+      }
+    }
+    if ($_.Title -like "TeamViewer*") {
+      if (!($QIDsTeamviewer -contains $QID)) {
+        Add-VulnToQIDList $QID $_.Title  'QIDsTeamViewer'
+        . $($QIDsListFile)
+        $QIDsAdded+=[int]$QID
+      }
+    }  
+    if ($_.Title -like "Dropbox*") {
+      if (!($QIDsDropbox -contains $QID)) {
+        Add-VulnToQIDList $QID $_.Title  'QIDsDropbox'
+        . $($QIDsListFile)
+        $QIDsAdded+=[int]$QID
+      }
+    }
+    if ($_.Title -like "Oracle Java*") {            ########
+      if (!($QIDsOracleJava -contains $QID)) {
+        Add-VulnToQIDList $QID $_.Title  'QIDsOracleJava' 
+        . $($QIDsListFile)
+        $QIDsAdded+=[int]$QID
+      }
+    }
+    if ($_.Title -like "Adopt Open JDK*") {             ############
+      if (!($QIDsAdoptOpenJDK -contains $QID)) {
+        Add-VulnToQIDList $QID $_.Title  'QIDsAdoptOpenJDK' 
+        . $($QIDsListFile)
+        $QIDsAdded+=[int]$QID
+      }
+    }
+    if ($_.Title -like "VirtualBox*") {
+      if (!($QIDsVirtualBox -contains $QID)) {
+        Add-VulnToQIDList $QID $_.Title  'QIDsVirtualBox'
+        . $($QIDsListFile)
+        $QIDsAdded+=[int]$QID
+      }
+    }
+    if ($_.Title -like "Adobe Reader*") {  
+      if (!($QIDsAdobeReader -contains $QID)) {
+        Add-VulnToQIDList $QID $_.Title  'QIDsAdobeReader'
+        $QIDsAdded+=[int]$QID
+      }
+    }
+    if ($_.Title -like "Intel Graphics*") {
+      if (!($QIDsIntelGraphicsDriver -contains $QID)) {
+        Add-VulnToQIDList $QID $_.Title  'QIDsIntelGraphicsDriver'
+        . $($QIDsListFile)
+        $QIDsAdded+=[int]$QID
+      }
+    }
+    if ($_.Title -like "NVIDIA*") {
+      if (!($QIDsNVIDIA -contains $QID)) { 
+        Add-VulnToQIDList $QID $_.Title  'QIDsNVIDIA' 
+        . $($QIDsListFile)
+        $QIDsAdded+=[int]$QID
+      }
+    }
+    if ($_.Title -like "Dell Client*") {
+      if (!($QIDsDellCommandUpdate -contains $QID)) {
+        Add-VulnToQIDList $QID $_.Title  'QIDsDellCommandUpdate' 
+        . $($QIDsListFile)
+        $QIDsAdded+=[int]$QID
+      }
+    }
+    if ($_.Title -like "Ghostscript*") {
+      if (!($QIDsGhostscript -contains $QID)) {
+        Add-VulnToQIDList $QID $_.Title  'QIDsGhostScript' 
+        . $($QIDsListFile)
+        $QIDsAdded+=[int]$QID
+      }
+    }
 
-  if ($_.Title -like "Apple iCloud for Windows*") {
-    if (!($QIDsAppleiCloud -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsAppleiTunes'
-    }
-  }
-  if ($_.Title -like "Apple iTunes for Windows*") {
-    if (!($QIDsAppleiTunes -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsAppleiTunes'
-    }
-  }
-  if ($_.Title -like "Chrome*") {
-    if (!($QIDsTeamviewer -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsTeamViewer'
-    }
-  }
-  if ($_.Title -like "Firefox*") {
-    if (!($QIDsFirefox -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsFirefox'
-    }
-  }
-  if ($_.Title -like "Zoom Client*") {
-    if (!($QIDsZoom -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsZoom'
-    }
-  }
-  if ($_.Title -like "TeamViewer*") {
-    if (!($QIDsTeamviewer -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsTeamViewer'
-    }
-  }  
-  if ($_.Title -like "Dropbox*") {
-    if (!($QIDsDropbox -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsDropbox'
-    }
-  }
-  if ($_.Title -like "Oracle Java*") {            ########
-    if (!($QIDsOracleJava -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsOracleJava'
-    }
-  }
-  if ($_.Title -like "Adopt Open JDK*") {             ############
-    if (!($QIDsAdoptOpenJDK -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsAdoptOpenJDK'
-    }
-  }
-  if ($_.Title -like "VirtualBox*") {
-    if (!($QIDsVirtualBox -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsVirtualBox'
-    }
-  }
-  if ($_.Title -like "Adobe Reader*") {  
-    if (!($QIDsAdobeReader -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsAdobeReader'
-    }
-  }
-  if ($_.Title -like "Intel Graphics*") {
-    if (!($QIDsIntelGraphicsDriver -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsIntelGraphicsDriver'
-    }
-  }
-  if ($_.Title -like "NVIDIA*") {
-    if (!($QIDsNVIDIA -contains $QID)) { 
-      Add-VulnToQIDList $QID $_.Title  'QIDsNVIDIA'
-    }
-  }
-  if ($_.Title -like "Dell Client*") {
-    if (!($QIDsDellCommandUpdate -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsDellCommandUpdate'
-    }
-  }
-  if ($_.Title -like "Ghostscript*") {
-    if (!($QIDsGhostscript -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsGhostScript'
-    }
-  }
-
-# Search by title:
-  if ($_.Results -like "Microsoft vulnerable Microsoft.*") {
-    if (!($QIDsUpdateMicrosoftStoreApps -contains $QID)) {
-      Add-VulnToQIDList $QID $_.Title  'QIDsUpdateMicrosoftStoreApps'
+  # Search by title:
+    if ($_.Results -like "Microsoft vulnerable Microsoft.*") {
+      if (!($QIDsUpdateMicrosoftStoreApps -contains $QID)) {
+        Add-VulnToQIDList $QID $_.Title  'QIDsUpdateMicrosoftStoreApps' $QIDsAdded
+        . $($QIDsListFile)
+        $QIDsAdded+=[int]$QID
+      }
     }
   }
 }
@@ -1217,6 +1443,8 @@ foreach ($QID in $QIDs) {
           }  
         }
       }
+
+
       { $QIDsMicrosoftNETCoreV5 -contains $_ } {
             <# Remove one or all of these??
             IdentifyingNumber                      Name                                           LocalPackage
@@ -1443,8 +1671,7 @@ foreach ($QID in $QIDs) {
       91848 {
         if (Get-YesNo "$_ Install Store Installer app update to 1.16.13405.0 ? " -Results $Results) { 
           # Requires -RunAsAdministrator
-          Begin {}
-          Process {
+          if ($true) {
             if ([version]'1.16.13405.0' -gt [version](Get-AppxPackage -Name 'Microsoft.DesktopAppInstaller' -ErrorAction SilentlyContinue).Version) {
               $zip = (Join-Path -Path $tmp -ChildPath 'Microsoft.DesktopAppInstaller_1.16.13405.0_8wekyb3d8bbwe.zip')
               $zipFolder = "$($zip -replace '\.zip','')"
@@ -1512,3 +1739,5 @@ Stop-Transcript
 if (!($Automated)) {
   $null = Read-Host "--- Press enter to exit ---"
 }
+Write-Host "`n"
+Exit
