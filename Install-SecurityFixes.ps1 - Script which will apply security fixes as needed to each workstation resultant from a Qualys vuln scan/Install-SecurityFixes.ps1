@@ -404,7 +404,7 @@ Function Add-VulnToQIDList {
       if ($Automated) { Write-Output "[QID$($QIDNum)] - [$($QIDName)] - Adding" }
       $QIDLine = (Select-String  -Path $QIDsListFile -pattern $QIDVar).Line
       Write-Verbose "[v] Found match: $QIDLine"
-      $QIDLineNew = "$QIDLine,$QIDNum"    
+      $QIDLineNew = "$QIDLine,$QIDNum"  | Select-Object -Unique  
       Write-Verbose "[v] Replaced with: $QIDLineNew"
       $QIDFileNew=@()
       ForEach ($str in $(Get-Content -path $QIDsListFile)) {
