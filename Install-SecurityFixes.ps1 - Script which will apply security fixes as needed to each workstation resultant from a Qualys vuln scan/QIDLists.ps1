@@ -2,7 +2,7 @@
 #    Note: to make these lists, copy large list of QIDs related to out of date app, 1 per line to a file, which you can copy from Excel and paste into a txt file. 
 #          in linux, cat filename | sort | uniq | tr -s '\n' ','
 #          delete the first and last comma if exists..
-$QIDsVersion = 0.32.04
+$QIDsVersion = "0.32.04"
 
 Write-Output "[.] Loading QID Lists.."
 

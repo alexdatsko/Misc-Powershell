@@ -21,8 +21,8 @@ $dateshort= Get-Date -Format "yyyy-MM-dd"
 Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 
 # Script specific vars:  
-$Version = "0.35.10"   
-# Last fixes: Fixed version updater code
+$Version = "0.35.11"   
+# Last fixes: Refactored and fixed update code further. Added quotes in QIDLists version var
 $VersionInfo = "v$($Version) - Last modified: 3/1/22"
 
 # Self-elevate the script if required
@@ -87,7 +87,7 @@ function Check-NewerScriptVersion {   # Check in ps1 file for VersionStr and rep
   Write-Verbose "[.] Loaded $TotalLines lines from $($Filename) .."
   foreach ($line in $FileContents) {
     if ($line -like $VersionStr) {
-      if ($line -like '#') {  # Handle comment after $Version = "1.2.3.0" # Comment ..
+      if ($line -like '#') {  # Handle comment on same line, i.e: $Version = "1.2.3.0" # Comment ..
         $VersionFound = $line.split('=')[1].split("#")[0].trim().replace('"','')
       } else {
         $VersionFound = $line.split('=')[1].trim().replace('"','')
@@ -154,12 +154,8 @@ function Update-ScriptFile {   # Need a copy of this, to re-run main script
     Write-Verbose "var = $NewVersionCheck"
     if ($NewVersionCheck) {  
         if (Get-YesNo "[+] Found newer version $NewVersionCheck, would you like to copy over this one and re-run? ") {
-          # Copy the new script over this one and run.
+          # Copy the new script over this one..
           Copy-Item "$($FilenameTmp)" "$($FilenamePerm)" -Force
-          Write-Output "[+] Launching new script.."
-          . "$($FilenamePerm)"   # Dot source and run from here once, then exit.
-          Stop-Transcript
-          exit
         }
     } else {
       Write-Verbose "Continuing without updating."
@@ -172,10 +168,12 @@ Function Update-Script {
   Write-Output "[.] Checking for updated version of script on github.."
   $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/Install-SecurityFixes.ps1"
   if (Update-ScriptFile -URL $url -FilenameTmp "$($tmp)\Install-SecurityFixes.ps1" -FilenamePerm "$($pwd)\Install-SecurityFixes.ps1" -VersionStr '$Version = *' -VersionToCheck $Version) {
-    Write-Output "[+] Updates found, reloading QIDLists.ps1 .."
-    Read-QIDLists
+    Write-Output "[+] Update found, re-running script .."
+    . "$($pwd)\Install-SecurityFixes.ps1"   # Dot source and run from here once, then exit.
+    Stop-Transcript
+    exit
   } else {
-    Write-Output "[-] No updates found."
+    Write-Output "[-] No update found for $($Version)."
   }
 }
 
@@ -188,7 +186,7 @@ Function Update-QIDLists {
     Write-Output "[+] Updates found, reloading QIDLists.ps1 .."
     Read-QIDLists
   } else {
-    Write-Output "[-] No updates found."
+    Write-Output "[-] No update found for $($QIDsVersion)."
   }
 }
 
