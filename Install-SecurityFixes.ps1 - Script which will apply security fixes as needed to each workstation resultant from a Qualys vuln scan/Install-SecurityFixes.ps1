@@ -21,7 +21,7 @@ $dateshort= Get-Date -Format "yyyy-MM-dd"
 Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 
 # Script specific vars:  
-$Version = "0.35.09"   
+$Version = "0.35.10"   
 # Last fixes: Fixed version updater code
 $VersionInfo = "v$($Version) - Last modified: 3/1/22"
 
@@ -77,9 +77,10 @@ function Get-YesNo {
 ################################################# SCRIPT FUNCTIONS ###############################################
 
 
-function Check-NewerScriptVersion { 
+function Check-NewerScriptVersion {   # Check in ps1 file for VersionStr and report back if its newer than the current value ($VersionToCheck), returns version# if so.
   param ([string]$Filename,
-         [string]$VersionStr)
+         [string]$VersionStr,
+         [string]$VersionToCheck)
 
   $FileContents = Get-Content $Filename
   $TotalLines = $FileContents.Length
@@ -93,18 +94,18 @@ function Check-NewerScriptVersion {
       }
       Write-Verbose " New script version: $([version]$VersionFound)"
       Write-Verbose " New script version Hex: $($VersionFound | Format-Hex)"
-      Write-Verbose " Current version: $([version]$Version) "
-      Write-Verbose " Current version hex: $($Version | Format-Hex)"
-      if ([version]$VersionFound -gt [version]$Version) {
-        Write-Verbose "[+] Version found $($VersionFound) is newer than $($Version)"
+      Write-Verbose " Current version: $([version]$VersionToCheck) "
+      Write-Verbose " Current version hex: $($VersionToCheck | Format-Hex)"
+      if ([version]$VersionFound -gt [version]$VersionToCheck) {
+        Write-Verbose "[+] Version found $($VersionFound) is newer than $($VersionToCheck)"
         return $VersionFound;
       }
-      if ([version]$VersionFound -eq [version]$Version) {
+      if ([version]$VersionFound -eq [version]$VersionToCheck) {
         Write-Verbose "[=] Version found is the same: $([version]$VersionFound)"
         return $false;
       }
-      if ([version]$VersionFound -lt [version]$Version) {
-        Write-Verbose "[-] Version found $($VersionFound) is older than $($Version)"
+      if ([version]$VersionFound -lt [version]$VersionToCheck) {
+        Write-Verbose "[-] Version found $($VersionFound) is older than $($VersionToCheck)"
         return $false;
       }
     }
@@ -113,11 +114,12 @@ function Check-NewerScriptVersion {
   return $false;
 }
 
-function Update-ScriptFile {   # Need a copy of this, to re-run main script
+function Update-File {  # Not even used currently, but maybe eventually?
   param ([string]$url,
         [string]$FilenameTmp,
         [string]$FilenamePerm, 
-        [string]$VersionStr)
+        [string]$VersionStr,
+        [string]$VersionToCheck)
   if ((Invoke-WebRequest $url).StatusCode -eq 200) { 
     $client = new-object System.Net.WebClient
     $client.Encoding = [System.Text.Encoding]::ascii
@@ -125,7 +127,30 @@ function Update-ScriptFile {   # Need a copy of this, to re-run main script
     $client.Dispose()
     Write-Verbose "[.] File downloaded, checking version.."
     Write-Verbose "[.] Checking downloaded file $($FilenameTmp) .."
-    $NewVersionCheck = (Check-NewerScriptVersion -Filename "$($FilenameTmp)" -VersionStr '$Version = *')
+    $NewVersionCheck = (Check-NewerScriptVersion -Filename "$($FilenameTmp)" -VersionStr $VersionStr -VersionToCheck $VersionToCheck)
+    if ($NewVersionCheck) {  
+        Write-Host "[+] Found newer version $($NewVersionCheck), would you like to copy over this one? "
+        Copy-Item "$($FilenameTmp)" "$($FilenamePerm)" -Force
+    } else {
+      Write-Verbose "Continuing without updating file $($FilenamePerm)."
+    }
+  }  
+}
+
+function Update-ScriptFile {   # Need a copy of this, to re-run main script
+  param ([string]$url,
+        [string]$FilenameTmp,
+        [string]$FilenamePerm, 
+        [string]$VersionStr,
+        [string]$VersionToCheck)
+  if ((Invoke-WebRequest $url).StatusCode -eq 200) { 
+    $client = new-object System.Net.WebClient
+    $client.Encoding = [System.Text.Encoding]::ascii
+    $client.DownloadFile("$url","$($FilenameTmp)")
+    $client.Dispose()
+    Write-Verbose "[.] File downloaded, checking version.."
+    Write-Verbose "[.] Checking downloaded file $($FilenameTmp) .."
+    $NewVersionCheck = (Check-NewerScriptVersion -Filename "$($FilenameTmp)" -VersionStr '$Version = *' -VersionToCheck $VersionToCheck)
     Write-Verbose "var = $NewVersionCheck"
     if ($NewVersionCheck) {  
         if (Get-YesNo "[+] Found newer version $NewVersionCheck, would you like to copy over this one and re-run? ") {
@@ -142,54 +167,15 @@ function Update-ScriptFile {   # Need a copy of this, to re-run main script
   }  
 }
 
-function Update-File {
-  param ([string]$url,
-        [string]$FilenameTmp,
-        [string]$FilenamePerm, 
-        [string]$VersionStr)
-  if ((Invoke-WebRequest $url).StatusCode -eq 200) { 
-    $client = new-object System.Net.WebClient
-    $client.Encoding = [System.Text.Encoding]::ascii
-    $client.DownloadFile("$url","$($FilenameTmp)")
-    $client.Dispose()
-    Write-Verbose "[.] File downloaded, checking version.."
-    Write-Verbose "[.] Checking downloaded file $($FilenameTmp) .."
-    $NewVersionCheck = (Check-NewerScriptVersion -Filename "$($FilenameTmp)" -VersionStr $VersionStr)
-    if ($true -eq $NewVersionCheck) {  
-        Write-Host "[+] Found newer version, would you like to copy over this one and re-run? "
-        Copy-Item "$($FilenameTmp)" "$($FilenamePerm)" -Force
-    } else {
-      Write-Verbose "Continuing script.. Will not get here if we updated."
-    }
-  }  
-}
-
 Function Update-Script {
-  # $ScriptPath = Get-ScriptPath
   # For 0.32 I am assuming $pwd is going to be the correct path
   Write-Output "[.] Checking for updated version of script on github.."
   $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/Install-SecurityFixes.ps1"
-  if ((Invoke-WebRequest $url).StatusCode -eq 200) { 
-    $client = new-object System.Net.WebClient
-    $client.Encoding = [System.Text.Encoding]::ascii
-    $client.DownloadFile("$url","$($tmp)\Install-SecurityFixes.ps1")
-    $client.Dispose()
-    Write-Verbose "[.] File downloading, checking version.."
-    Write-Verbose "[.] Checking downloaded file $($Filename) .."
-    $NewVersionCheck = (Check-NewerScriptVersion -Filename "$($tmp)\Install-SecurityFixes.ps1" -VersionStr '$Version = *')
-    Write-Verbose "var = $NewVersionCheck"
-    if ($true -eq $NewVersionCheck) {  
-        if (Get-YesNo "Found newer version, would you like to copy over this one and re-run? ") {
-          Copy-Item "$($tmp)\Install-SecurityFixes.ps1" "$($pwd)\Install-SecurityFixes.ps1"    
-          $(Get-Item "$($pwd)\Install-SecurityFixes.ps1").CreationTimeUtc = [DateTime]::UtcNow
-          Write-Output "[+] Launching new script.."
-          . "$($pwd)\Install-SecurityFixes.ps1"   # Dot source and run from here once, then exit.
-          Stop-Transcript
-          exit
-        }
-    } else {
-      Write-Verbose "Continuing script.. Will not get here if we updated."
-    }
+  if (Update-ScriptFile -URL $url -FilenameTmp "$($tmp)\Install-SecurityFixes.ps1" -FilenamePerm "$($pwd)\Install-SecurityFixes.ps1" -VersionStr '$Version = *' -VersionToCheck $Version) {
+    Write-Output "[+] Updates found, reloading QIDLists.ps1 .."
+    Read-QIDLists
+  } else {
+    Write-Output "[-] No updates found."
   }
 }
 
@@ -198,32 +184,13 @@ Function Update-QIDLists {
   # For 0.32 I am assuming $pwd is going to be the correct path
   Write-Output "[.] Checking for updated QIDLists.ps1 file on github.."
   $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/QIDLists.ps1"
-  if (Update-ScriptFile -URL $url -FilenameTmp "$($tmp)\QIDLists.ps1" -FilenamePerm "$($pwd)\QIDLists.ps1" -VersionStr '$QIDsVersion = *') {
+  if (Update-ScriptFile -URL $url -FilenameTmp "$($tmp)\QIDLists.ps1" -FilenamePerm "$($pwd)\QIDLists.ps1" -VersionStr '$QIDsVersion = *' -VersionToCheck $QIDsVersion) {
     Write-Output "[+] Updates found, reloading QIDLists.ps1 .."
     Read-QIDLists
   } else {
     Write-Output "[-] No updates found."
   }
 }
-
-
-<#   # Unused due to improper scoping!
-function Read-ConfigFile {
-  if ($ConfigFile -like "*.ps1") {
-    Write-Host "Reading in values from $($ConfigFile) .." 
-    try {
-      . $($ConfigFile)
-    } catch {
-      Write-Host "`n`n[!] ERROR: Couldn't import $($ConfigFile) !! Exiting"
-      Stop-Transcript
-      Exit
-    }
-  }
-  if (!($QIDsIgnored)) {
-    Write-Verbose "`n`n[.] No QIDs to ignore."
-  }  
-}
-#>
 
 function Read-QIDLists {
   # READ IN VALUES FROM QIDsList 
