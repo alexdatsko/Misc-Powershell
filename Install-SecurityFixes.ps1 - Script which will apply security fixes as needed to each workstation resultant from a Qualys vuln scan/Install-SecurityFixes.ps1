@@ -21,7 +21,7 @@ $dateshort= Get-Date -Format "yyyy-MM-dd"
 Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 
 # Script specific vars:  
-$Version = "0.35.14"   
+$Version = "0.35.15"   
 # Last fixes: Last update for update code? Logic fix..
 $VersionInfo = "v$($Version) - Last modified: 3/1/22"
 
@@ -173,7 +173,7 @@ function Update-ScriptFile {   # Need a copy of this, to re-run main script
 
 Function Update-Script {
   # For 0.32 I am assuming $pwd is going to be the correct path
-  Write-Output "[.] Checking for updated version of script on github.."
+  Write-Output "[.] Checking for updated version of script on github.. Current Version = $($Version)"
   $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/Install-SecurityFixes.ps1"
   if (Update-ScriptFile -URL $url -FilenameTmp "$($tmp)\Install-SecurityFixes.ps1" -FilenamePerm "$($pwd)\Install-SecurityFixes.ps1" -VersionStr '$Version = *' -VersionToCheck $Version) {
     Write-Output "[+] Update found, re-running script .."
@@ -188,7 +188,7 @@ Function Update-Script {
 Function Update-QIDLists {
   # $ScriptPath = Get-ScriptPath
   # For 0.32 I am assuming $pwd is going to be the correct path
-  Write-Output "[.] Checking for updated QIDLists file on github.."
+  Write-Output "[.] Checking for updated QIDLists file on github.. Current Version = $($QIDsVersion)"
   $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/QIDLists.ps1"
   if (Update-ScriptFile -URL $url -FilenameTmp "$($tmp)\QIDLists.ps1" -FilenamePerm "$($pwd)\QIDLists.ps1" -VersionStr '$QIDsVersion = *' -VersionToCheck $QIDsVersion) {
     Write-Output "[+] Updates found, reloading QIDLists.ps1 .."
