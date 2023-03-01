@@ -21,8 +21,8 @@ $dateshort= Get-Date -Format "yyyy-MM-dd"
 Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 
 # Script specific vars:  
-$Version = "0.35.08"   
-# Last fixes: Fixed version check comment issue, cleaned up a little
+$Version = "0.35.09"   
+# Last fixes: Fixed version updater code
 $VersionInfo = "v$($Version) - Last modified: 3/1/22"
 
 # Self-elevate the script if required
@@ -121,16 +121,16 @@ function Update-ScriptFile {   # Need a copy of this, to re-run main script
   if ((Invoke-WebRequest $url).StatusCode -eq 200) { 
     $client = new-object System.Net.WebClient
     $client.Encoding = [System.Text.Encoding]::ascii
-    $client.DownloadFile("$url","$($Filename)")
+    $client.DownloadFile("$url","$($FilenameTmp)")
     $client.Dispose()
     Write-Verbose "[.] File downloaded, checking version.."
-    Write-Verbose "[.] Checking downloaded file $($Filename) .."
-    $NewVersionCheck = (Check-NewerScriptVersion -Filename "$($Filename)" -VersionStr '$Version = *')
+    Write-Verbose "[.] Checking downloaded file $($FilenameTmp) .."
+    $NewVersionCheck = (Check-NewerScriptVersion -Filename "$($FilenameTmp)" -VersionStr '$Version = *')
     Write-Verbose "var = $NewVersionCheck"
     if ($NewVersionCheck) {  
         if (Get-YesNo "[+] Found newer version $NewVersionCheck, would you like to copy over this one and re-run? ") {
           # Copy the new script over this one and run.
-          Copy-Item "$($filename)" "$($pwd)\Install-SecurityFixes.ps1"
+          Copy-Item "$($FilenameTmp)" "$($FilenamePerm)" -Force
           Write-Output "[+] Launching new script.."
           . "$($FilenamePerm)"   # Dot source and run from here once, then exit.
           Stop-Transcript
@@ -157,7 +157,7 @@ function Update-File {
     $NewVersionCheck = (Check-NewerScriptVersion -Filename "$($FilenameTmp)" -VersionStr $VersionStr)
     if ($true -eq $NewVersionCheck) {  
         Write-Host "[+] Found newer version, would you like to copy over this one and re-run? "
-        Copy-Item "$($FilenameTmp)" "$($FilenamePerm)" 
+        Copy-Item "$($FilenameTmp)" "$($FilenamePerm)" -Force
     } else {
       Write-Verbose "Continuing script.. Will not get here if we updated."
     }
@@ -198,7 +198,7 @@ Function Update-QIDLists {
   # For 0.32 I am assuming $pwd is going to be the correct path
   Write-Output "[.] Checking for updated QIDLists.ps1 file on github.."
   $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/QIDLists.ps1"
-  if (Update-ScriptFile $url "$($tmp)\QIDLists.ps1" "$($pwd)\QIDLists.ps1" -VersionStr '$QIDsVersion = *') {
+  if (Update-ScriptFile -URL $url -FilenameTmp "$($tmp)\QIDLists.ps1" -FilenamePerm "$($pwd)\QIDLists.ps1" -VersionStr '$QIDsVersion = *') {
     Write-Output "[+] Updates found, reloading QIDLists.ps1 .."
     Read-QIDLists
   } else {
