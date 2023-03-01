@@ -21,8 +21,8 @@ $dateshort= Get-Date -Format "yyyy-MM-dd"
 Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 
 # Script specific vars:  
-$Version = "0.35.13"   
-# Last fixes: Last update for update code?
+$Version = "0.35.14"   
+# Last fixes: Last update for update code? Logic fix..
 $VersionInfo = "v$($Version) - Last modified: 3/1/22"
 
 # Self-elevate the script if required
@@ -131,10 +131,12 @@ function Update-File {  # Not even used currently, but maybe eventually?
     if ($NewVersionCheck) {  
         Write-Host "[+] Found newer version $($NewVersionCheck), would you like to copy over this one? "
         Copy-Item "$($FilenameTmp)" "$($FilenamePerm)" -Force
+        return $true
     } else {
       Write-Verbose "Continuing without updating file $($FilenamePerm)."
     }
   }  
+  return $false
 }
 
 function Update-ScriptFile {   # Need a copy of this, to re-run main script
@@ -156,13 +158,16 @@ function Update-ScriptFile {   # Need a copy of this, to re-run main script
     $NewVersionCheck = (Check-NewerScriptVersion -Filename "$($FilenameTmp)" -VersionStr $($VersionStr) -VersionToCheck $VersionToCheck)
     Write-Verbose "var = $NewVersionCheck"
     if ($NewVersionCheck) {  
-        if (Get-YesNo "--- Found newer version $NewVersionCheck, would you like to copy over this one and re-run? ") {
+        if (Get-YesNo "--- Found newer version $NewVersionCheck, would you like to copy over this one? ") {
           # Copy the new script over this one..
           Copy-Item "$($FilenameTmp)" "$($FilenamePerm)" -Force
+          return $true
         }
     } else {
       Write-Verbose "Continuing without updating."
+      return $false
     }
+    return $false
   }  
 }
 
