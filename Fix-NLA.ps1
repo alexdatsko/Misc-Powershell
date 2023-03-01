@@ -1,7 +1,7 @@
 $DC_ServiceList = @("NSI","RpcSs","TcpIp","Dhcp","Eventlog","DNS","NTDS")
 $MachineType = ''
 
-Write-Output "`n`n[o] --- NLA FIX ---"
+Write-Output "`n`n[o] --- NLA FIX --- `nv0.2 - Service restart fix`n"
 
 Write-Output "[.] Checking Machine type.."
 $osInfo = Get-CimInstance -ClassName Win32_OperatingSystem

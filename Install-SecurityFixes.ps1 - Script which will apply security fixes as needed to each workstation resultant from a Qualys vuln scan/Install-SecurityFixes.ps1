@@ -21,8 +21,8 @@ $dateshort= Get-Date -Format "yyyy-MM-dd"
 Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 
 # Script specific vars:
-$Version = "0.35.04"
-$VersionInfo = "v$($Version) - Last modified: 2/21/22"
+$Version = "0.35.05"
+$VersionInfo = "v$($Version) - Last modified: 3/1/22"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -1586,10 +1586,11 @@ foreach ($QID in $QIDs) {
               Write-Output "[.] Checking owner of $file .. $($objacl.Owner)"
               # Check for file owner, to resolve problems setting inheritance (if needed)
               if ($objacl.Owner -notlike "*$($env:USERNAME)") { # also allow [*\]User besides just User
-                if (Get-YesNo "Okay to take ownership of $file as $($env:USERNAME) ?") {
+                #if (Get-YesNo "Okay to take ownership of $file as $($env:USERNAME) ?") {   
+                if ($true) {   # Lets just do this..
                   $objacl.SetOwner([System.Security.Principal.NTAccount] $env:USERNAME)
                 } else { 
-                  Write-Output "[.] WARNING: Likely the changes will fail, we are not the owner."
+                  Write-Verbose "[.] WARNING: Likely the changes will fail, we are not the owner."
                 }
               }
               try {
@@ -1601,7 +1602,7 @@ foreach ($QID in $QIDs) {
               Write-Verbose "[.] Checking inheritance for $file - $(!($objacl.AreAccessRulesProtected)).."
               if (!($objACL.AreAccessRulesProtected)) {  # Inheritance is turned on.. Lets turn it off for this one file.
                 # Remove inheritance, resulting ACLs will be limited
-                Write-Output "[.] Turning off inheritance for $file"
+                Write-Verbose "[.] Turning off inheritance for $file"
                 $objacl.SetAccessRuleProtection($true,$true)  # 1=protected?, 2=copy inherited ACE? we will modify below
                 #$objacl.SetAccessRuleProtection($true,$false)  # 1=protected?, 2=drop inherited rules
                 try {
@@ -1610,7 +1611,7 @@ foreach ($QID in $QIDs) {
                   Write-Output "[!] ERROR: Couldn't set inheritance on $($file) .."
                 }
               }
-              Write-Output "[.] Removing Everyone full permissions on $file .."
+              Write-Verbose "[.] Removing Everyone full permissions on $file .."
               $Right = [System.Security.AccessControl.FileSystemRights]::ReadAndExecute
               $InheritanceFlag = [System.Security.AccessControl.InheritanceFlags]::None 
               $PropagationFlag = [System.Security.AccessControl.PropagationFlags]::InheritOnly  
@@ -1625,7 +1626,7 @@ foreach ($QID in $QIDs) {
               } catch {
                 Write-Output "[!] ERROR: Couldn't remove Everyone-full permissions on $file .."
               }
-              Write-Output "[.] Removing Users-Write/Modify/Append permissions on $file .."
+              Write-Verbose "[.] Removing Users-Write/Modify/Append permissions on $file .."
               # .. Remove write/append/etc from 'Users'. First remove Users rule completely.
               $objUser = New-Object System.Security.Principal.NTAccount("Users") 
               $objACE = New-Object System.Security.AccessControl.FileSystemAccessRule `
