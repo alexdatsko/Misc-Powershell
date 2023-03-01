@@ -21,8 +21,8 @@ $dateshort= Get-Date -Format "yyyy-MM-dd"
 Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 
 # Script specific vars:  
-$Version = "0.35.07"   
-# Last fixes: Fixed version check comment issue
+$Version = "0.35.08"   
+# Last fixes: Fixed version check comment issue, cleaned up a little
 $VersionInfo = "v$($Version) - Last modified: 3/1/22"
 
 # Self-elevate the script if required
@@ -97,7 +97,7 @@ function Check-NewerScriptVersion {
       Write-Verbose " Current version hex: $($Version | Format-Hex)"
       if ([version]$VersionFound -gt [version]$Version) {
         Write-Verbose "[+] Version found $($VersionFound) is newer than $($Version)"
-        return $true;
+        return $VersionFound;
       }
       if ([version]$VersionFound -eq [version]$Version) {
         Write-Verbose "[=] Version found is the same: $([version]$VersionFound)"
@@ -127,19 +127,17 @@ function Update-ScriptFile {   # Need a copy of this, to re-run main script
     Write-Verbose "[.] Checking downloaded file $($Filename) .."
     $NewVersionCheck = (Check-NewerScriptVersion -Filename "$($Filename)" -VersionStr '$Version = *')
     Write-Verbose "var = $NewVersionCheck"
-    #Write-Verbose "[boolean]var = $([boolean]$NewVersionCheck)"
-    if ($true -eq $NewVersionCheck) {  
-        if (Get-YesNo "[+] Found newer version, would you like to copy over this one and re-run? ") {
-          Copy-Item "$($filename)" "$($pwd)\Install-SecurityFixes.ps1"    # THIS MAY NEED A FIX -MAY NEED A $SCRIPTPATH VARIABLE!!
-          #$(Get-Item "$($filename)").CreationTimeUtc = [DateTime]::UtcNow
+    if ($NewVersionCheck) {  
+        if (Get-YesNo "[+] Found newer version $NewVersionCheck, would you like to copy over this one and re-run? ") {
+          # Copy the new script over this one and run.
+          Copy-Item "$($filename)" "$($pwd)\Install-SecurityFixes.ps1"
           Write-Output "[+] Launching new script.."
           . "$($FilenamePerm)"   # Dot source and run from here once, then exit.
           Stop-Transcript
           exit
         }
-        # Copy the new script over this one and run..  Likely this will cause issues .. Lets see..
     } else {
-      Write-Verbose "Continuing script.. Will not get here if we updated."
+      Write-Verbose "Continuing without updating."
     }
   }  
 }
