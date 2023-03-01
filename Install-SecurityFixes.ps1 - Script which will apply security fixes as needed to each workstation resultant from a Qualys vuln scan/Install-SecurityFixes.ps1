@@ -21,8 +21,8 @@ $dateshort= Get-Date -Format "yyyy-MM-dd"
 Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 
 # Script specific vars:  
-$Version = "0.35.17"   
-# Last fixes: Last update for update code? Logic fix..
+$Version = "0.35.18"   
+# Last fixes: Fixes for DellBiosProvider module install, bitlocker check if encrypted
 $VersionInfo = "v$($Version) - Last modified: 3/1/22"
 
 # Self-elevate the script if required
@@ -221,15 +221,18 @@ Function Install-DellBiosProvider {
     if ((Get-ComputerInfo).OsProductType -eq "WorkStation") { 
       if (!(Get-InstalledModule -Name DellBIOSProvider -ErrorAction SilentlyContinue)) {
         Write-Host "[.] Trying to install the NuGet package provider.. [this may take a minute..]" 
-        try { Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force } catch { Write-Host "[!] Couldn't install NuGet provider!" }
+        try { $null = Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force } catch { Write-Host "[!] Couldn't install NuGet provider!" ; return $false}
         Write-Host "[.] Trying to install the Dell BIOS provider module.. [this may take a minute..]" 
-        try { Install-Module DellBIOSProvider -Force } catch { Write-Host "[!] Couldn't install DellBIOSProvder! " }
+        try { Install-Module DellBIOSProvider -Force } catch { Write-Host "[!] Couldn't install DellBIOSProvder! " ; return $false}
         Write-Host "[+] Done!" -ForegroundColor Green
+        return $true
       } else {
         Write-Host "[.] DellBIOSProvider already installed." 
+        return $true
       }
     } else {
       Write-Verbose "[.] Non-Workstation OS found, ignoring DellBiosProvider module install"
+      return $false
     }
   }
 }
@@ -664,20 +667,29 @@ function Parse-ResultsFile {
 
 function Backup-BitlockerKeys {
   if ($BackupBitlocker) {
+    if ((Get-BitlockerVolume -MountPoint 'C:').VolumeStatus -eq "FullyDecrypted") {
+      Write-Host "[!] $($BLV) not Bitlocker encrypted!"
+      return $false
+    } else {
+      Write-Host "[!] Found C: Bitlockered."
+    }
     $BLVs = (Get-BitLockerVolume).MountPoint
     foreach ($BLV in $BLVs) { 
       if (Get-BitLockerVolume -MountPoint $BLV -ErrorAction SilentlyContinue) {
         try {
           Write-Output "[.] Backing up Bitlocker Keys to AD.."
           Backup-BitLockerKeyProtector -MountPoint $BLV -KeyProtectorId (Get-BitLockerVolume -MountPoint $BLV).KeyProtector[1].KeyProtectorId
+          return $true
         } catch { 
           Write-Output "[!] ERROR: Could not access BitlockerKeyProtector. Is drive $BLV encrypted? "
           Get-BitLockerVolume
+          return $false
         }
       }
     }
   } else {
     Write-Output "[-] Skipping backup of Bitlocker keys."
+    return $false
   }
 }
 
@@ -741,11 +753,10 @@ if ($ServerName) {
 }
 
 Install-DellBiosProvider  # Will only run if value is set in Config
-Write-Host "ServerName: $ServerName"
+
 Set-DellBiosProviderDefaults # Will only run if value is set in Config
-Write-Host "ServerName: $ServerName"
+
 Backup-BitlockerKeys # Try to Backup Bitlocker recovery keys to AD
-Write-Host "ServerName: $ServerName"
 
 ################# ( READ IN CSV AND PROCESS ) #####################
 
