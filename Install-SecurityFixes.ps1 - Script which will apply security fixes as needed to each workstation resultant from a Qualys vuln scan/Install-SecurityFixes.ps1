@@ -21,8 +21,8 @@ $dateshort= Get-Date -Format "yyyy-MM-dd"
 Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 
 # Script specific vars:  
-$Version = "0.35.12"   
-# Last fixes: Refactored and fixed update code further. Added quotes in QIDLists version var
+$Version = "0.35.13"   
+# Last fixes: Last update for update code?
 $VersionInfo = "v$($Version) - Last modified: 3/1/22"
 
 # Self-elevate the script if required
@@ -84,9 +84,9 @@ function Check-NewerScriptVersion {   # Check in ps1 file for VersionStr and rep
 
   $FileContents = Get-Content $Filename
   $TotalLines = $FileContents.Length
-  Write-Verbose "[.] Loaded $TotalLines lines from $($Filename) .."
+  Write-Verbose "[.] Loaded $TotalLines lines from $($Filename) .. Checking for $($VersionStr)"
   foreach ($line in $FileContents) {
-    if ($line -like $VersionStr) {
+    if ($line -like "$VersionStr") {
       if ($line -like '#') {  # Handle comment on same line, i.e: $Version = "1.2.3.0" # Comment ..
         $VersionFound = $line.split('=')[1].split("#")[0].trim().replace('"','')
       } else {
@@ -127,7 +127,7 @@ function Update-File {  # Not even used currently, but maybe eventually?
     $client.Dispose()
     Write-Verbose "[.] File downloaded, checking version.."
     Write-Verbose "[.] Checking downloaded file $($FilenameTmp) .."
-    $NewVersionCheck = (Check-NewerScriptVersion -Filename "$($FilenameTmp)" -VersionStr $VersionStr -VersionToCheck $VersionToCheck)
+    $NewVersionCheck = (Check-NewerScriptVersion -Filename "$($FilenameTmp)" -VersionStr $($VersionStr) -VersionToCheck $VersionToCheck)
     if ($NewVersionCheck) {  
         Write-Host "[+] Found newer version $($NewVersionCheck), would you like to copy over this one? "
         Copy-Item "$($FilenameTmp)" "$($FilenamePerm)" -Force
@@ -153,7 +153,7 @@ function Update-ScriptFile {   # Need a copy of this, to re-run main script
     $client.Dispose()
     Write-Verbose "[.] File downloaded, checking version.."
     Write-Verbose "[.] Checking downloaded file $($FilenameTmp) .."
-    $NewVersionCheck = (Check-NewerScriptVersion -Filename "$($FilenameTmp)" -VersionStr $VersionStr -VersionToCheck $VersionToCheck)
+    $NewVersionCheck = (Check-NewerScriptVersion -Filename "$($FilenameTmp)" -VersionStr $($VersionStr) -VersionToCheck $VersionToCheck)
     Write-Verbose "var = $NewVersionCheck"
     if ($NewVersionCheck) {  
         if (Get-YesNo "--- Found newer version $NewVersionCheck, would you like to copy over this one and re-run? ") {
