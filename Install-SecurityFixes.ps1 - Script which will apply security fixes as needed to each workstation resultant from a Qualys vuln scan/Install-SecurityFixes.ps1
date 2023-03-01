@@ -21,7 +21,7 @@ $dateshort= Get-Date -Format "yyyy-MM-dd"
 Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 
 # Script specific vars:
-$Version = "0.35.05"
+$Version = "0.35.06"   # Dell BIOS provider fix for servers
 $VersionInfo = "v$($Version) - Last modified: 3/1/22"
 
 # Self-elevate the script if required
@@ -243,41 +243,49 @@ function Read-QIDLists {
 Function Install-DellBiosProvider {
   # install the DellBIOSProvider powershell module if set in the config
   if ($InstallDellBIOSProvider) {
-    if (!(Get-InstalledModule -Name DellBIOSProvider -ErrorAction SilentlyContinue)) {
-      Write-Host "[.] Trying to install the NuGet package provider.. [this may take a minute..]" 
-      try { Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force } catch { Write-Host "[!] Couldn't install NuGet provider!" }
-      Write-Host "[.] Trying to install the Dell BIOS provider module.. [this may take a minute..]" 
-      try { Install-Module DellBIOSProvider -Force } catch { Write-Host "[!] Couldn't install DellBIOSProvder! " }
-      Write-Host "[+] Done!" -ForegroundColor Green
+    if ((Get-ComputerInfo).OsProductType -eq "WorkStation") { 
+      if (!(Get-InstalledModule -Name DellBIOSProvider -ErrorAction SilentlyContinue)) {
+        Write-Host "[.] Trying to install the NuGet package provider.. [this may take a minute..]" 
+        try { Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force } catch { Write-Host "[!] Couldn't install NuGet provider!" }
+        Write-Host "[.] Trying to install the Dell BIOS provider module.. [this may take a minute..]" 
+        try { Install-Module DellBIOSProvider -Force } catch { Write-Host "[!] Couldn't install DellBIOSProvder! " }
+        Write-Host "[+] Done!" -ForegroundColor Green
+      } else {
+        Write-Host "[.] DellBIOSProvider already installed." 
+      }
     } else {
-      Write-Host "[.] DellBIOSProvider already installed." 
+      Write-Verbose "[.] Non-Workstation OS found, ignoring DellBiosProvider module install"
     }
   }
 }
 Function Set-DellBiosProviderDefaults {
-  if ($InstallDellBIOSProvider -and $SetWOL) {  # Set WOL settings per model
-    if (!(Get-InstalledModule -Name DellBIOSProvider)) {
-      Write-Host "[!] No DellBIOSProvder - Can't set WOL"
-    } else {
-      # For testing, just check and set these 2..
-      Import-Module DellBIOSProvider
-      Write-Host "[.] Checking for AcPwrRcvry=On & WakeonLAN=Enabled in DellSMBios:\ .." 
-      $AcPwrRcvry=Get-Item -Path DellSMBios:\PowerManagement\AcPwrRcvry
-      $WakeonLAN=Get-Item -Path DellSMBios:\PowerManagement\WakeonLAN
-      if (!($AcPwrRcvry)) { 
-        Write-Host "[.] Setting AcPwrRcvry=On in DellSMBios:\ .."
-        try { Set-Item -Path DellSMBios:\PowerManagement\AcPwrRcvry -Value "On" } catch { Write-Host "[.] Couldn't set AcPwrRecvry=On !!" -ForegroundColor Red }
+  if ((Get-ComputerInfo).OsProductType -eq "WorkStation") { 
+    if ($InstallDellBIOSProvider -and $SetWOL) {  # Set WOL settings per model
+      if (!(Get-InstalledModule -Name DellBIOSProvider)) {
+        Write-Host "[!] No DellBIOSProvder - Can't set WOL"
       } else {
-        Write-Host "[+] Found AcPwrRcvry=On already"
+        # For testing, just check and set these 2..
+        Import-Module DellBIOSProvider
+        Write-Host "[.] Checking for AcPwrRcvry=On & WakeonLAN=Enabled in DellSMBios:\ .." 
+        $AcPwrRcvry=Get-Item -Path DellSMBios:\PowerManagement\AcPwrRcvry
+        $WakeonLAN=Get-Item -Path DellSMBios:\PowerManagement\WakeonLAN
+        if (!($AcPwrRcvry)) { 
+          Write-Host "[.] Setting AcPwrRcvry=On in DellSMBios:\ .."
+          try { Set-Item -Path DellSMBios:\PowerManagement\AcPwrRcvry -Value "On" } catch { Write-Host "[.] Couldn't set AcPwrRecvry=On !!" -ForegroundColor Red }
+        } else {
+          Write-Host "[+] Found AcPwrRcvry=On already"
+        }
+        if (!($WakeonLAN)) {
+          Write-Host "[.] Setting WakeonLAN=Enabled in DellSMBios:\ .."
+          try { Set-Item -Path DellSMBios:\PowerManagement\WakeonLAN -Value "Enabled" } catch { Write-Host "[.] Couldn't set WakeonLAN=Enabled !!" -ForegroundColor Red }
+        } else {
+          Write-Host "[+] Found WakeonLAN=Enabled already"
+        }
+        Write-Host "[+] Done!" -ForegroundColor Green
       }
-      if (!($WakeonLAN)) {
-        Write-Host "[.] Setting WakeonLAN=Enabled in DellSMBios:\ .."
-        try { Set-Item -Path DellSMBios:\PowerManagement\WakeonLAN -Value "Enabled" } catch { Write-Host "[.] Couldn't set WakeonLAN=Enabled !!" -ForegroundColor Red }
-      } else {
-        Write-Host "[+] Found WakeonLAN=Enabled already"
-      }
-      Write-Host "[+] Done!" -ForegroundColor Green
     }
+  } else {
+    Write-Verbose "[.] Non-Workstation OS found, ignoring DellBiosProvider changes"
   }
 }
 
