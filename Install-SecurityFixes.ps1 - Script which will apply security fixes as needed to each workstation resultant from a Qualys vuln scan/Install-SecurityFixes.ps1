@@ -21,7 +21,7 @@ $dateshort= Get-Date -Format "yyyy-MM-dd"
 Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 
 # Script specific vars:  
-$Version = "0.35.11"   
+$Version = "0.35.12"   
 # Last fixes: Refactored and fixed update code further. Added quotes in QIDLists version var
 $VersionInfo = "v$($Version) - Last modified: 3/1/22"
 
@@ -143,6 +143,9 @@ function Update-ScriptFile {   # Need a copy of this, to re-run main script
         [string]$FilenamePerm, 
         [string]$VersionStr,
         [string]$VersionToCheck)
+  
+  Write-Verbose "Checking for $($VersionStr) >= $($VersionToCheck) in $($FilenamePerm) .. Downloading $($url)"
+  
   if ((Invoke-WebRequest $url).StatusCode -eq 200) { 
     $client = new-object System.Net.WebClient
     $client.Encoding = [System.Text.Encoding]::ascii
@@ -150,10 +153,10 @@ function Update-ScriptFile {   # Need a copy of this, to re-run main script
     $client.Dispose()
     Write-Verbose "[.] File downloaded, checking version.."
     Write-Verbose "[.] Checking downloaded file $($FilenameTmp) .."
-    $NewVersionCheck = (Check-NewerScriptVersion -Filename "$($FilenameTmp)" -VersionStr '$Version = *' -VersionToCheck $VersionToCheck)
+    $NewVersionCheck = (Check-NewerScriptVersion -Filename "$($FilenameTmp)" -VersionStr $VersionStr -VersionToCheck $VersionToCheck)
     Write-Verbose "var = $NewVersionCheck"
     if ($NewVersionCheck) {  
-        if (Get-YesNo "[+] Found newer version $NewVersionCheck, would you like to copy over this one and re-run? ") {
+        if (Get-YesNo "--- Found newer version $NewVersionCheck, would you like to copy over this one and re-run? ") {
           # Copy the new script over this one..
           Copy-Item "$($FilenameTmp)" "$($FilenamePerm)" -Force
         }
@@ -180,7 +183,7 @@ Function Update-Script {
 Function Update-QIDLists {
   # $ScriptPath = Get-ScriptPath
   # For 0.32 I am assuming $pwd is going to be the correct path
-  Write-Output "[.] Checking for updated QIDLists.ps1 file on github.."
+  Write-Output "[.] Checking for updated QIDLists file on github.."
   $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/QIDLists.ps1"
   if (Update-ScriptFile -URL $url -FilenameTmp "$($tmp)\QIDLists.ps1" -FilenamePerm "$($pwd)\QIDLists.ps1" -VersionStr '$QIDsVersion = *' -VersionToCheck $QIDsVersion) {
     Write-Output "[+] Updates found, reloading QIDLists.ps1 .."
