@@ -20,8 +20,10 @@ if (!(Test-Path $tmp)) { New-Item -ItemType Directory $tmp }
 $dateshort= Get-Date -Format "yyyy-MM-dd"
 Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 
-# Script specific vars:
-$Version = "0.35.06"   # Dell BIOS provider fix for servers
+# Script specific vars:  
+# NO COMMENT CAN BE USED AFTER THE NEXT LINE: i.e:   $Version = "0.1.2.3" 
+$Version = "0.35.07"   
+# Last fixes: Paring down some of the output, fixed version check comment issue
 $VersionInfo = "v$($Version) - Last modified: 3/1/22"
 
 # Self-elevate the script if required
@@ -175,9 +177,8 @@ Function Update-Script {
     Write-Verbose "[.] Checking downloaded file $($Filename) .."
     $NewVersionCheck = (Check-NewerScriptVersion -Filename "$($tmp)\Install-SecurityFixes.ps1" -VersionStr '$Version = *')
     Write-Verbose "var = $NewVersionCheck"
-    #Write-Verbose "[boolean]var = $([boolean]$NewVersionCheck)"
     if ($true -eq $NewVersionCheck) {  
-        if (Get-YesNo "[+] Found newer version, would you like to copy over this one and re-run? ") {
+        if (Get-YesNo "Found newer version, would you like to copy over this one and re-run? ") {
           Copy-Item "$($tmp)\Install-SecurityFixes.ps1" "$($pwd)\Install-SecurityFixes.ps1"    
           $(Get-Item "$($pwd)\Install-SecurityFixes.ps1").CreationTimeUtc = [DateTime]::UtcNow
           Write-Output "[+] Launching new script.."
@@ -338,7 +339,7 @@ function Add-ConfigFileLine {
     $ConfigFileNew += $ConfigNewLine
     $ConfigFileNew | Set-Content -path $ConfigFile -Force
   } else { 
-    Write-Host "Skipping!"
+    Write-Host "[-] Skipping!"
   }
 }
 

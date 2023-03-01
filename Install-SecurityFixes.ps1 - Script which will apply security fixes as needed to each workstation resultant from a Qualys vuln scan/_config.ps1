@@ -12,5 +12,3 @@ $SetWOL = $true                              # This will use the DellBIOSProvide
 $BackupBitlocker = $true                     # This will backup Bitlocker Keys to AD
 
 Write-Output "[+] Done Loading Configuration items."
-
-Write-Host "ServerName: $ServerName"
