@@ -21,9 +21,8 @@ $dateshort= Get-Date -Format "yyyy-MM-dd"
 Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 
 # Script specific vars:  
-# NO COMMENT CAN BE USED AFTER THE NEXT LINE: i.e:   $Version = "0.1.2.3" 
 $Version = "0.35.07"   
-# Last fixes: Paring down some of the output, fixed version check comment issue
+# Last fixes: Fixed version check comment issue
 $VersionInfo = "v$($Version) - Last modified: 3/1/22"
 
 # Self-elevate the script if required
@@ -87,7 +86,11 @@ function Check-NewerScriptVersion {
   Write-Verbose "[.] Loaded $TotalLines lines from $($Filename) .."
   foreach ($line in $FileContents) {
     if ($line -like $VersionStr) {
-      $VersionFound = $line.split('=')[1].trim().replace('"','')
+      if ($line -like '#') {  # Handle comment after $Version = "1.2.3.0" # Comment ..
+        $VersionFound = $line.split('=')[1].split("#")[0].trim().replace('"','')
+      } else {
+        $VersionFound = $line.split('=')[1].trim().replace('"','')
+      }
       Write-Verbose " New script version: $([version]$VersionFound)"
       Write-Verbose " New script version Hex: $($VersionFound | Format-Hex)"
       Write-Verbose " Current version: $([version]$Version) "
