@@ -21,7 +21,7 @@ $dateshort= Get-Date -Format "yyyy-MM-dd"
 Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 
 # Script specific vars:  
-$Version = "0.35.15"   
+$Version = "0.35.16"   
 # Last fixes: Last update for update code? Logic fix..
 $VersionInfo = "v$($Version) - Last modified: 3/1/22"
 
@@ -76,6 +76,23 @@ function Get-YesNo {
 
 ################################################# SCRIPT FUNCTIONS ###############################################
 
+function Read-QIDLists {
+  # READ IN VALUES FROM QIDsList 
+  if ($QIDsListFile -like "*.ps1") {
+    if (Test-Path $QIDsListFile) {
+      try {
+        . "$($QIDsListFile)"
+      } catch {
+        Write-Output "`n`n[!] ERROR: Couldn't import $($QIDsListFile) !! Exiting"
+        Stop-Transcript
+        Exit
+      }
+    } else {
+      Write-Output "`n`n[!] Warning: Couldn't find $($QIDsListFile) .. Will try to update.."
+    }
+    # Update will be done separately..
+  }
+}
 
 function Check-NewerScriptVersion {   # Check in ps1 file for VersionStr and report back if its newer than the current value ($VersionToCheck), returns version# if so.
   param ([string]$Filename,
@@ -198,23 +215,6 @@ Function Update-QIDLists {
   }
 }
 
-function Read-QIDLists {
-  # READ IN VALUES FROM QIDsList 
-  if ($QIDsListFile -like "*.ps1") {
-    if (Test-Path $QIDsListFile) {
-      try {
-        . $($QIDsListFile)
-      } catch {
-        Write-Output "`n`n[!] ERROR: Couldn't import $($QIDsListFile) !! Exiting"
-        Stop-Transcript
-        Exit
-      }
-    } else {
-      Write-Output "`n`n[!] Warning: Couldn't find $($QIDsListFile) .. Will try to update.."
-    }
-    # Update will be done separately..
-  }
-}
 Function Install-DellBiosProvider {
   # install the DellBIOSProvider powershell module if set in the config
   if ($InstallDellBIOSProvider) {
