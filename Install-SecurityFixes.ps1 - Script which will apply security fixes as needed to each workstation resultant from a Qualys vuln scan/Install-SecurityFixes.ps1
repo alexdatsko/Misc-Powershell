@@ -21,8 +21,8 @@ $dateshort= Get-Date -Format "yyyy-MM-dd"
 Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 
 # Script specific vars:  
-$Version = "0.35.21"   
-# Last fixes:    Fixed QID 91972 path, fixed QIDsIgnore(d) variable name in _config..
+$Version = "0.35.22"   
+# Last fixes:    Fixed QID 106105 path+desc
 $VersionInfo = "v$($Version) - Last modified: 3/2/22"
 
 # Self-elevate the script if required
@@ -1593,8 +1593,8 @@ foreach ($QID in $QIDs) {
         }
       }
       106105{
-        if (Get-YesNo "$_ Delete Microsoft Windows Malicious Software Removal Tool Security Update for January 2023? " -Results $Results) { 
-          Delete-Folder "\$($env:programfiles)\dotnet\shared\Microsoft.NETCore.App\3.1.32" -Results $Results
+        if (Get-YesNo "$_ Delete EOL/Obsolete Software: Microsoft .Net Core Version 3.1 Detected? " -Results $Results) { 
+          Delete-Folder "$($env:programfiles)\dotnet\shared\Microsoft.NETCore.App\3.1.32" -Results $Results
         }
       }
 
