@@ -21,9 +21,9 @@ $dateshort= Get-Date -Format "yyyy-MM-dd"
 Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 
 # Script specific vars:  
-$Version = "0.35.18"   
-# Last fixes: Fixes for DellBiosProvider module install, bitlocker check if encrypted
-$VersionInfo = "v$($Version) - Last modified: 3/1/22"
+$Version = "0.35.21"   
+# Last fixes:    Fixed QID 91972 path, fixed QIDsIgnore(d) variable name in _config..
+$VersionInfo = "v$($Version) - Last modified: 3/2/22"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -76,12 +76,21 @@ function Get-YesNo {
 
 ################################################# SCRIPT FUNCTIONS ###############################################
 
-function Read-QIDLists {
+function Read-QIDLists {    # NOT USING, THIS IS NOT 
   # READ IN VALUES FROM QIDsList 
   if ($QIDsListFile -like "*.ps1") {
     if (Test-Path $QIDsListFile) {
       try {
-        . "$($QIDsListFile)"
+        #. "$($QIDsListFile)"  # This does not import our variables for global use..
+        $scriptContent = Get-Content $QIDsListFile -Raw
+        $scriptBlock = [scriptblock]::Create($scriptContent)
+    
+        # Invoke the script block in the global scope
+        &$scriptBlock
+        foreach ($variableName in $scriptBlock.Variables.Keys) {
+            # Define each variable in the global scope
+            #$global:$variableName = $scriptBlock.Variables[$variableName]  # Need to do this for all other vars, not ideal.. skipping this for now.
+        }
       } catch {
         Write-Output "`n`n[!] ERROR: Couldn't import $($QIDsListFile) !! Exiting"
         Stop-Transcript
@@ -199,6 +208,7 @@ Function Update-Script {
     exit
   } else {
     Write-Output "[-] No update found for $($Version)."
+    return $false
   }
 }
 
@@ -209,10 +219,13 @@ Function Update-QIDLists {
   $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/QIDLists.ps1"
   if (Update-ScriptFile -URL $url -FilenameTmp "$($tmp)\QIDLists.ps1" -FilenamePerm "$($pwd)\QIDLists.ps1" -VersionStr '$QIDsVersion = *' -VersionToCheck $QIDsVersion) {
     Write-Output "[+] Updates found, reloading QIDLists.ps1 .."
-    Read-QIDLists
+    return $true
+    #Read-QIDLists  # Doesn't work in this scope, do it below in global scope
   } else {
     Write-Output "[-] No update found for $($QIDsVersion)."
+    return $false
   }
+  return $false
 }
 
 Function Install-DellBiosProvider {
@@ -718,14 +731,15 @@ if (([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDat
   }
 }
 
-# Read-ConfigFile 
-# This is pissing me off, its not working being called from here. It's not due to Write-Output. Going to just run this here for now:
-. $($ConfigFile)
-Read-QIDLists
+# These variables should be referenced globally:
+#Read-ConfigFile 
+#Read-QIDLists  # Possibly fixed here..
+. "$($ConfigFile)"
+. "$($QIDsListFile)"
 
 # Check for newer version of script before anything..
 Update-Script  # CHECKS FOR SCRIPT UPDATES, UPDATES AND RERUNS IF POSSIBLE
-Update-QIDLists 
+if (Update-QIDLists) { . "$($QIDsListFile)" }
 
 # Lets check the Config first for $ServerName, as that is our default..
 if ($ServerName) {
@@ -1269,7 +1283,7 @@ foreach ($QID in $QIDs) {
             Invoke-WebRequest "https://ninite.com/firefox/ninite.exe" -OutFile "$($tmp)\ninite.exe"
             cmd /c "$($tmp)\ninite.exe"
             $ResultsFolder = Parse-ResultsFolder $Results
-            if ($ResultsFolder -like "**") {
+            if ($ResultsFolder -like "*AppData*") {
               Delete-Folder $ResultsFolder
             }          
             $QIDsFirefox = 1
@@ -1281,7 +1295,13 @@ foreach ($QID in $QIDs) {
             Invoke-WebRequest "https://ninite.com/zoom/ninite.exe" -OutFile "$($tmp)\ninite.exe"
             cmd /c "$($tmp)\ninite.exe"
             #If Zoom folder is in another users AppData\Local folder, this will not work
-            Delete-Folder (Parse-ResultsFolder -Results $Results)
+            $FolderFound = $false
+            foreach ($Result in $Results) {
+              if ($Result -like "*AppData*") {
+                $FolderFound = $true
+              }
+            }
+            if ($FolderFound) { Delete-Folder (Parse-ResultsFolder -Results $Results) }
             $QIDsZoom = 1
         } else { $QIDsZoom = 1 }
       }
@@ -1557,14 +1577,24 @@ foreach ($QID in $QIDs) {
         }
       }
       91621 {
-        if (Get-YesNo "$_ Microsoft Defender Elevation of Privilege Vulnerability April 2020? " -Results $Results) { 
+        if (Get-YesNo "$_ Delete Microsoft Defender Elevation of Privilege Vulnerability April 2020? " -Results $Results) { 
           # This will ask twice due to Delete-File, but I want to offer results first. Could technically add -Results to Delete-File..
-          Delete-File "C:\WINDOWS\System32\MpSigStub.exe"
+          Delete-File "C:\WINDOWS\System32\MpSigStub.exe" -Results $Results
         }
       }
       91649 {
-        if (Get-YesNo "$_ Microsoft Defender Elevation of Privilege Vulnerability June 2020? " -Results $Results) { 
-          Delete-File "$($env:ProgramFiles)\Windows Defender\MpCmdRun.exe"
+        if (Get-YesNo "$_ Delete Microsoft Defender Elevation of Privilege Vulnerability June 2020? " -Results $Results) { 
+          Delete-File "$($env:ProgramFiles)\Windows Defender\MpCmdRun.exe" -Results $Results
+        }
+      }
+      91972 {
+        if (Get-YesNo "$_ Delete Microsoft Windows Malicious Software Removal Tool Security Update for January 2023? " -Results $Results) { 
+          Delete-File "$($env:windir)\system32\MRT.exe" -Results $Results
+        }
+      }
+      106105{
+        if (Get-YesNo "$_ Delete Microsoft Windows Malicious Software Removal Tool Security Update for January 2023? " -Results $Results) { 
+          Delete-Folder "\$($env:programfiles)\dotnet\shared\Microsoft.NETCore.App\3.1.32" -Results $Results
         }
       }
 
