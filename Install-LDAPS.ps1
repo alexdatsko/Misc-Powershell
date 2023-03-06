@@ -59,13 +59,13 @@ Install-AdcsCertificationAuthority -CAType "EnterpriseRootCA" -KeyLength 2048 -H
 
 Write-Output "[.] 3. Requesting a server certificate from the AD CS. This certificate will be used to secure the LDAP traffic.."
 
-Import-Module -Name PKI
+
 $ServerFQDN = "$($env:USERDNSDOMAIN)"
 $certSubject = "CN=$($ServerFQDN)"
 $certPassword = ConvertTo-SecureString -String $(Read-Host "[?] Cert password to use? ") -Force -AsPlainText
 $certTemplate = "LDAP"  # Replace with the name of the certificate template to use
 $certRequest = New-PKICertificateRequest -Subject $certSubject -Template $certTemplate
-$cert = Get-PKICertificate -Template $certTemplate -Sign $certRequest
+$cert = Get-Certificate -Template $certTemplate -Sign $certRequest
 $certBytes = Export-PKICertificate -Cert $cert -Type PFX -Password $certPassword
 $certFile = Read-Host "Cert file path\filename? i.e [C:\Temp\LDAPs.pfx] "  # Replace with the path to the output PFX file
 if (!($cerfile)) {
