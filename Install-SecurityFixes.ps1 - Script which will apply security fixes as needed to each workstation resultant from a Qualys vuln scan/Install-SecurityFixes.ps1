@@ -21,9 +21,9 @@ $dateshort= Get-Date -Format "yyyy-MM-dd"
 Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 
 # Script specific vars:  
-$Version = "0.35.22"   
-# Last fixes:    Fixed QID 106105 path+desc
-$VersionInfo = "v$($Version) - Last modified: 3/2/22"
+$Version = "0.35.24"   
+# Last fixes:    Delete-File + Delete-Folder confirmations, Get-OSType
+$VersionInfo = "v$($Version) - Last modified: 3/13/22"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -228,10 +228,34 @@ Function Update-QIDLists {
   return $false
 }
 
+Function Get-OS {
+    # Slower, calls 3 CIMinstances, not sure if needed anywhere
+    $cs = Get-WmiObject -Class Win32_ComputerSystem
+    $os = Get-WmiObject -Class Win32_OperatingSystem
+    $bios = Get-WmiObject -Class Win32_BIOS
+
+    Return [PSCustomObject]@{
+        OSName = $os.Caption
+        OSVersion = $os.Version
+        OSBuild = $os.BuildNumber
+        OSArchitecture = $os.OSArchitecture
+        Manufacturer = $cs.Manufacturer
+        Model = $cs.Model
+        BIOSVersion = $bios.SMBIOSBIOSVersion
+    }
+}
+
+Function Get-OSType {
+    $os = Get-WmiObject -Class Win32_OperatingSystem
+    $ostype=$os.productType
+    Return $ostype
+}
+
 Function Install-DellBiosProvider {
   # install the DellBIOSProvider powershell module if set in the config
   if ($InstallDellBIOSProvider) {
-    if ((Get-ComputerInfo).OsProductType -eq "WorkStation") { 
+    #if ((Get-ComputerInfo).OsProductType -eq "WorkStation") {   # Not backwards compatible with Windows 8.1 etc
+    if (Get-OSType -lt 2) {   # 1=Ws, 2=DC, 3=Server
       if (!(Get-InstalledModule -Name DellBIOSProvider -ErrorAction SilentlyContinue)) {
         Write-Host "[.] Trying to install the NuGet package provider.. [this may take a minute..]" 
         try { $null = Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force } catch { Write-Host "[!] Couldn't install NuGet provider!" ; return $false}
@@ -249,6 +273,7 @@ Function Install-DellBiosProvider {
     }
   }
 }
+
 Function Set-DellBiosProviderDefaults {
   if ((Get-ComputerInfo).OsProductType -eq "WorkStation") { 
     if ($InstallDellBIOSProvider -and $SetWOL) {  # Set WOL settings per model
@@ -381,7 +406,7 @@ function Find-ServerCSVFile {
     Write-Host "[i] Found file: $CSVFileName" -ForegroundColor Blue
     return $CSVFilename 
   } else {
-    return $null
+    4return $null
   }
 }
 
@@ -533,16 +558,18 @@ function Get-ServicePermIssues {
 
   $ServicePermIssues = @()
   $maxresults = (([regex]::Matches($Results, "------------------------------------------------------------")).count / 2) # Determine the number of service permission issues
-  $ResultsSplit=$Results.split("`n").split("`r")
+  $ResultsSplit = $Results.split("`n").split("`r") -split " {2,}"   # There are no more `r or `n newlines now in BTS Qualys reports- as of 3-13-23.  So.. Also split at multiple spaces to catch these, there is likely not one in the middle of an exe filename or path, HOPEFULLY..
+    # Shouldn't really matter how many lines there are if we are only looking for C:\ or _:\ separated by 2 or more spaces.. This should work!
+  Write-Verbose "ServicePermIssue ResultsSplit (count): $($ResultsSplit.Count)"
   foreach ($result in $ResultsSplit) {
-    #Write-Verbose "ServicePermIssueResult: $result"
+    Write-Verbose "ServicePermIssueResult: $result"
     if ($result -match '\:\\') {     # This SHOULD be safe due to the format accesschk.exe results
       $ServicePermIssues += $result.trim()
     } else {
       #Write-Verbose "Unmatched result: $result"
     }
   }
-  #Write-Verbose "Service Permission Issues found: $ServicePermIssues"
+  Write-Verbose "Service Permission Issues found: $ServicePermIssues"
   return $ServicePermIssues
 }
 
@@ -610,16 +637,25 @@ function Delete-Folder {
   param ([string]$FolderToDelete,
          $Results)
 
-  if (Test-Path $FolderToDelete -PathType Container) {
+  if (Test-Path $FolderToDelete) {
     if (Get-YesNo "Found Folder $($FolderToDelete). Try to remove? ") { 
       takeown.exe /a /r /d Y /f $($FolderToDelete)
       Remove-Item $FolderToDelete -Force -Recurse
       # Or, try { and delete with psexec like below function.. Will come back to this if needed.
     } else {
-      Write-Output "[!] NOT FIXED. $FolderToDelete can't be removed.  Manual intervention will be required!"
+      Write-Host "`n[!] NOT FIXED. $FolderToDelete can't be removed.  Manual intervention will be required!"
+      return $false
     }
   } else {
-    Write-Output "[!] NOT FIXED. $FolderToDelete cannot be found with Test-Path, or might not be a Container type. Manual intervention will be required!"
+    Write-Host "`n[!] $FolderToDelete cannot be found with Test-Path, or might not be a Container type.  (Maybe this has been fixed already?)"
+    return $true
+  }
+  if (Test-Path $FolderToDelete) {
+    Write-Host "`n[-] NOT FIXED. $FolderToDelete still found."
+    return $false
+  } else {
+    Write-Host "`n[+] FIXED. $FolderToDelete has been removed."
+    return $true
   }
 }
 
@@ -631,7 +667,7 @@ function Delete-File {
     if (Get-YesNo "Found file $($FileToDelete). Try to remove? ") { 
       Remove-Item $FileToDelete -Force  -ErrorAction SilentlyContinue
       if (Test-Path $FileToDelete -PathType Leaf) { # If it fails:
-        Write-Output "[!] Could not remove file with Remove-Item -Force .. Trying Psexec method.."
+        Write-Host "[!] Could not remove file with Remove-Item -Force .. Trying Psexec method.."
         if (!(Test-Path -Path "$($oldpwd)\psexec.exe")) {
           Write-Output "[!] Cannot run psexec.exe - not found in $($oldpwd)\psexec.exe by Test-Path ! Fix manually.."
         } else {
@@ -648,9 +684,16 @@ function Delete-File {
       }
     } else {
       Write-Output "[!] NOT FIXED. $FileToDelete won't be removed, user chose not to.  Manual intervention will be required!"
+      return $false
     }
   } else {
-    Write-Output "[!] NOT FIXED. $FileToDelete cannot be found with Test-Path, or might not be a Leaf type.  Manual intervention will be required!"
+    Write-Output "[!] $FileToDelete cannot be found with Test-Path, or might not be a Leaf type.  (Maybe this has been fixed already?)"
+    return $true
+  }
+  if (Test-Path $FileToDelete -PathType Leaf) {
+    Write-Output "[-] NOT FIXED. $FileToDelete still found."
+  } else {
+    Write-Output "[+] FIXED. $FileToDelete has been removed."
   }
 }
 
@@ -662,8 +705,11 @@ function Parse-ResultsFolder {
   # C:\Users\Ben-Doctor.CHILDERSORTHO\AppData\Roaming\Zoom\bin
   Write-Verbose "Results: $Results"
   $PathResults = ($Results -split('Version is')[0]).trim()
-  $PathRaw = Split-Path ($PathResults.replace("%appdata%","$env:appdata").replace("%computername%","$env:computername").replace("%home%","$env:home").replace("%systemroot%","$env:systemroot").replace("%systemdrive%","$env:systemdrive").replace("%programdata%","$env:programdata").replace("%programfiles%","$env:programfiles").replace("%programfiles(x86)%","$env:programfiles(x86)").replace("%programw6432%","$env:programw6432"))
-  return $PathRaw
+  if ($PathResults) {
+    $PathRaw = Split-Path ($PathResults.replace("%appdata%","$env:appdata").replace("%computername%","$env:computername").replace("%home%","$env:home").replace("%systemroot%","$env:systemroot").replace("%systemdrive%","$env:systemdrive").replace("%programdata%","$env:programdata").replace("%programfiles%","$env:programfiles").replace("%programfiles(x86)%","$env:programfiles(x86)").replace("%programw6432%","$env:programw6432"))
+    return $PathRaw
+  }
+  return $false
 } 
 
 function Parse-ResultsFile {  
@@ -674,35 +720,40 @@ function Parse-ResultsFile {
   # C:\Users\Ben-Doctor.CHILDERSORTHO\AppData\Roaming\Zoom\bin\Zoom.exe
   Write-Verbose "Results: $Results"
   $PathResults = ($Results -split('Version is')[0]).trim()
-  $PathRaw = $PathResults.replace("%appdata%","$env:appdata").replace("%computername%","$env:computername").replace("%home%","$env:home").replace("%systemroot%","$env:systemroot").replace("%systemdrive%","$env:systemdrive").replace("%programdata%","$env:programdata").replace("%programfiles%","$env:programfiles").replace("%programfiles(x86)%","$env:programfiles(x86)").replace("%programw6432%","$env:programw6432")
-  return $PathRaw
+  if (PathResults) {
+    $PathRaw = $PathResults.replace("%appdata%","$env:appdata").replace("%computername%","$env:computername").replace("%home%","$env:home").replace("%systemroot%","$env:systemroot").replace("%systemdrive%","$env:systemdrive").replace("%programdata%","$env:programdata").replace("%programfiles%","$env:programfiles").replace("%programfiles(x86)%","$env:programfiles(x86)").replace("%programw6432%","$env:programw6432")
+    return $PathRaw
+  }
+  return $false
 }
 
 function Backup-BitlockerKeys {
   if ($BackupBitlocker) {
-    if ((Get-BitlockerVolume -MountPoint 'C:').VolumeStatus -eq "FullyDecrypted") {
-      Write-Host "[!] $($BLV) not Bitlocker encrypted!"
-      return $false
-    } else {
-      Write-Host "[!] Found C: Bitlockered."
-    }
-    $BLVs = (Get-BitLockerVolume).MountPoint
-    foreach ($BLV in $BLVs) { 
-      if (Get-BitLockerVolume -MountPoint $BLV -ErrorAction SilentlyContinue) {
-        try {
-          Write-Output "[.] Backing up Bitlocker Keys to AD.."
-          Backup-BitLockerKeyProtector -MountPoint $BLV -KeyProtectorId (Get-BitLockerVolume -MountPoint $BLV).KeyProtector[1].KeyProtectorId
-          return $true
-        } catch { 
-          Write-Output "[!] ERROR: Could not access BitlockerKeyProtector. Is drive $BLV encrypted? "
-          Get-BitLockerVolume
-          return $false
+    if (Test-Path "C:\Windows\System32\manage-bde.exe") {  # If this exists, bitlocker role is at least installed
+      if ((Get-BitlockerVolume -MountPoint 'C:').VolumeStatus -eq "FullyDecrypted") {
+        Write-Host "[!] $($BLV) not Bitlocker encrypted!"
+        return $false
+      } else {
+        Write-Host "[!] Found C: Bitlockered."
+      }
+      $BLVs = (Get-BitLockerVolume).MountPoint
+      foreach ($BLV in $BLVs) { 
+        if (Get-BitLockerVolume -MountPoint $BLV -ErrorAction SilentlyContinue) {
+          try {
+            Write-Output "[.] Backing up Bitlocker Keys to AD.."
+            Backup-BitLockerKeyProtector -MountPoint $BLV -KeyProtectorId (Get-BitLockerVolume -MountPoint $BLV).KeyProtector[1].KeyProtectorId
+            return $true
+          } catch { 
+            Write-Output "[!] ERROR: Could not access BitlockerKeyProtector. Is drive $BLV encrypted? "
+            Get-BitLockerVolume
+            return $false
+          }
         }
       }
+    } else {
+      Write-Output "[-] Skipping backup of Bitlocker keys."
+      return $false
     }
-  } else {
-    Write-Output "[-] Skipping backup of Bitlocker keys."
-    return $false
   }
 }
 
@@ -993,8 +1044,8 @@ Write-Host "`n"
 
 foreach ($QID in $QIDs) {
     $ThisQID = $QID
-    $ThisTitle = (($Rows | Where-Object { $_.QID -eq $ThisQID }) | Select-Object -First 1).Title
-    $Results = (($Rows | Where-Object { $_.QID -eq $ThisQID }) | Select-Object -First 1).Results
+    $ThisTitle = (($Rows | Where-Object { $_.QID -eq $ThisQID }) | Select-Object -First 1)."Vulnerability Description"
+    $Results = (($Rows | Where-Object { $_.QID -eq $ThisQID }) | Select-Object -First 1)."Results"
     switch ([int]$QID)
     {
       376023 { 
@@ -1206,7 +1257,9 @@ foreach ($QID in $QIDs) {
       }
       372300 {
         if (Get-YesNo "$_ - Intel RST ? " -Results $Results) {
-            Invoke-WebRequest "https://downloadmirror.intel.com/655256/SetupRST.exe" -OutFile "$($tmp)\setuprst.exe"
+            #Invoke-WebRequest "https://downloadmirror.intel.com/655256/SetupRST.exe" -OutFile "$($tmp)\setuprst.exe"
+            Invoke-WebRequest "https://downloadmirror.intel.com/773229/SetupRST.exe" -OutFile "$($tmp)\setuprst.exe"
+            
             cmd /c "$($tmp)\setuprst.exe -s -accepteula -norestart -log $($tmp)\intelrstinf.log"
             # OR, extract MSI from this exe and run: 
             # msiexec.exe /q ALLUSERS=2 /m MSIDTJBS /i “RST_x64.msi” REBOOT=ReallySuppress
@@ -1600,7 +1653,8 @@ foreach ($QID in $QIDs) {
 
       372294 {
         if (Get-YesNo "$_ Fix service permissions issues? " -Results $Results) {
-          #Write-Verbose $ServicePermIssues
+          $ServicePermIssues = Get-ServicePermIssues -Results $Results
+          Write-Verbose "IN MAIN LOOP: Returned from Get-ServicePermIssues: $ServicePermIssues"
           foreach ($file in $ServicePermIssues) {
             if (!(Check-ServiceFilePerms $file)) {
               Write-Output "[+] Permissions are good for $file "
@@ -1749,8 +1803,7 @@ foreach ($QID in $QIDs) {
         }
       }
       Default {
-        Write-Host "[X] Skipping QID $_ : " -ForegroundColor Red -NoNewline
-        Write-Host "$ThisTitle" -ForegroundColor White
+        Write-Host "[X] Skipping QID $_ - $ThisTitle" -ForegroundColor Red
       }
     }
 }
