@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 $DFSBacklogVersion = "1.0"
 
 # DFS backlog variables
@@ -6,7 +5,7 @@ $DFSthreshold = 25
 $ScriptDriveLetter = "D" # This is usually C or D, it is the Drive letter holds the Backups DND folder
 $ScriptPath = ":\Backups (Do Not Delete)\Scripts\"  
 
-$ScriptFullPath = $ScriptDriveLetter+$ScriptPath
+$ScriptFullPath = "C:\Temp\"
 # Location of PSMA 2.0 Reports
 $ReportDriveLetter = $ScriptDriveLetter
 $ReportPath = ":\Backups (Do Not Delete)\Reports\"
@@ -811,6 +810,12 @@ Out-File -FilePath $DFSlogfile -Encoding UTF8 -InputObject "%nErrors: $Err" -App
 
 $FullEventLog = (Get-Content -Path $dfslogfile)
 
+if (!([System.Diagnostics.EventLog]::Exists('MME'))) {
+  # Create the MME event log if it does not exist.
+  New-EventLog -LogName "MME" -Source "DfsBacklog" -ErrorAction SilentlyContinue
+  Start-Sleep -seconds 5 
+  Limit-EventLog -LogName "MME" -RetentionDays 365 -OverflowAction OverwriteOlder -MaximumSize 2G   
+}
 
 # Write to actual Event log if this is not a debug run
 if (!($DebugDFSBacklog)) 
@@ -822,4 +827,3 @@ if (!($DebugDFSBacklog))
   write-host $FullEventLog
   write-host ""
 }
->>>>>>> 789b4d5dde1cb51e650d191400987b7331e1195e

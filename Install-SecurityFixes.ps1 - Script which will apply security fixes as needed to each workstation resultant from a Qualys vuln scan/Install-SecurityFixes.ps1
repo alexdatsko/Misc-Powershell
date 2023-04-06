@@ -21,9 +21,9 @@ $dateshort= Get-Date -Format "yyyy-MM-dd"
 Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 
 # Script specific vars:  
-$Version = "0.35.24"   
+$Version = "0.35.25"   
 # Last fixes:    Delete-File + Delete-Folder confirmations, Get-OSType
-$VersionInfo = "v$($Version) - Last modified: 3/13/22"
+$VersionInfo = "v$($Version) - Last modified: 4/6/23"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -558,12 +558,12 @@ function Get-ServicePermIssues {
 
   $ServicePermIssues = @()
   $maxresults = (([regex]::Matches($Results, "------------------------------------------------------------")).count / 2) # Determine the number of service permission issues
-  $ResultsSplit = $Results.split("`n").split("`r") -split " {2,}"   # There are no more `r or `n newlines now in BTS Qualys reports- as of 3-13-23.  So.. Also split at multiple spaces to catch these, there is likely not one in the middle of an exe filename or path, HOPEFULLY..
+  $ResultsSplit = $Results.split("`n").split("`r").split("`t") -split " {2,}"   # There are no more `r or `n newlines now in BTS Qualys reports- as of 3-13-23.  So.. Also split at multiple spaces to catch these, there is likely not one in the middle of an exe filename or path, HOPEFULLY..
     # Shouldn't really matter how many lines there are if we are only looking for C:\ or _:\ separated by 2 or more spaces.. This should work!
   Write-Verbose "ServicePermIssue ResultsSplit (count): $($ResultsSplit.Count)"
   foreach ($result in $ResultsSplit) {
-    Write-Verbose "ServicePermIssueResult: $result"
-    if ($result -match '\:\\') {     # This SHOULD be safe due to the format accesschk.exe results
+    #Write-Verbose "ServicePermIssueResult: $result"
+    if ($result -match '\:\\') {     # This SHOULD be safe for now, due to the format accesschk.exe results
       $ServicePermIssues += $result.trim()
     } else {
       #Write-Verbose "Unmatched result: $result"

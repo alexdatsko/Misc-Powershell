@@ -19,19 +19,19 @@ if ($ips.Length -lt 1) {
         $ips 
     }
   } else {
-    $input = " "
+    $inputstr = " "
     Write-Host "IP addresses could not be read from $($IPFilename).  Entering manually:"
-    while ($input -ne "") {
-      $input = read-host "Enter IP address (or enter if you are done) "
-      if (([int]($input.split('.')[3]) -gt 0) -and ([int]($input.split('.')[3]) -lt 256)) {
-        if ($ips -notcontains $input) {
-          $ips += $input
-          Write-Host "[+] Added $($input)" -ForegroundColor Green
+    while ($inputstr -ne "") {
+      $inputstr = read-host "Enter IP address (or enter if you are done) "
+      if (([int]($input.split('.')[3]) -gt 0) -and ([int]($inputstr.split('.')[3]) -lt 256)) {
+        if ($ips -notcontains $inputstr) {
+          $ips += $inputstr
+          Write-Host "[+] Added $($inputstr)" -ForegroundColor Green
         } else {
-          Write-Host "[!] $($input) already exists!" -ForegroundColor Red
+          Write-Host "[!] $($inputstr) already exists!" -ForegroundColor Red
         }
       } else {
-        if ($input -ne "") {
+        if ($inputstr -ne "") {
           Write-Host "[!] Invalid IP address! Please try again.." -ForegroundColor Red
         }
       }
