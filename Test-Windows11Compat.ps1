@@ -56,7 +56,7 @@ Display-PlusOrMinus -Bool $UEFIEnabled
 write-host "UEFI is Enabled: $UEFIEnabled"
 Display-PlusOrMinus -Bool $SecureBootEnabled
 write-host "SecureBoot is Enabled: $SecureBootEnabled"
-Display-PlusOrMinus -Bool ($TPMVersion -like '*2,*')
+Display-PlusOrMinus -Bool ($TPMVersion -like '* 2,*')
 write-host "TPM Version: $TPMVersion"
 Display-PlusOrMinus -Bool $TPMIsActivated
 write-host "TPM is Activated: $TPMIsActivated"
