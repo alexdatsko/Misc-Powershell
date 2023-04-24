@@ -1,14 +1,14 @@
-﻿$GPOPath = "c:\Temp\BackupGPO" 
+﻿$GPOPath = "c:\Temp\BackupGPO"  # This doesn't really matter, we will try to extract current zip backup to $pwd\BackupGPO
 
 Function Extract-GPOBackup {
   param ($BackupFile)
   if ($true) {  # modified to work in Restore-AllGPOs.ps1
     Write-Host "[.] Found newest backup file $($BackupFile), extracting ..."
     Expand-Archive -Path $BackupFile -DestinationPath $pwd -Force # -Verbose
-    if (!(Test-Path -Path "$GPOPath")) { 
-      Write-Host "[!] Failed! $GPOPath not found.. Some error happened extracting $BackupFile to $GPOPath " 
-      Exit 
-    }     
+    if ((gci . | where {$_.Name -like 'BackupGPO'}).count -eq 0) {
+      Write-Host "[!] Error extracting $BackupFile : BackupGPO folder not found in $pwd  " 
+      exit
+    } 
   }
 }
 
@@ -33,13 +33,15 @@ if (!(Test-Path $GPOPath)) {
     $BackupLoc = Test-GPOBackup
     if (($BackupLoc) -ne $null) {
       Extract-GPOBackup $BackupLoc
-      Set-Location "$pwd\BackupGPO"
+      $GPOPath = "$pwd\BackupGPO"
+      Set-Location $GPOPath
     } else {
       Write-Host "[!] Failed! $GPOPath and Backup file not found.."
       Exit 
     }
   }
 }
+
 $GPOFolders = (gci $GPOPath -Directory).Name
 ForEach ($GPOFolder in $GPOFolders) {
   if ($GPOFolder -like "*__*") {
