@@ -1,7 +1,8 @@
-################################
+Write-Host "################################
 # Get-VMDriveSpace.ps1
 # Alex Datsko 04-11-23
 # Gets a list of all VMs and their VHDXs, shows a quick report on the amount of free space on each VHDX
+"
 
 Get-VM | ForEach-Object {
   $vm = $_.VMID
