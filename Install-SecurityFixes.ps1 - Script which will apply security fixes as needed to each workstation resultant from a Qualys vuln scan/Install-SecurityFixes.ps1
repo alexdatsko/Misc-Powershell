@@ -20,8 +20,11 @@ if (!(Test-Path $tmp)) { New-Item -ItemType Directory $tmp }
 $dateshort= Get-Date -Format "yyyy-MM-dd"
 Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 
-# Script specific vars:  
-$Version = "0.35.26"     # WinVerifyTrust Signature Validation Vulnerability - QID 378332
+# Script specific vars:   
+
+# No comments after the version number on the next line- Will screw up updates!
+$Version = "0.35.26"
+     # New in this version: WinVerifyTrust Signature Validation Vulnerability - QID 378332
 # Last fixes:    Delete-File + Delete-Folder confirmations, Get-OSType
 $VersionInfo = "v$($Version) - Last modified: 4/25/23"
 
