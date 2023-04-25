@@ -21,9 +21,9 @@ $dateshort= Get-Date -Format "yyyy-MM-dd"
 Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 
 # Script specific vars:  
-$Version = "0.35.25"   
+$Version = "0.35.26"     # WinVerifyTrust Signature Validation Vulnerability - QID 378332
 # Last fixes:    Delete-File + Delete-Folder confirmations, Get-OSType
-$VersionInfo = "v$($Version) - Last modified: 4/6/23"
+$VersionInfo = "v$($Version) - Last modified: 4/25/23"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -1645,9 +1645,18 @@ foreach ($QID in $QIDs) {
           Delete-File "$($env:windir)\system32\MRT.exe" -Results $Results
         }
       }
-      106105{
+      106105 {
         if (Get-YesNo "$_ Delete EOL/Obsolete Software: Microsoft .Net Core Version 3.1 Detected? " -Results $Results) { 
           Delete-Folder "$($env:programfiles)\dotnet\shared\Microsoft.NETCore.App\3.1.32" -Results $Results
+        }
+      }
+      378332 {
+        if (Get-YesNo "$_ Fix WinVerifyTrust Signature Validation Vulnerability? " -Results $Results) { 
+          New-Item -Path "HKLM:\Software\Microsoft\Cryptography\Wintrust\Config" -Force | Out-Null
+          New-ItemProperty -Path "HKLM:\Software\Microsoft\Cryptography\Wintrust\Config" -Name "EnableCertPaddingCheck" -Value "1" -PropertyType "String" -Force | Out-Null
+          
+          New-Item -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config" -Force | Out-Null
+          New-ItemProperty -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config" -Name "EnableCertPaddingCheck" -Value "1" -PropertyType "String" -Force | Out-Null    
         }
       }
 
