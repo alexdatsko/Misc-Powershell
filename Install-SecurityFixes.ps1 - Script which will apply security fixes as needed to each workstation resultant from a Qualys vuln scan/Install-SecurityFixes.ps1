@@ -23,10 +23,10 @@ Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 # Script specific vars:   
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.26"
-     # New in this version: WinVerifyTrust Signature Validation Vulnerability - QID 378332
+$Version = "0.35.27"
+     # New in this version: Adobe Shockwave removal, couple other small fixes/additions
 # Last fixes:    Delete-File + Delete-Folder confirmations, Get-OSType
-$VersionInfo = "v$($Version) - Last modified: 4/25/23"
+$VersionInfo = "v$($Version) - Last modified: 4/27/23"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -284,23 +284,26 @@ Function Set-DellBiosProviderDefaults {
         Write-Host "[!] No DellBIOSProvder - Can't set WOL"
       } else {
         # For testing, just check and set these 2..
-        Import-Module DellBIOSProvider
-        Write-Host "[.] Checking for AcPwrRcvry=On & WakeonLAN=Enabled in DellSMBios:\ .." 
-        $AcPwrRcvry=Get-Item -Path DellSMBios:\PowerManagement\AcPwrRcvry
-        $WakeonLAN=Get-Item -Path DellSMBios:\PowerManagement\WakeonLAN
-        if (!($AcPwrRcvry)) { 
-          Write-Host "[.] Setting AcPwrRcvry=On in DellSMBios:\ .."
-          try { Set-Item -Path DellSMBios:\PowerManagement\AcPwrRcvry -Value "On" } catch { Write-Host "[.] Couldn't set AcPwrRecvry=On !!" -ForegroundColor Red }
+        if (Import-Module DellBIOSProvider) {
+          Write-Host "[.] Checking for AcPwrRcvry=On & WakeonLAN=Enabled in DellSMBios:\ .." 
+          $AcPwrRcvry=Get-Item -Path DellSMBios:\PowerManagement\AcPwrRcvry
+          $WakeonLAN=Get-Item -Path DellSMBios:\PowerManagement\WakeonLAN
+          if (!($AcPwrRcvry)) { 
+            Write-Host "[.] Setting AcPwrRcvry=On in DellSMBios:\ .."
+            try { Set-Item -Path DellSMBios:\PowerManagement\AcPwrRcvry -Value "On" } catch { Write-Host "[.] Couldn't set AcPwrRecvry=On !!" -ForegroundColor Red }
+          } else {
+            Write-Host "[+] Found AcPwrRcvry=On already"
+          }
+          if (!($WakeonLAN)) {
+            Write-Host "[.] Setting WakeonLAN=Enabled in DellSMBios:\ .."
+            try { Set-Item -Path DellSMBios:\PowerManagement\WakeonLAN -Value "Enabled" } catch { Write-Host "[.] Couldn't set WakeonLAN=Enabled !!" -ForegroundColor Red }
+          } else {
+            Write-Host "[+] Found WakeonLAN=Enabled already"
+          }
+          Write-Host "[+] Done w/ Dell SMBios settings." -ForegroundColor Green
         } else {
-          Write-Host "[+] Found AcPwrRcvry=On already"
+          Write-Host "[-] Dell SMBios issue running 'Import-Module DellBiosProvider' - can't set WakeOnLan etc." -ForegroundColor Red
         }
-        if (!($WakeonLAN)) {
-          Write-Host "[.] Setting WakeonLAN=Enabled in DellSMBios:\ .."
-          try { Set-Item -Path DellSMBios:\PowerManagement\WakeonLAN -Value "Enabled" } catch { Write-Host "[.] Couldn't set WakeonLAN=Enabled !!" -ForegroundColor Red }
-        } else {
-          Write-Host "[+] Found WakeonLAN=Enabled already"
-        }
-        Write-Host "[+] Done!" -ForegroundColor Green
       }
     }
   } else {
@@ -1067,10 +1070,15 @@ foreach ($QID in $QIDs) {
       105228 { 
         if (Get-YesNo "$_ Disable guest account and rename to NoVisitors ? " -Results $Results) {
             if ($OSVersion -ge 7) {
+              Disable-LocalUser -Name "Guest"
+              Write-Host "[.] Guest account disabled with: 'Disable-LocalUser -Name ""Guest""'"
               Rename-LocalUser -Name "Guest" -NewName "NoVisitors" | Disable-LocalUser
+              Write-Host "[.] Guest account renamed with: Rename-LocalUser -Name ""Guest"" -NewName ""NoVisitors"" | Disable-LocalUser"
             } else {
               cmd /c 'net user Guest /active:no'
+              Write-Host "[.] Guest account disabled with: 'net user Guest /active:no'"
               cmd /c 'wmic useraccount where name="Guest" rename NoVisitors'
+              Write-Host "[.] Guest account renamed with: 'wmic useraccount where name=""Guest"" rename NoVisitors'"
             }
         }
       }
@@ -1187,6 +1195,7 @@ foreach ($QID in $QIDs) {
             #Write-Host "[ ] Finding GUID for $Name .. Please wait"  -ForegroundColor Gray
             #$GUID = (get-wmiobject -class Win32_Product | ?{ $_.Name -like $Name}).IdentifyingNumber
             $GUID= "{D5C69738-B486-402E-85AC-2456D98A64E4}"
+            Write-Host "[.] Checking for product: '$GUID' (Microsoft Windows 10 Update Assistant) .." -ForegroundColor Yellow
             $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like $GUID})
             if ($Products) {
               Remove-Software -Products $Products -Results $Results
@@ -1434,6 +1443,7 @@ foreach ($QID in $QIDs) {
         } else { $QIDsAdobeReader = 1 }
       }
       { $QIDsMicrosoftSilverlight -contains $_ } {
+        Write-Host "[.] Checking for product: '{89F4137D-6C26-4A84-BDB8-2E5A4BB71E00}' (Microsoft Silverlight) .." -ForegroundColor Yellow
         $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{89F4137D-6C26-4A84-BDB8-2E5A4BB71E00}'})
         if ($Products) {
             Remove-Software -Products $Products -Results $Results
@@ -1444,6 +1454,7 @@ foreach ($QID in $QIDs) {
         } 
       }
       { $QIDsSQLServerCompact4 -contains $_ } {
+        Write-Host "[.] Checking for product: '{78909610-D229-459C-A936-25D92283D3FD}' (SQL Server Compact 4) .." -ForegroundColor Yellow
         $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{78909610-D229-459C-A936-25D92283D3FD}'})
         if ($Products) {
             Remove-Software -Products $Products -Results $Results
@@ -1454,6 +1465,7 @@ foreach ($QID in $QIDs) {
         } 
       }
       { $QIDsMicrosoftAccessDBEngine -contains $_ } {
+        Write-Host "[.] Checking for product: '{9012.. or {90140000-00D1-0409-0000-0000000FF1CE}' (MicrosoftAccessDBEngine) .." -ForegroundColor Yellow
         $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{90120000-00D1-0409-0000-0000000FF1CE}' -or `
                                                            $_.IdentifyingNumber -like '{90140000-00D1-0409-1000-0000000FF1CE}'})
         if ($Products) {
@@ -1526,6 +1538,7 @@ foreach ($QID in $QIDs) {
 
             For now, will remove just the Runtime which I believe is the only vulnerability..  Maybe we remove all 3 though, will find out.
             #>
+            Write-Host "[.] Checking for product: '{5A66E598-37BD-4C8A-A7CB-A71C32ABCD78}' (.NET Core 5) .." -ForegroundColor Yellow
             $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{5A66E598-37BD-4C8A-A7CB-A71C32ABCD78}'})
             if ($Products) {
                 Remove-Software -Products $Products -Results $Results
@@ -1604,6 +1617,7 @@ foreach ($QID in $QIDs) {
         } else { $QIDsNVIDIA = 1 }
       }
       { 370468 -contains $_ } {
+        Write-Host "[.] Checking for product: 'Cisco WebEx*' " -ForegroundColor Yellow
         $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Cisco WebEx*'})
         if ($Products) {
             Remove-Software -Products $Products  -Results $Results
@@ -1648,6 +1662,16 @@ foreach ($QID in $QIDs) {
           Delete-File "$($env:windir)\system32\MRT.exe" -Results $Results
         }
       }
+      105803 {
+        if (Get-YesNo "$_ Delete EOL/Obsolete Software: Adobe Shockwave Player 12 ? " -Results $Results) { 
+          $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Adobe Shockwave*'})
+          if ($Products) {
+              Remove-Software -Products $Products  -Results $Results
+          } else {
+            Write-Host "[!] Product not found: 'Adobe Shockwave*' !!`n" -ForegroundColor Red
+          }    
+        }
+      }
       106105 {
         if (Get-YesNo "$_ Delete EOL/Obsolete Software: Microsoft .Net Core Version 3.1 Detected? " -Results $Results) { 
           Delete-Folder "$($env:programfiles)\dotnet\shared\Microsoft.NETCore.App\3.1.32" -Results $Results
@@ -1655,13 +1679,23 @@ foreach ($QID in $QIDs) {
       }
       378332 {
         if (Get-YesNo "$_ Fix WinVerifyTrust Signature Validation Vulnerability? " -Results $Results) { 
+          Write-Output "[.] Creating registry item: HKLM:\Software\Microsoft\Cryptography\Wintrust\Config\EnableCertPaddingCheck=1"
           New-Item -Path "HKLM:\Software\Microsoft\Cryptography\Wintrust\Config" -Force | Out-Null
           New-ItemProperty -Path "HKLM:\Software\Microsoft\Cryptography\Wintrust\Config" -Name "EnableCertPaddingCheck" -Value "1" -PropertyType "String" -Force | Out-Null
           
+          Write-Output "[.] Creating registry item: HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config\EnableCertPaddingCheck=1"
           New-Item -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config" -Force | Out-Null
           New-ItemProperty -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config" -Name "EnableCertPaddingCheck" -Value "1" -PropertyType "String" -Force | Out-Null    
+          Write-Output "[!] Done!"
         }
       }
+      106116 {        
+        if (Get-YesNo "$_ Delete EOL/Obsolete Software: Microsoft Visual C++ 2010 Redistributable Package Detected? " -Results $Results) { 
+          Delete-File "$($env:ProgramFiles)\Common Files\Microsoft Shared\VC\msdia100.dll" -Results $Results
+          Delete-File "$(${env:ProgramFiles(x86)})\Common Files\Microsoft Shared\VC\msdia100.dll" -Results $Results
+        }       
+      }	
+
 
       372294 {
         if (Get-YesNo "$_ Fix service permissions issues? " -Results $Results) {
