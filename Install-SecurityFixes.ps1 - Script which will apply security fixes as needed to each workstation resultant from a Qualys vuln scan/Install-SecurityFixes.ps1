@@ -23,10 +23,10 @@ Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 # Script specific vars:   
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.27"
-     # New in this version: Adobe Shockwave removal, couple other small fixes/additions
+$Version = "0.35.28"
+     # New in this version: Check OS type to skip DellBios checks for non-workstations
 # Last fixes:    Delete-File + Delete-Folder confirmations, Get-OSType
-$VersionInfo = "v$($Version) - Last modified: 4/27/23"
+$VersionInfo = "v$($Version) - Last modified: 5/01/23"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -106,11 +106,16 @@ function Read-QIDLists {    # NOT USING, THIS IS NOT
   }
 }
 
+function Get-OSVersion {
+  return (Get-CimInstance Win32_OperatingSystem).version
+}
+
 function Check-NewerScriptVersion {   # Check in ps1 file for VersionStr and report back if its newer than the current value ($VersionToCheck), returns version# if so.
   param ([string]$Filename,
          [string]$VersionStr,
          [string]$VersionToCheck)
-
+  
+  $OSVersionMaj = Get-OSVersion
   $FileContents = Get-Content $Filename
   $TotalLines = $FileContents.Length
   Write-Verbose "[.] Loaded $TotalLines lines from $($Filename) .. Checking for $($VersionStr)"
@@ -122,9 +127,9 @@ function Check-NewerScriptVersion {   # Check in ps1 file for VersionStr and rep
         $VersionFound = $line.split('=')[1].trim().replace('"','')
       }
       Write-Verbose " New script version: $([version]$VersionFound)"
-      Write-Verbose " New script version Hex: $($VersionFound | Format-Hex)"
+      #if ($OSVersionMaj -ge 10) { Write-Verbose " New script version Hex: $($VersionFound | Format-Hex)" }
       Write-Verbose " Current version: $([version]$VersionToCheck) "
-      Write-Verbose " Current version hex: $($VersionToCheck | Format-Hex)"
+      #if ($OSVersionMaj -ge 10) { Write-Verbose " Current version hex: $($VersionToCheck | Format-Hex)" }
       if ([version]$VersionFound -gt [version]$VersionToCheck) {
         Write-Verbose "[+] Version found $($VersionFound) is newer than $($VersionToCheck)"
         return $VersionFound;
@@ -205,7 +210,7 @@ Function Update-Script {
   Write-Output "[.] Checking for updated version of script on github.. Current Version = $($Version)"
   $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/Install-SecurityFixes.ps1"
   if (Update-ScriptFile -URL $url -FilenameTmp "$($tmp)\Install-SecurityFixes.ps1" -FilenamePerm "$($pwd)\Install-SecurityFixes.ps1" -VersionStr '$Version = *' -VersionToCheck $Version) {
-    Write-Output "[+] Update found, re-running script .."
+    Write-Host "[+] Update found, re-running script .."
     . "$($pwd)\Install-SecurityFixes.ps1"   # Dot source and run from here once, then exit.
     Stop-Transcript
     exit
@@ -221,7 +226,7 @@ Function Update-QIDLists {
   Write-Output "[.] Checking for updated QIDLists file on github.. Current Version = $($QIDsVersion)"
   $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/QIDLists.ps1"
   if (Update-ScriptFile -URL $url -FilenameTmp "$($tmp)\QIDLists.ps1" -FilenamePerm "$($pwd)\QIDLists.ps1" -VersionStr '$QIDsVersion = *' -VersionToCheck $QIDsVersion) {
-    Write-Output "[+] Updates found, reloading QIDLists.ps1 .."
+    Write-Host "[+] Updates found, reloading QIDLists.ps1 .."
     return $true
     #Read-QIDLists  # Doesn't work in this scope, do it below in global scope
   } else {
@@ -248,7 +253,7 @@ Function Get-OS {
     }
 }
 
-Function Get-OSType {
+Function Get-OSType {  # 1=Workstation, 2=DC, 3=Server
     $os = Get-WmiObject -Class Win32_OperatingSystem
     $ostype=$os.productType
     Return $ostype
@@ -763,6 +768,13 @@ function Backup-BitlockerKeys {
   }
 }
 
+function Check-FileVersion {
+  param ([string]$FileName)
+
+  return (Get-Item $FileName).VersionInfo.FileVersionRaw
+}
+
+
 ################################################################################################################## MAIN ############################################################################################################
 ################################################################################################################## MAIN ############################################################################################################
 ################################################################################################################## MAIN ############################################################################################################
@@ -823,10 +835,11 @@ if ($ServerName) {
   }
 }
 
-Install-DellBiosProvider  # Will only run if value is set in Config
 
-Set-DellBiosProviderDefaults # Will only run if value is set in Config
-
+if (Get-OSType -eq 1) {
+  Install-DellBiosProvider  # Will only run if value is set in Config
+  Set-DellBiosProviderDefaults # Will only run if value is set in Config  
+}
 Backup-BitlockerKeys # Try to Backup Bitlocker recovery keys to AD
 
 ################# ( READ IN CSV AND PROCESS ) #####################
@@ -1259,8 +1272,8 @@ foreach ($QID in $QIDs) {
       }
       372348 {
         if (Get-YesNo "$_ - Intel Chipset INF util ? " -Results $Results) {
-            Invoke-WebRequest "https://downloadmirror.intel.com/30553/eng/setupchipset.exe" -OutFile "$($tmp)\setupchipset.exe"
-            # "https://downloadmirror.intel.com/30553/eng/setupchipset.exe"
+            Invoke-WebRequest "https://downloadmirror.intel.com/774764/SetupChipset.exe" -OutFile "$($tmp)\setupchipset.exe"
+            # https://downloadmirror.intel.com/774764/SetupChipset.exe
             cmd /c "$($tmp)\setupchipset.exe -s -accepteula  -norestart -log $($tmp)\intelchipsetinf.log"
             # This doesn't seem to be working, lets just download it and run it for now..
             #cmd /c "$($tmp)\setupchipset.exe -log $($tmp)\intelchipsetinf.log"
@@ -1443,37 +1456,43 @@ foreach ($QID in $QIDs) {
         } else { $QIDsAdobeReader = 1 }
       }
       { $QIDsMicrosoftSilverlight -contains $_ } {
-        Write-Host "[.] Checking for product: '{89F4137D-6C26-4A84-BDB8-2E5A4BB71E00}' (Microsoft Silverlight) .." -ForegroundColor Yellow
-        $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{89F4137D-6C26-4A84-BDB8-2E5A4BB71E00}'})
-        if ($Products) {
-            Remove-Software -Products $Products -Results $Results
+        if (Get-YesNo "$_ Remove Microsoft Silverlight ? ") {
+          Write-Host "[.] Checking for product: '{89F4137D-6C26-4A84-BDB8-2E5A4BB71E00}' (Microsoft Silverlight) .." -ForegroundColor Yellow
+          $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{89F4137D-6C26-4A84-BDB8-2E5A4BB71E00}'})
+          if ($Products) {
+              Remove-Software -Products $Products -Results $Results
+              $QIDsMicrosoftSilverlight = 1
+          } else {
+            Write-Host "[!] Guids not found: $Products !!`n" -ForegroundColor Red
             $QIDsMicrosoftSilverlight = 1
-        } else {
-          Write-Host "[!] Guids not found: $Products !!`n" -ForegroundColor Red
-          $QIDsMicrosoftSilverlight = 1
-        } 
+          } 
+        }
       }
       { $QIDsSQLServerCompact4 -contains $_ } {
-        Write-Host "[.] Checking for product: '{78909610-D229-459C-A936-25D92283D3FD}' (SQL Server Compact 4) .." -ForegroundColor Yellow
-        $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{78909610-D229-459C-A936-25D92283D3FD}'})
-        if ($Products) {
-            Remove-Software -Products $Products -Results $Results
-            $QIDsSQLServerCompact4 = 1
-        } else {
-          Write-Host "[!] Guids not found: $Products !!`n" -ForegroundColor Red
-          $QIDsSQLServerCompact4  = 1
-        } 
+        if (Get-YesNo "$_ Remove MS SQL Server Compact 4 ? ") {
+          Write-Host "[.] Checking for product: '{78909610-D229-459C-A936-25D92283D3FD}' (SQL Server Compact 4) .." -ForegroundColor Yellow
+          $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{78909610-D229-459C-A936-25D92283D3FD}'})
+          if ($Products) {
+              Remove-Software -Products $Products -Results $Results
+              $QIDsSQLServerCompact4 = 1
+          } else {
+            Write-Host "[!] Guids not found: $Products !!`n" -ForegroundColor Red
+            $QIDsSQLServerCompact4  = 1
+          } 
+        }
       }
       { $QIDsMicrosoftAccessDBEngine -contains $_ } {
-        Write-Host "[.] Checking for product: '{9012.. or {90140000-00D1-0409-0000-0000000FF1CE}' (MicrosoftAccessDBEngine) .." -ForegroundColor Yellow
-        $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{90120000-00D1-0409-0000-0000000FF1CE}' -or `
-                                                           $_.IdentifyingNumber -like '{90140000-00D1-0409-1000-0000000FF1CE}'})
-        if ($Products) {
-            Remove-Software -Products $Products -Results $Results
+        if (Get-YesNo "$_ Remove MicrosoftAccessDBEngine ? ") {
+          Write-Host "[.] Checking for product: '{9012.. or {90140000-00D1-0409-0000-0000000FF1CE}' (MicrosoftAccessDBEngine) .." -ForegroundColor Yellow
+          $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{90120000-00D1-0409-0000-0000000FF1CE}' -or `
+                                                            $_.IdentifyingNumber -like '{90140000-00D1-0409-1000-0000000FF1CE}'})
+          if ($Products) {
+              Remove-Software -Products $Products -Results $Results
+              $QIDsMicrosoftAccessDBEngine = 1
+          } else {
+            Write-Host "[!] Guids not found: $Products !!`n" -ForegroundColor Red
             $QIDsMicrosoftAccessDBEngine = 1
-        } else {
-          Write-Host "[!] Guids not found: $Products !!`n" -ForegroundColor Red
-          $QIDsMicrosoftAccessDBEngine = 1
+          }
         }
       }
       { $QIDsMicrosoftVisualStudioActiveTemplate -contains $_ } {
@@ -1616,14 +1635,21 @@ foreach ($QID in $QIDs) {
             }
         } else { $QIDsNVIDIA = 1 }
       }
-      { 370468 -contains $_ } {
-        Write-Host "[.] Checking for product: 'Cisco WebEx*' " -ForegroundColor Yellow
-        $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Cisco WebEx*'})
-        if ($Products) {
-            Remove-Software -Products $Products  -Results $Results
-        } else {
-          Write-Host "[!] Product not found: 'Cisco WebEx*' !!`n" -ForegroundColor Red
-        }         
+      376609 {
+        if (Get-YesNo "$_ Delete nvcpl.dll for NVIDIA GPU Display Driver Multiple Vulnerabilities (May 2022) ? " -Results $Results) { 
+          Delete-File "C:\Windows\System32\nvcpl.dll" -Results $Results
+        }
+      }    
+      370468 {
+        if (Get-YesNo "$_ Remove Cisco WebEx ? ") {
+          Write-Host "[.] Checking for product: 'Cisco WebEx*' " -ForegroundColor Yellow
+          $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Cisco WebEx*'})
+          if ($Products) {
+              Remove-Software -Products $Products  -Results $Results
+          } else {
+            Write-Host "[!] Product not found: 'Cisco WebEx*' !!`n" -ForegroundColor Red
+          }    
+        }     
       }
       19472 {
         if (Get-YesNo "$_ Install reg key for Microsoft SQL Server sqldmo.dll ActiveX Buffer Overflow Vulnerability - Zero Day (CVE-2007-4814)? " -Results $Results) { 
@@ -1663,7 +1689,7 @@ foreach ($QID in $QIDs) {
         }
       }
       105803 {
-        if (Get-YesNo "$_ Delete EOL/Obsolete Software: Adobe Shockwave Player 12 ? " -Results $Results) { 
+        if (Get-YesNo "$_ Remove EOL/Obsolete Software: Adobe Shockwave Player 12 ? " -Results $Results) { 
           $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Adobe Shockwave*'})
           if ($Products) {
               Remove-Software -Products $Products  -Results $Results
@@ -1673,7 +1699,7 @@ foreach ($QID in $QIDs) {
         }
       }
       106105 {
-        if (Get-YesNo "$_ Delete EOL/Obsolete Software: Microsoft .Net Core Version 3.1 Detected? " -Results $Results) { 
+        if (Get-YesNo "$_ Remove EOL/Obsolete Software: Microsoft .Net Core Version 3.1 Detected? " -Results $Results) { 
           Delete-Folder "$($env:programfiles)\dotnet\shared\Microsoft.NETCore.App\3.1.32" -Results $Results
         }
       }
@@ -1695,7 +1721,14 @@ foreach ($QID in $QIDs) {
           Delete-File "$(${env:ProgramFiles(x86)})\Common Files\Microsoft Shared\VC\msdia100.dll" -Results $Results
         }       
       }	
+      110432 {
+        $ResultsEXE = "C:\Program Files (x86)\Microsoft Office\root\Office16\GRAPH.EXE"
+        $ResultsEXEVersion = Check-FileVersion $ResultsEXE
+        if ($ResultsEXEVersion -le 16.0.16227.20258) {
+          Write-Host "[!] Vulnerable version $ResultsEXE found : $ResultsEXEVersion <= 16.0.16227.20258"
 
+        }
+      }
 
       372294 {
         if (Get-YesNo "$_ Fix service permissions issues? " -Results $Results) {
