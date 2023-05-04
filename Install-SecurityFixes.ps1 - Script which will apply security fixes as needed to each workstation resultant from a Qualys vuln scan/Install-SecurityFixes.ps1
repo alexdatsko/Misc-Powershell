@@ -23,10 +23,10 @@ Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 # Script specific vars:   
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.28"
-     # New in this version: Check OS type to skip DellBios checks for non-workstations
+$Version = "0.35.29"
+     # New in this version: Update to Nvidia privesc exe deletion (more output, checks)
 # Last fixes:    Delete-File + Delete-Folder confirmations, Get-OSType
-$VersionInfo = "v$($Version) - Last modified: 5/01/23"
+$VersionInfo = "v$($Version) - Last modified: 5/04/23"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -417,7 +417,7 @@ function Find-ServerCSVFile {
     Write-Host "[i] Found file: $CSVFileName" -ForegroundColor Blue
     return $CSVFilename 
   } else {
-    4return $null
+    return $null
   }
 }
 
@@ -1628,9 +1628,21 @@ foreach ($QID in $QIDs) {
               Write-Host "[!] Download and install latest NVidia drivers.. Manual fix!"
             } else {
               Write-Host "[!] No NVIDIA Card found, should be save to remove."
-              if (Get-YesNo "$_ Remove NVIDIA PrivEsc exe c:\windows\system32\nvvsvc.exe ? ") { 
-                cmd.exe /c "taskkill /f /im nvvsvc.exe"
-                cmd.exe /c "del %windir%\System32\nvvsvc.exe"
+              if (Test-Path "c:\windows\system32\nvvsvc.exe") {
+                if (Get-YesNo "$_ Remove NVIDIA PrivEsc exe c:\windows\system32\nvvsvc.exe ? ") { 
+                  Write-Host "[.] Running: 'taskkill /f /im nvvsvc.exe' .."
+                  cmd.exe /c "taskkill /f /im nvvsvc.exe"
+                  Write-Host "[.] Running: 'del c:\windows\System32\nvvsvc.exe /f /s /q'  .."
+                  cmd.exe /c "del c:\windows\System32\nvvsvc.exe /f /s /q"
+                  if (!(Test-Path "c:\windows\system32\nvvsvc.exe")) {
+                    Write-Host "[.] Success!"
+                  } else {
+                    Write-Host "[!] Error deleting %windir%\System32\nvvsvc.exe !! Not fixed."
+                  }
+                  
+                }
+              } else {
+                Write-Host "[!] Error, can't find C:\Windows\System32\nvvsvc.exe ! Looks like its already been deleted?"
               }
             }
         } else { $QIDsNVIDIA = 1 }
