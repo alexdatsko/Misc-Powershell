@@ -23,8 +23,8 @@ Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 # Script specific vars:   
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.29"
-     # New in this version: Update to Nvidia privesc exe deletion (more output, checks)
+$Version = "0.35.31"
+     # New in this version: Sorting vulnerabilities
 # Last fixes:    Delete-File + Delete-Folder confirmations, Get-OSType
 $VersionInfo = "v$($Version) - Last modified: 5/04/23"
 
@@ -55,7 +55,7 @@ function Get-YesNo {
   $done = 0
   if (!($Automated)) { 
     while ($done -eq 0) {
-      $yesno = Read-Host  "[?] $text [n] "
+      $yesno = Read-Host  "`n[?] $text [n] "
       if ($yesno.ToUpper()[0] -eq 'Y') { return $true } 
       if ($yesno.ToUpper()[0] -eq 'N' -or $yesno -eq '') { return $false } 
       if ($yesno.ToUpper()[0] -eq 'S') { 
@@ -801,8 +801,6 @@ if (([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDat
 }
 
 # These variables should be referenced globally:
-#Read-ConfigFile 
-#Read-QIDLists  # Possibly fixed here..
 . "$($ConfigFile)"
 . "$($QIDsListFile)"
 
@@ -835,7 +833,6 @@ if ($ServerName) {
   }
 }
 
-
 if (Get-OSType -eq 1) {
   Install-DellBiosProvider  # Will only run if value is set in Config
   Set-DellBiosProviderDefaults # Will only run if value is set in Config  
@@ -866,7 +863,7 @@ if ($null -eq $CSVFilename) {
   Exit
 } else {
   try {
-    $CSVData = Import-CSV $CSVFilename # -Header "Account Name,Vulnerability Report ID,IP,DNS,NetBIOS,QG Host ID,OS,IP Status,QID,Title,Vuln Status,Type,Severity,Port,Protocol,FQDN,SSL,First Detected,Last Detected,Times Detected,Date Last Fixed,CVE ID,Vendor Reference,Threat,Impact,Solution,Exploitability,Associated Malware,Result,PCI Vuln,Category,Associated Tags"
+    $CSVData = Import-CSV $CSVFilename | sort "Vulnerability Description"
   } catch {
     Write-Host "[X] Couldn't open CSV file : $CSVFilename " -ForegroundColor Red
     Exit
@@ -1255,8 +1252,12 @@ foreach ($QID in $QIDs) {
         if (Get-YesNo "$_ Install GhostScript 10.0.0? " -Results $Results) {
           Invoke-WebRequest "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs1000/gs1000w32.exe" -OutFile "$($tmp)\ghostscript.exe"
           cmd.exe /c "$($tmp)\ghostscript.exe /S"
-          #Delete results file, i.e        "C:\Program Files (x86)\GPLGS\gsdll32.dll found#" as lots of times the installer does not clean this up..
-          $FileToDelete=$results.split(' found')[0]
+          #Delete results file, i.e        "C:\Program Files (x86)\GPLGS\gsdll32.dll found#" as lots of times the installer does not clean this up.. may install the new one in a new location etc
+          #$FileToDelete=$results.split(' found')[0]
+          $path = Split-Path -Path $results
+          $sep=" found#"
+          $fileName = ((Split-Path -Path $results -Leaf) -split $sep)[0]
+          $FileToDelete="$($path)\$($filename)"
           Write-Host "[.] Removing $($FileToDelete) .."
           Remove-Item $FileToDelete -Force
           if (Test-Path $FileToDelete) {
