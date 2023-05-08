@@ -1,15 +1,16 @@
-write-host "`n[.] Git Push script (for Misc-Powershell)"
-if ($null -ne $args[0]) {
-  $commitmsg=$args[0]
-} else {
-  write-host "`n Error: please give commit message, i.e :`n  gp.ps1 'added kittens'`n"
-  exit
+Write-Host "`n[[ Git Push script - gp.ps1 ]] Alex Datsko" 
+$COMMITMSG=$args[1]
+if ($args[2]) {
+  Write-Host "Please put the commit message in doublequotes, i.e:"
+  oWrite-Host '  gp.ps1 "added kittens!!"'
 }
-Set-Location "\\synologycms\dropbox\scripts\AlexD Powershell\Misc-Powershell"
+sl "\\synologycms\dropbox\scripts\AlexD Powershell\Misc-Powershell"
+write-host "[.] Pulling"
+git pull
 write-host "[.] Adding *"
 git add *
 write-host "[.] Committing with $commitmsg"
-git commit -m $commitmsg
+git commit -m $COMMITMSG
 write-host "[.] Pushing.."
 git push
 Write-Host "[!] Done! Exiting.`n"
