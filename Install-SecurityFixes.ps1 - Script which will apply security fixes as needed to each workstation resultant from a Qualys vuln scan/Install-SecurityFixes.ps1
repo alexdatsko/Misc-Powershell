@@ -19,7 +19,7 @@ $tmp = "$($env:temp)\SecAud"                 # "temp" Temporary folder to save d
 if (!(Test-Path $tmp)) { New-Item -ItemType Directory $tmp }
 $dateshort= Get-Date -Format "yyyy-MM-dd"
 try {
-  Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log" -ErrorAction SilentlyContinue
+  Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log" -Force -ErrorAction SilentlyContinue
 } catch {
   if ($Error[0].Exception.Message -match 'Transcript is already in progress') {
     Write-Warning '[!] Start-Transcript: Already running.'
@@ -32,9 +32,8 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.37"
-     # New in this version: Updated snip tool with auto-open of MS snip tool url 
-# Last fixes:    Delete-File + Delete-Folder confirmations, Get-OSType
+$Version = "0.35.38"
+     # New in this version: MS Store open on vuln find, only offer this once..
 $VersionInfo = "v$($Version) - Last modified: 5/09/23"
 
 # Self-elevate the script if required
@@ -1283,7 +1282,7 @@ foreach ($QID in $QIDs) {
           Write-Output "[+] Trying to update Apps via WinGet .." 
           $result2 = winget upgrade --all --accept-source-agreements --accept-package-agreements --silent
           Write-Verbose $result2
-          #>
+          
           # Get the list of installed apps
           Write-Host "[+] Getting list of Store apps.." 
           $appList = Get-AppxPackage -AllUsers # | Where-Object {$_.PackageFamilyName -like "Microsoft.WindowsStore*"}
@@ -1296,8 +1295,11 @@ foreach ($QID in $QIDs) {
           }
           # Show message when all updates are complete
           Write-Host "[!] All app updates are complete.`n"    
-          
+          #>
+          # Just open the store for now so we can manually update. ugh.
+          & explorer  ms-windows-store:
         }
+        $QIDsUpdateMicrosoftStoreApps = 1
       }
       
         ####################################################### Installers #######################################
