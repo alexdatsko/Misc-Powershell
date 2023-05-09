@@ -23,10 +23,10 @@ Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 # Script specific vars:   
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.31"
-     # New in this version: Sorting vulnerabilities
+$Version = "0.35.32"
+     # New in this version: Fixed output on Update-QIDLists code, was making me think update was fubar'd
 # Last fixes:    Delete-File + Delete-Folder confirmations, Get-OSType
-$VersionInfo = "v$($Version) - Last modified: 5/04/23"
+$VersionInfo = "v$($Version) - Last modified: 5/09/23"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -223,14 +223,14 @@ Function Update-Script {
 Function Update-QIDLists {
   # For 0.32 I am assuming $pwd is going to be the correct path
   if (!($QIDsVersion)) { $QIDsVersion = "0.01" }   # If its missing, assume its super old.
-  Write-Output "[.] Checking for updated QIDLists file on github.. Current Version = $($QIDsVersion)"
+  Write-Host "[.] Checking for updated QIDLists file on github.. Current Version = $($QIDsVersion)"  # Had to change to Write-Host, Write-Output is being send back to caller
   $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/QIDLists.ps1"
   if (Update-ScriptFile -URL $url -FilenameTmp "$($tmp)\QIDLists.ps1" -FilenamePerm "$($pwd)\QIDLists.ps1" -VersionStr '$QIDsVersion = *' -VersionToCheck $QIDsVersion) {
     Write-Host "[+] Updates found, reloading QIDLists.ps1 .."
     return $true
     #Read-QIDLists  # Doesn't work in this scope, do it below in global scope
   } else {
-    Write-Output "[-] No update found for $($QIDsVersion)."
+    Write-Host "[-] No update found for $($QIDsVersion)."
     return $false
   }
   return $false
@@ -1249,8 +1249,9 @@ foreach ($QID in $QIDs) {
         # Install newest apps via Ninite
 
       { $QIDsGhostScript -contains $_ } {
-        if (Get-YesNo "$_ Install GhostScript 10.0.0? " -Results $Results) {
-          Invoke-WebRequest "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs1000/gs1000w32.exe" -OutFile "$($tmp)\ghostscript.exe"
+        if (Get-YesNo "$_ Install GhostScript 10.01.1 64bit? " -Results $Results) {
+          # 32bit link AGPL: https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10011/gs10011w32.exe
+          Invoke-WebRequest "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10011/gs10011w64.exe" -OutFile "$($tmp)\ghostscript.exe"
           cmd.exe /c "$($tmp)\ghostscript.exe /S"
           #Delete results file, i.e        "C:\Program Files (x86)\GPLGS\gsdll32.dll found#" as lots of times the installer does not clean this up.. may install the new one in a new location etc
           #$FileToDelete=$results.split(' found')[0]
