@@ -23,8 +23,8 @@ Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 # Script specific vars:   
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.33"
-     # New in this version: Fixed multiple paths in $Results for Parse-ResultsFile and Parse-ResultsFolder
+$Version = "0.35.34"
+     # New in this version: Removed some username data from comments
 # Last fixes:    Delete-File + Delete-Folder confirmations, Get-OSType
 $VersionInfo = "v$($Version) - Last modified: 5/09/23"
 
@@ -717,10 +717,6 @@ function Get-PathRaw {
 
 function Parse-ResultsFolder {  
   param ($Results)
-  # Example:
-  #   %systemdrive%\Users\Ben-Doctor.CHILDERSORTHO\AppData\Roaming\Zoom\bin\Zoom.exe  Version is  5.9.1.2581#
-  # should return:
-  # C:\Users\Ben-Doctor.CHILDERSORTHO\AppData\Roaming\Zoom\bin
  
   $Paths = New-Object System.Collections.Generic.List[string]
   $x = 0
@@ -751,24 +747,11 @@ function Parse-ResultsFolder {
   }
   return $Paths  
 } 
-Parse-ResultsFolder "%systemdrive%\Users\t.stokes\AppData\Roaming\Zoom\bin\Zoom.exe  Version is  5.12.9.10650  %systemdrive%\Users\l.aalbu\AppData\Roaming\Zoom\bin\Zoom.exe  Version is  5.11.4.7185#" -Verbose
 
 
 function Parse-ResultsFile {  
     [CmdletBinding()]
     param ($Results)
-
-    $VerbosePreference = 'Continue'
-
-  # Example:
-  #   %systemdrive%\Users\Ben-Doctor.CHILDERSORTHO\AppData\Roaming\Zoom\bin\Zoom.exe  Version is  5.9.1.2581#
-  # should return:
-  # C:\Users\Ben-Doctor.CHILDERSORTHO\AppData\Roaming\Zoom\bin\Zoom.exe
-
-  # UPDATE 5/9/23:
-  #  ALSO: %systemdrive%\Users\t.stokes\AppData\Roaming\Zoom\bin\Zoom.exe  Version is  5.12.9.10650  %systemdrive%\Users\l.aalbu\AppData\Roaming\Zoom\bin\Zoom.exe  Version is  5.11.4.7185#
-  # should return:
-  # @[$env:systemdrive\Users\t.stokes\AppData\Roaming\Zoom\bin\Zoom.exe","$env:systemdrive\Users\l.aalbu\AppData\Roaming\Zoom\bin\Zoom.exe"]
  
   $Paths = New-Object System.Collections.Generic.List[string]
   $x = 0
