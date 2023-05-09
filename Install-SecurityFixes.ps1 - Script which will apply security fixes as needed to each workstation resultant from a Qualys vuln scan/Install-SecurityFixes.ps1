@@ -18,13 +18,22 @@ $tmp = "$($env:temp)\SecAud"                 # "temp" Temporary folder to save d
 #Start a transscript of what happens while the script is running
 if (!(Test-Path $tmp)) { New-Item -ItemType Directory $tmp }
 $dateshort= Get-Date -Format "yyyy-MM-dd"
-Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
+try {
+  Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log" -ErrorAction SilentlyContinue
+} catch {
+  if ($Error[0].Exception.Message -match 'Transcript is already in progress') {
+    Write-Warning '[!] Start-Transcript: Already running.'
+  } else {
+    # re-throw the error if it's not the expected error
+    throw $_
+  }
+}
 
-# Script specific vars:   
+# ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.35"
-     # New in this version: added QID 378131 - snip tool check
+$Version = "0.35.37"
+     # New in this version: Updated snip tool with auto-open of MS snip tool url 
 # Last fixes:    Delete-File + Delete-Folder confirmations, Get-OSType
 $VersionInfo = "v$($Version) - Last modified: 5/09/23"
 
@@ -1794,9 +1803,10 @@ foreach ($QID in $QIDs) {
         $ResultsEXE = "$env:windir\system32\SnippingTool.exe"
         Write-Host "[.] Checking $ResultsEXE version.."
         $ResultsEXEVersion = Check-FileVersion $ResultsEXE
-        if ($ResultsEXEVersion -lt 10.2008.3001.0) {
+        if ([version]$ResultsEXEVersion -lt [version]10.2008.3001.0) {
           Write-Host "[!] Vulnerable version $ResultsEXE found : $ResultsEXEVersion < 10.2008.3001.0"  -ForegroundColor Red
           Write-Host "[!] Please update Snipping Tool manually!!!" -ForegroundColor Red
+          & explorer "https://apps.microsoft.com/store/detail/snipping-tool/9MZ95KL8MR0L?hl=en-us&gl=us"
         } else {
           Write-Host "[!] Fixed version $ResultsEXE found : $ResultsEXEVersion >= 10.2008.3001.0. Already patched"  -ForegroundColor Green
         }
