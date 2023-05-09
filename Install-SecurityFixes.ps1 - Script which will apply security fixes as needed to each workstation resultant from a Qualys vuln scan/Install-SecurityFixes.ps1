@@ -221,6 +221,7 @@ Function Update-Script {
   $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/Install-SecurityFixes.ps1"
   if (Update-ScriptFile -URL $url -FilenameTmp "$($tmp)\Install-SecurityFixes.ps1" -FilenamePerm "$($pwd)\Install-SecurityFixes.ps1" -VersionStr '$Version = *' -VersionToCheck $Version) {
     Write-Host "[+] Update found, re-running script .."
+    Stop-Transcript
     . "$($pwd)\Install-SecurityFixes.ps1"   # Dot source and run from here once, then exit.
     Stop-Transcript
     exit
