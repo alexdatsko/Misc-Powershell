@@ -23,8 +23,8 @@ Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 # Script specific vars:   
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.32"
-     # New in this version: Fixed output on Update-QIDLists code, was making me think update was fubar'd
+$Version = "0.35.33"
+     # New in this version: Fixed multiple paths in $Results for Parse-ResultsFile and Parse-ResultsFolder
 # Last fixes:    Delete-File + Delete-Folder confirmations, Get-OSType
 $VersionInfo = "v$($Version) - Last modified: 5/09/23"
 
@@ -34,6 +34,7 @@ if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
     if ([int](Get-CimInstance -Class Win32_OperatingSystem | Select-Object -ExpandProperty BuildNumber) -ge 6000) {
         $Command = "-File `"" + $MyInvocation.MyCommand.Path + "`" " + $MyInvocation.UnboundArguments
         Start-Process -FilePath PowerShell.exe -Verb RunAs -ArgumentList $Command
+        sl $pwd
         Exit
  }
 }
@@ -97,6 +98,7 @@ function Read-QIDLists {    # NOT USING, THIS IS NOT
       } catch {
         Write-Output "`n`n[!] ERROR: Couldn't import $($QIDsListFile) !! Exiting"
         Stop-Transcript
+        sl $pwd
         Exit
       }
     } else {
@@ -708,34 +710,94 @@ function Delete-File {
   }
 }
 
+function Get-PathRaw {
+  param ([string]$ThisPath)
+  return Split-Path ($ThisPath.replace("%appdata%","$env:appdata").replace("%computername%","$env:computername").replace("%home%","$env:home").replace("%systemroot%","$env:systemroot").replace("%systemdrive%","$env:systemdrive").replace("%programdata%","$env:programdata").replace("%programfiles%","$env:programfiles").replace("%programfiles(x86)%","$env:programfiles(x86)").replace("%programw6432%","$env:programw6432"))
+}
+
 function Parse-ResultsFolder {  
   param ($Results)
   # Example:
   #   %systemdrive%\Users\Ben-Doctor.CHILDERSORTHO\AppData\Roaming\Zoom\bin\Zoom.exe  Version is  5.9.1.2581#
   # should return:
   # C:\Users\Ben-Doctor.CHILDERSORTHO\AppData\Roaming\Zoom\bin
+ 
+  $Paths = New-Object System.Collections.Generic.List[string]
+  $x = 0
   Write-Verbose "Results: $Results"
-  $PathResults = ($Results -split('Version is')[0]).trim()
-  if ($PathResults) {
-    $PathRaw = Split-Path ($PathResults.replace("%appdata%","$env:appdata").replace("%computername%","$env:computername").replace("%home%","$env:home").replace("%systemroot%","$env:systemroot").replace("%systemdrive%","$env:systemdrive").replace("%programdata%","$env:programdata").replace("%programfiles%","$env:programfiles").replace("%programfiles(x86)%","$env:programfiles(x86)").replace("%programw6432%","$env:programw6432"))
-    return $PathRaw
+  $count = [regex]::Matches($Results, "Version is").Count
+  Write-Verbose "Count of 'Version is': $count"
+  if ($count -gt 0) {
+    while ($x -le $count) {
+      $PathResults = Split-Path ((($Results -split('Version is'))[0]).trim())
+      Write-Verbose "PathResults : $PathResults"
+      if ($null -ne $PathResults) {
+        $PathRaw = Get-PathRaw $PathResults
+        Write-Verbose "PathRaw : $PathRaw"
+        if ($count -gt 1) {
+          if (!($Paths -contains $PathRaw)) {
+            $Paths.Add($PathRaw)
+          } else {
+            Write-Verbose "PathRaw ($PathRaw) matches existing within : $Paths - skipping."
+          }
+        } else {
+          return $PathRaw
+        }
+      }
+      $x += 1
+    }
+  }  else {
+    return $false
   }
-  return $false
+  return $Paths  
 } 
+Parse-ResultsFolder "%systemdrive%\Users\t.stokes\AppData\Roaming\Zoom\bin\Zoom.exe  Version is  5.12.9.10650  %systemdrive%\Users\l.aalbu\AppData\Roaming\Zoom\bin\Zoom.exe  Version is  5.11.4.7185#" -Verbose
+
 
 function Parse-ResultsFile {  
-  param ($Results)
+    [CmdletBinding()]
+    param ($Results)
+
+    $VerbosePreference = 'Continue'
+
   # Example:
   #   %systemdrive%\Users\Ben-Doctor.CHILDERSORTHO\AppData\Roaming\Zoom\bin\Zoom.exe  Version is  5.9.1.2581#
   # should return:
   # C:\Users\Ben-Doctor.CHILDERSORTHO\AppData\Roaming\Zoom\bin\Zoom.exe
+
+  # UPDATE 5/9/23:
+  #  ALSO: %systemdrive%\Users\t.stokes\AppData\Roaming\Zoom\bin\Zoom.exe  Version is  5.12.9.10650  %systemdrive%\Users\l.aalbu\AppData\Roaming\Zoom\bin\Zoom.exe  Version is  5.11.4.7185#
+  # should return:
+  # @[$env:systemdrive\Users\t.stokes\AppData\Roaming\Zoom\bin\Zoom.exe","$env:systemdrive\Users\l.aalbu\AppData\Roaming\Zoom\bin\Zoom.exe"]
+ 
+  $Paths = New-Object System.Collections.Generic.List[string]
+  $x = 0
   Write-Verbose "Results: $Results"
-  $PathResults = ($Results -split('Version is')[0]).trim()
-  if (PathResults) {
-    $PathRaw = $PathResults.replace("%appdata%","$env:appdata").replace("%computername%","$env:computername").replace("%home%","$env:home").replace("%systemroot%","$env:systemroot").replace("%systemdrive%","$env:systemdrive").replace("%programdata%","$env:programdata").replace("%programfiles%","$env:programfiles").replace("%programfiles(x86)%","$env:programfiles(x86)").replace("%programw6432%","$env:programw6432")
-    return $PathRaw
+  $count = [regex]::Matches($Results, "Version is").Count
+  Write-Verbose "Count of 'Version is': $count"
+  if ($count -gt 0) {
+    while ($x -le $count) {
+      $PathResults = (($Results -split('Version is'))[0]).trim()
+      Write-Verbose "PathResults : $PathResults"
+      if ($null -ne $PathResults) {
+        $PathRaw = Get-PathRaw $PathResults
+        Write-Verbose "PathRaw : $PathRaw"
+        if ($count -gt 1) {
+          if (!($Paths -contains $PathRaw)) {
+            $Paths.Add($PathRaw)
+          } else {
+            Write-Verbose "PathRaw ($PathRaw) matches existing within : $Paths - skipping."
+          }
+        } else {
+          return $PathRaw
+        }
+      }
+      $x += 1
+    }
+  }  else {
+    return $false
   }
-  return $false
+  return $Paths  
 }
 
 function Backup-BitlockerKeys {
@@ -866,6 +928,7 @@ if ($null -eq $CSVFilename) {
     $CSVData = Import-CSV $CSVFilename | sort "Vulnerability Description"
   } catch {
     Write-Host "[X] Couldn't open CSV file : $CSVFilename " -ForegroundColor Red
+    sl $pwd
     Exit
   }
   if (!($CSVData)) {
