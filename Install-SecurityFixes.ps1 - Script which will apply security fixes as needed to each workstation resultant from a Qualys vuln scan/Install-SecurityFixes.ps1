@@ -23,8 +23,8 @@ Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log"
 # Script specific vars:   
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.34"
-     # New in this version: Removed some username data from comments
+$Version = "0.35.35"
+     # New in this version: added QID 378131 - snip tool check
 # Last fixes:    Delete-File + Delete-Folder confirmations, Get-OSType
 $VersionInfo = "v$($Version) - Last modified: 5/09/23"
 
@@ -1789,7 +1789,18 @@ foreach ($QID in $QIDs) {
 
         }
       }
-
+      378131 {
+        Write-Host "[?] $_ Microsoft Windows Snipping Tool Information Disclosure Vulnerability" 
+        $ResultsEXE = "$env:windir\system32\SnippingTool.exe"
+        Write-Host "[.] Checking $ResultsEXE version.."
+        $ResultsEXEVersion = Check-FileVersion $ResultsEXE
+        if ($ResultsEXEVersion -lt 10.2008.3001.0) {
+          Write-Host "[!] Vulnerable version $ResultsEXE found : $ResultsEXEVersion < 10.2008.3001.0"  -ForegroundColor Red
+          Write-Host "[!] Please update Snipping Tool manually!!!" -ForegroundColor Red
+        } else {
+          Write-Host "[!] Fixed version $ResultsEXE found : $ResultsEXEVersion >= 10.2008.3001.0. Already patched"  -ForegroundColor Green
+        }
+      }
       372294 {
         if (Get-YesNo "$_ Fix service permissions issues? " -Results $Results) {
           $ServicePermIssues = Get-ServicePermIssues -Results $Results
