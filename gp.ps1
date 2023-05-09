@@ -3,7 +3,7 @@ param (
     [string]$msg = "default"
  )
  Write-Host "`n[[ Git Push script - gp.ps1 ]] Alex Datsko" 
-if ("Default" -eq $msg) {
+if ("default" -eq $msg) {
   write-host "`n Error: please give commit message, i.e :`n  gp.ps1 'added kittens'`n"
   exit
 } else {
