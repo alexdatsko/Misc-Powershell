@@ -1827,6 +1827,8 @@ foreach ($QID in $QIDs) {
           & ncpa.cpl
           if (Get-YesNo "$_ Remove Intel PROset Wireless software (Check NCPA.cpl first!)? ") {
             Remove-Software -Products $Products  -Results $Results
+            Write-Host "[.] Removing $($env:programfiles)\intel\wifi\ folder as well.."
+            Delete-Folder "$($env:programfiles)\intel\wifi\" -Results $Results
           }
         } else {
           Write-Host "[!] Product not found: 'Intel PROset*' !!`n" -ForegroundColor Red
