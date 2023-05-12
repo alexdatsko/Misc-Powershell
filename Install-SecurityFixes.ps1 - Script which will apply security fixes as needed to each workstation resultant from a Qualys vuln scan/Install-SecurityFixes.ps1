@@ -1832,9 +1832,10 @@ foreach ($QID in $QIDs) {
           Write-Host "[!] Product not found: 'Intel PROset*' !!`n" -ForegroundColor Red
         }
         if (Test-Path "$($env:programfiles)\intel\wifi") {
-          Write-Host "[.] Removing $($env:programfiles)\intel\wifi\ folder as well.."
-          Delete-Folder "$($env:programfiles)\intel\wifi\" -Results $Results
-        } 
+          if (Get-YesNo "$_ Remove the folder also ($($env:programfiles)\intel\wifi) ? ") {
+          Write-Host "[.] Removing $($env:programfiles)\intel\wifi\ recursively.."
+          Delete-Folder "$($env:programfiles)\intel\wifi" -Results $Results
+        }
       }
       372294 {
         if (Get-YesNo "$_ Fix service permissions issues? " -Results $Results) {
