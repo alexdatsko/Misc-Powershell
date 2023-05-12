@@ -32,9 +32,9 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.38"
-     # New in this version: MS Store open on vuln find, only offer this once..
-$VersionInfo = "v$($Version) - Last modified: 5/09/23"
+$Version = "0.35.39"
+     # New in this version: Added QID 371476 - Intel Proset Wifi folder removal if app doesn't exist
+$VersionInfo = "v$($Version) - Last modified: 5/12/23"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -480,12 +480,11 @@ function Remove-Software {
   param ($Products,
          $Results)
   
-  Write-Verbose "Results: $Results"
   foreach ($Product in $Products) { # Remove multiple products if passed..
     $Guid = $Product | Select-Object -ExpandProperty IdentifyingNumber
     $Name = $Product | Select-Object -ExpandProperty Name
     if (Get-YesNo "Uninstall $Name - $Guid ") { 
-        Write-Host "[.] Removing $Guid (Waiting max of 30 seconds after).."
+        Write-Host "[.] Removing $Guid (Waiting max of 30 seconds after).. Searching WMI first"
         $x=0
         cmd /c "msiexec /x $Guid /quiet /qn"
         Write-Host "[.] Checking for removal of $Guid .." -ForegroundColor White -NoNewline
@@ -501,10 +500,17 @@ function Remove-Software {
         }
         if ($Products) {
             Write-Host "[!] Error removing $($Products.Guid) (or may have taken longer than 30s) !!`n" -ForegroundColor Red
+      }
+    } else {
+      Write-Host "[.] Not found in WMI, searching Uninstaller registry.."
+        if (Get-ItemProperty -Path HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* |
+            Where-Object DisplayName -eq CCleaner -OutVariable Results) {
+            & "$($Results.InstallLocation)\uninst.exe" /S
         }
     }
   }
 }
+
 
 function Remove-RegistryItem {
   param ([string]$Path)
@@ -1637,30 +1643,30 @@ foreach ($QID in $QIDs) {
         }  # Version lists: https://sqlserverbuilds.blogspot.com/
         <#
         SQL Server 2016	13.0.1601.5				
-        Support end date: 2021-07-13	+ CU9				
-        Ext. end date: 2026-07-14					
+        Support end date: 2021-07-13	+ CU9				
+        Ext. end date: 2026-07-14					
         
         SQL Server 2014	12.0.2000.8				
-        Support end date: 2019-07-09	+ CU14				
-        Ext. end date: 2024-07-09					
+        Support end date: 2019-07-09	+ CU14				
+        Ext. end date: 2024-07-09					
         
         Obsolete versions – out of support					
         SQL Server 2012	11.0.2100.60				
-        codename Denali	+ CU11				
-        Support end date: 2017-07-11					
-        Ext. end date: 2022-07-12					
+        codename Denali	+ CU11				
+        Support end date: 2017-07-11					
+        Ext. end date: 2022-07-12					
         
-        SQL Server 2008 R2	10.50.1600.1				
+        SQL Server 2008 R2	10.50.1600.1				
         SQL Server 10.5					
         codename Kilimanjaro					
-        Support end date: 2014-07-08					
-        Ext. end date: 2019-07-09					
+        Support end date: 2014-07-08					
+        Ext. end date: 2019-07-09					
         
         SQL Server 2008	10.0.1600.22				
         SQL Server 10					
         codename Katmai					
-        Support end date: 2014-07-08					
-        Ext. end date: 2019-07-09					
+        Support end date: 2014-07-08					
+        Ext. end date: 2019-07-09					
 #>
         if (Get-YesNo "$_ Install SQL Server $SQLVersion $SQLEdition update? " -Results $Results) { 
           if ("$SQLVersion $SQLEdition" -eq "12.2.5000.0 Express Edition") { # SQL Server 2014 Express
@@ -1812,6 +1818,18 @@ foreach ($QID in $QIDs) {
           & explorer "https://apps.microsoft.com/store/detail/snipping-tool/9MZ95KL8MR0L?hl=en-us&gl=us"
         } else {
           Write-Host "[!] Fixed version $ResultsEXE found : $ResultsEXEVersion >= 10.2008.3001.0. Already patched"  -ForegroundColor Green
+        }
+      }
+      371476 {
+        Write-Host "[.] Checking for product: 'Intel PROset*' " -ForegroundColor Yellow
+        $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Intel PROset*'})
+        if ($Products) {
+          & ncpa.cpl
+          if (Get-YesNo "$_ Remove Intel PROset Wireless software (Check NCPA.cpl first!)? ") {
+            Remove-Software -Products $Products  -Results $Results
+          }
+        } else {
+          Write-Host "[!] Product not found: 'Intel PROset*' !!`n" -ForegroundColor Red
         }
       }
       372294 {
