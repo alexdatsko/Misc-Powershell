@@ -32,8 +32,8 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.39"
-     # New in this version: Added QID 371476 - Intel Proset Wifi folder removal if app doesn't exist
+$Version = "0.35.40"
+     # New in this version: Added QID 371476 - Intel Proset Wifi folder removal if app doesn't exist - missing bracket
 $VersionInfo = "v$($Version) - Last modified: 5/12/23"
 
 # Self-elevate the script if required
@@ -1833,8 +1833,9 @@ foreach ($QID in $QIDs) {
         }
         if (Test-Path "$($env:programfiles)\intel\wifi") {
           if (Get-YesNo "$_ Remove the folder also ($($env:programfiles)\intel\wifi) ? ") {
-          Write-Host "[.] Removing $($env:programfiles)\intel\wifi\ recursively.."
-          Delete-Folder "$($env:programfiles)\intel\wifi" -Results $Results
+            Write-Host "[.] Removing $($env:programfiles)\intel\wifi\ recursively.."
+            Delete-Folder "$($env:programfiles)\intel\wifi" -Results $Results
+          }
         }
       }
       372294 {
