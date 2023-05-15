@@ -15,11 +15,15 @@ $OSVersion = ([environment]::OSVersion.Version).Major
 $QIDsAdded = @()
 
 $tmp = "$($env:temp)\SecAud"                 # "temp" Temporary folder to save downloaded files to, this will be overwritten when checking config ..
+try {
+  Stop-Transcript -ErrorAction SilentlyContinue | Out-Null
+}
+catch [System.InvalidOperationException]{}
 #Start a transscript of what happens while the script is running
 if (!(Test-Path $tmp)) { New-Item -ItemType Directory $tmp }
 $dateshort= Get-Date -Format "yyyy-MM-dd"
 try {
-  Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log" -Force -ErrorAction SilentlyContinue
+  Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log" -ErrorAction SilentlyContinue
 } catch {
   if ($Error[0].Exception.Message -match 'Transcript is already in progress') {
     Write-Warning '[!] Start-Transcript: Already running.'
@@ -32,9 +36,9 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.40"
-     # New in this version: Added QID 371476 - Intel Proset Wifi folder removal if app doesn't exist - missing bracket
-$VersionInfo = "v$($Version) - Last modified: 5/12/23"
+$Version = "0.35.42"
+     # New in this version: Added delimeter detection in CSV file as my newest file is now tab delimited.. also fixed DellBIOSProvider OS check
+$VersionInfo = "v$($Version) - Last modified: 5/15/23"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -266,15 +270,15 @@ Function Get-OS {
 
 Function Get-OSType {  # 1=Workstation, 2=DC, 3=Server
     $os = Get-WmiObject -Class Win32_OperatingSystem
-    $ostype=$os.productType
-    Return $ostype
+    $ostype=[int]$os.productType
+    Return [int]$ostype
 }
 
 Function Install-DellBiosProvider {
   # install the DellBIOSProvider powershell module if set in the config
   if ($InstallDellBIOSProvider) {
     #if ((Get-ComputerInfo).OsProductType -eq "WorkStation") {   # Not backwards compatible with Windows 8.1 etc
-    if (Get-OSType -lt 2) {   # 1=Ws, 2=DC, 3=Server
+    if ([int](Get-OSType) -lt 2) {   # 1=Ws, 2=DC, 3=Server
       if (!(Get-InstalledModule -Name DellBIOSProvider -ErrorAction SilentlyContinue)) {
         Write-Host "[.] Trying to install the NuGet package provider.. [this may take a minute..]" 
         try { $null = Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force } catch { Write-Host "[!] Couldn't install NuGet provider!" ; return $false}
@@ -834,6 +838,26 @@ function Check-FileVersion {
   return (Get-Item $FileName).VersionInfo.FileVersionRaw
 }
 
+function Find-Delimiter {
+  param ([string]$CSVFilename)
+
+  $line = Get-Content $CSVFilename | Select -First 1
+  $comma = $line -like "*Account Name,Associated Malware*"
+  $semicolon = $line -like "*Account Name;Associated Malware*"
+  $tabbed = $line -like "*Account Name`tAssociated Malware*"
+  $space = $line -like "*Account Name Associated Malware*"
+  $pipe = $line -like "*Account Name|Associated Malware*"
+
+  switch($True) {
+    $comma     { return ","}
+    $semicolon { return ";"}
+    $tabbed    { return "`t"}
+    $space     { return " "}
+    $pipe      { return "|"}
+    Default    { Write-Error "[!] Cannot determine delimiter!" }
+  } 
+  
+} 
 
 ################################################################################################################## MAIN ############################################################################################################
 ################################################################################################################## MAIN ############################################################################################################
@@ -923,7 +947,8 @@ if ($null -eq $CSVFilename) {
   Exit
 } else {
   try {
-    $CSVData = Import-CSV $CSVFilename | sort "Vulnerability Description"
+    $delimiter = Find-Delimiter $CSVFilename
+    $CSVData = Import-CSV $CSVFilename -Delimiter $delimiter | sort "Vulnerability Description"
   } catch {
     Write-Host "[X] Couldn't open CSV file : $CSVFilename " -ForegroundColor Red
     sl $pwd
