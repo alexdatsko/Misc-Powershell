@@ -36,9 +36,9 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.42"
-     # New in this version: Added delimeter detection in CSV file as my newest file is now tab delimited.. also fixed DellBIOSProvider OS check
-$VersionInfo = "v$($Version) - Last modified: 5/15/23"
+$Version = "0.35.43"
+     # New in this version: Added DellBIOSProvider VC++2012 download+Silent install. Update to store apps with winget etc. Windows explorer autoplay fix.
+$VersionInfo = "v$($Version) - Last modified: 5/17/23"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -283,7 +283,27 @@ Function Install-DellBiosProvider {
         Write-Host "[.] Trying to install the NuGet package provider.. [this may take a minute..]" 
         try { $null = Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force } catch { Write-Host "[!] Couldn't install NuGet provider!" ; return $false}
         Write-Host "[.] Trying to install the Dell BIOS provider module.. [this may take a minute..]" 
-        try { Install-Module DellBIOSProvider -Force } catch { Write-Host "[!] Couldn't install DellBIOSProvder! " ; return $false}
+        try { Install-Module DellBIOSProvider -Force } catch { 
+          Write-Host "[!] Couldn't install DellBIOSProvder! "
+          $vcredistUrl = "https://www.microsoft.com/en-us/download/confirmation.aspx?id=30679&6B49FDFB-8E5B-4B07-BC31-15695C5A2143=1"
+          Write-Host "[.] Trying to install VC 2012 U4 package, but it may require a reboot after. Downloading from: $vcredistUrl"
+          try { 
+            wget $vcredistUrl -outfile "$env:temp\SecAud\vc2012redist_x64.exe" 
+          } catch { 
+            Write-Host "[!] Failed to download $vcredistUrl !!" -ForegroundColor Red
+          }
+          if (Test-Path "$env:temp\SecAud\vc2012redist_x64.exe") {
+            Write-Host "[.] Trying to install VC 2012 U4 package, but it may require a reboot after."
+            try { 
+              . "$env:temp\SecAud\vc2012redist_x64.exe" "/q" 
+              Write-Host "[+] Looks to have succeeded. The workstation will need a reboot for this to apply properly and the DellBIOSProvider module to work properly." -ForegroundColor Green
+            } catch {
+              Write-Host "[!] Couldn't install VC 2012 U4 package!" -ForegroundColor Red
+              return $false 
+            }
+            return $false 
+          }
+        }
         Write-Host "[+] Done!" -ForegroundColor Green
         return $true
       } else {
@@ -1248,14 +1268,21 @@ foreach ($QID in $QIDs) {
             $path2 = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\policies\Explorer'
             if (!(Test-Path $path)) {
               Write-Output "[.] Creating $($path) as it was not found.."
-              New-Item -Path $path –Force
+              $pathonly = Split-Path $path
+              $leaf = Split-Path $path -Leaf
+              New-Item -Path $pathonly -Name $leaf2 -Force
             }
             if (!(Test-Path $path2)) {
               Write-Output "[.] Creating $($path2) as it was not found.."
-              New-Item -Path $path2 –Force
+              $path2only = Split-Path $path2 
+              $leaf2 = Split-Path $path2 -Leaf
+              New-Item $path2only -Force
+              New-Item -Path $path2only -Name $leaf2 -Force
             }
             Set-ItemProperty $path -Name NoDriveTypeAutorun -Type DWord -Value 0xFF
             Set-ItemProperty $path -Name NoAutorun -Type DWord -Value 0x1
+            New-Item $path2 -Name NoDriveTypeAutorun -Type DWord -Value 0xFF
+            New-Item $path2 -Name NoAutorun -Type DWord -Value 0x1
             Set-ItemProperty $path2 -Name NoDriveTypeAutorun -Type DWord -Value 0xFF
             Set-ItemProperty $path2 -Name NoAutorun -Type DWord -Value 0x1
         }
@@ -1329,7 +1356,10 @@ foreach ($QID in $QIDs) {
           Write-Host "[!] All app updates are complete.`n"    
           #>
           # Just open the store for now so we can manually update. ugh.
-          & explorer  ms-windows-store:
+          Write-Host "[.] Trying to update Store apps with command: 'echo Y | winget upgrade -h --all' - Note - there may be a few UAC prompts for this!"
+          . "cmd.exe" "/c echo Y | winget upgrade -h --all"
+          Write-Host "[.] Opening ms-windows-store: so we can check by hand.."
+          & explorer "ms-windows-store:"
         }
         $QIDsUpdateMicrosoftStoreApps = 1
       }
@@ -1835,14 +1865,22 @@ foreach ($QID in $QIDs) {
       378131 {
         Write-Host "[?] $_ Microsoft Windows Snipping Tool Information Disclosure Vulnerability" 
         $ResultsEXE = "$env:windir\system32\SnippingTool.exe"
-        Write-Host "[.] Checking $ResultsEXE version.."
-        $ResultsEXEVersion = Check-FileVersion $ResultsEXE
-        if ([version]$ResultsEXEVersion -lt [version]10.2008.3001.0) {
-          Write-Host "[!] Vulnerable version $ResultsEXE found : $ResultsEXEVersion < 10.2008.3001.0"  -ForegroundColor Red
-          Write-Host "[!] Please update Snipping Tool manually!!!" -ForegroundColor Red
-          & explorer "https://apps.microsoft.com/store/detail/snipping-tool/9MZ95KL8MR0L?hl=en-us&gl=us"
+        Write-Host "[.] Checking if $ResultsEXE exists.."
+        if (Test-Path $ResultsEXE) {
+          Write-Host "[.] Checking $ResultsEXE version.."
+          $ResultsEXEVersion = Check-FileVersion $ResultsEXE
+          if ([version]$ResultsEXEVersion -lt [version]10.2008.3001.0) {
+            Write-Host "[!] Vulnerable version $ResultsEXE found : $ResultsEXEVersion < 10.2008.3001.0"  -ForegroundColor Red
+            Write-Host "[!] Please update Snipping Tool manually!!!" -ForegroundColor Red
+            & explorer "https://apps.microsoft.com/store/detail/snipping-tool/9MZ95KL8MR0L?hl=en-us&gl=us"
+          } else {
+            Write-Host "[!] Fixed version $ResultsEXE found : $ResultsEXEVersion >= 10.2008.3001.0. Already patched"  -ForegroundColor Green
+          }
         } else {
-          Write-Host "[!] Fixed version $ResultsEXE found : $ResultsEXEVersion >= 10.2008.3001.0. Already patched"  -ForegroundColor Green
+          Write-Host "[!] Snipping tool doesn't exist at $ResultsEXE .. Please check Microsoft Store for updates manually! Opening.."
+          & explorer "ms-windows-store:"
+          Write-Host "[.] Trying to update Store apps with command: 'echo Y | winget upgrade -h --all' - Note - there may be a few UAC prompts for this!"
+          . "cmd.exe" "/c echo Y | winget upgrade -h --all"
         }
       }
       371476 {
