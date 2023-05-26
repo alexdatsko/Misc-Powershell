@@ -36,8 +36,8 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.43"
-     # New in this version: Added DellBIOSProvider VC++2012 download+Silent install. Update to store apps with winget etc. Windows explorer autoplay fix.
+$Version = "0.35.44"
+     # New in this version: Fixes for -Automated mode
 $VersionInfo = "v$($Version) - Last modified: 5/17/23"
 
 # Self-elevate the script if required
@@ -68,7 +68,7 @@ function Get-YesNo {
   $done = 0
   if (!($Automated)) { 
     while ($done -eq 0) {
-      $yesno = Read-Host  "`n[?] $text [n] "
+      $yesno = Read-Host  "`n[?] $text [y/N/s] "
       if ($yesno.ToUpper()[0] -eq 'Y') { return $true } 
       if ($yesno.ToUpper()[0] -eq 'N' -or $yesno -eq '') { return $false } 
       if ($yesno.ToUpper()[0] -eq 'S') { 
@@ -79,11 +79,11 @@ function Get-YesNo {
        }
     }
   } else {  # Automated mode. Show results for -Verbose, then apply fix
-    Write-Verbose "[i] Results: "
+    Write-Verbose "[i] AUTOMATED: Results: "
     foreach ($result in $Results) {
       Write-Verbose "$($result)"
     }
-    Write-Host "[+] Applying fix for $text .."
+    Write-Host "[+] AUTOMATED: Choosing yes for $text .."
     return $true
   }
 }
@@ -177,8 +177,9 @@ function Update-File {  # Not even used currently, but maybe eventually?
     Write-Verbose "[.] Checking downloaded file $($FilenameTmp) .."
     $NewVersionCheck = (Check-NewerScriptVersion -Filename "$($FilenameTmp)" -VersionStr $($VersionStr) -VersionToCheck $VersionToCheck)
     if ($NewVersionCheck) {  
-        Write-Host "[+] Found newer version $($NewVersionCheck), would you like to copy over this one? "
-        Copy-Item "$($FilenameTmp)" "$($FilenamePerm)" -Force
+        If (Get-YesNo "Found newer version $($NewVersionCheck), would you like to copy over this one? ") {
+          Copy-Item "$($FilenameTmp)" "$($FilenamePerm)" -Force
+        }
         return $true
     } else {
       Write-Verbose "Continuing without updating file $($FilenamePerm)."
@@ -206,7 +207,7 @@ function Update-ScriptFile {   # Need a copy of this, to re-run main script
     $NewVersionCheck = (Check-NewerScriptVersion -Filename "$($FilenameTmp)" -VersionStr $($VersionStr) -VersionToCheck $VersionToCheck)
     Write-Verbose "var = $NewVersionCheck"
     if ($NewVersionCheck) {  
-        if (Get-YesNo "--- Found newer version $NewVersionCheck, would you like to copy over this one? ") {
+        if (Get-YesNo "Found newer version $NewVersionCheck, would you like to copy over this one? ") {
           # Copy the new script over this one..
           Copy-Item "$($FilenameTmp)" "$($FilenamePerm)" -Force
           return $true
@@ -428,6 +429,7 @@ function Find-LocalCSVFile {
       $Sel = [int]$Selection
     } else { 
       $Sel=0
+      Write-Host "[+] Using $i - $($filenames[$i])" -ForegroundColor White
     }
     if (@($Filenames).length -gt 1) {
       $CSVFilename = "$($Location)\$($Filenames[$Sel])"
@@ -931,9 +933,14 @@ if ($ServerName) {
     }    
   }
 } else {  # Can't ping $ServerName, lets see if there is a good location, or localhost?
-  $ServerName = Read-Host "[!] Couldn't ping SERVER or '$($ServerName)' .. please enter the server name where we can find the .CSV file, or press enter to read it out of the current folder: "
-  if (!($ServerName)) { 
-    $ServerName = "$($env:computername)"
+  if (!$Automated) {
+    $ServerName = Read-Host "[!] Couldn't ping SERVER or '$($ServerName)' .. please enter the server name where we can find the .CSV file, or press enter to read it out of the current folder: "
+    if (!($ServerName)) { 
+      $ServerName = "$($env:computername)"
+    }
+  } else { 
+    Write-Host "[!] ERROR: Can't find a CSV to use, or the servername to check, and -Automated was specified.." -ForegroundColor Red
+    exit
   }
 }
 
