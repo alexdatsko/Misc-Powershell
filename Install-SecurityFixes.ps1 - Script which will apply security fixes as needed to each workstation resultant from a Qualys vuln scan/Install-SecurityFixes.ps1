@@ -12,6 +12,7 @@ $oldPwd = $pwd                               # Grab location script was run from
 $ConfigFile = "$oldpwd\_config.ps1"          # Configuration file 
 $QIDsListFile = "$oldpwd\QIDLists.ps1"       # QID List file 
 $OSVersion = ([environment]::OSVersion.Version).Major
+$SoftwareInstalling=[System.Collections.ArrayList]@()
 $QIDsAdded = @()
 
 $tmp = "$($env:temp)\SecAud"                 # "temp" Temporary folder to save downloaded files to, this will be overwritten when checking config ..
@@ -26,7 +27,7 @@ try {
   Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log" -ErrorAction SilentlyContinue
 } catch {
   if ($Error[0].Exception.Message -match 'Transcript is already in progress') {
-    Write-Warning '[!] Start-Transcript: Already running.'
+    Write-Warning '[!] Start-Triptionranscript: Already running.'
   } else {
     # re-throw the error if it's not the expected error
     throw $_
@@ -36,9 +37,9 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.44"
-     # New in this version: Fixes for -Automated mode
-$VersionInfo = "v$($Version) - Last modified: 5/17/23"
+$Version = "0.35.45"
+     # New in this version: added 90019-NTLMv1,
+$VersionInfo = "v$($Version) - Last modified: 5/31/23"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -46,7 +47,7 @@ if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
     if ([int](Get-CimInstance -Class Win32_OperatingSystem | Select-Object -ExpandProperty BuildNumber) -ge 6000) {
         $Command = "-File `"" + $MyInvocation.MyCommand.Path + "`" " + $MyInvocation.UnboundArguments
         Start-Process -FilePath PowerShell.exe -Verb RunAs -ArgumentList $Command
-        sl $pwd
+        Set-Location $pwd
         Exit
  }
 }
@@ -110,7 +111,7 @@ function Read-QIDLists {    # NOT USING, THIS IS NOT
       } catch {
         Write-Output "`n`n[!] ERROR: Couldn't import $($QIDsListFile) !! Exiting"
         Stop-Transcript
-        sl $pwd
+        Set-Location $pwd
         Exit
       }
     } else {
@@ -124,12 +125,11 @@ function Get-OSVersion {
   return (Get-CimInstance Win32_OperatingSystem).version
 }
 
-function Check-NewerScriptVersion {   # Check in ps1 file for VersionStr and report back if its newer than the current value ($VersionToCheck), returns version# if so.
+function Get-NewerScriptVersion {   # Check in ps1 file for VersionStr and report back if its newer than the current value ($VersionToCheck), returns version# if so.
   param ([string]$Filename,
          [string]$VersionStr,
          [string]$VersionToCheck)
   
-  $OSVersionMaj = Get-OSVersion
   $FileContents = Get-Content $Filename
   $TotalLines = $FileContents.Length
   Write-Verbose "[.] Loaded $TotalLines lines from $($Filename) .. Checking for $($VersionStr)"
@@ -175,7 +175,7 @@ function Update-File {  # Not even used currently, but maybe eventually?
     $client.Dispose()
     Write-Verbose "[.] File downloaded, checking version.."
     Write-Verbose "[.] Checking downloaded file $($FilenameTmp) .."
-    $NewVersionCheck = (Check-NewerScriptVersion -Filename "$($FilenameTmp)" -VersionStr $($VersionStr) -VersionToCheck $VersionToCheck)
+    $NewVersionCheck = (Get-NewerScriptVersion -Filename "$($FilenameTmp)" -VersionStr $($VersionStr) -VersionToCheck $VersionToCheck)
     if ($NewVersionCheck) {  
         If (Get-YesNo "Found newer version $($NewVersionCheck), would you like to copy over this one? ") {
           Copy-Item "$($FilenameTmp)" "$($FilenamePerm)" -Force
@@ -204,7 +204,7 @@ function Update-ScriptFile {   # Need a copy of this, to re-run main script
     $client.Dispose()
     Write-Verbose "[.] File downloaded, checking version.."
     Write-Verbose "[.] Checking downloaded file $($FilenameTmp) .."
-    $NewVersionCheck = (Check-NewerScriptVersion -Filename "$($FilenameTmp)" -VersionStr $($VersionStr) -VersionToCheck $VersionToCheck)
+    $NewVersionCheck = (Get-NewerScriptVersion -Filename "$($FilenameTmp)" -VersionStr $($VersionStr) -VersionToCheck $VersionToCheck)
     Write-Verbose "var = $NewVersionCheck"
     if ($NewVersionCheck) {  
         if (Get-YesNo "Found newer version $NewVersionCheck, would you like to copy over this one? ") {
@@ -289,7 +289,7 @@ Function Install-DellBiosProvider {
           $vcredistUrl = "https://www.microsoft.com/en-us/download/confirmation.aspx?id=30679&6B49FDFB-8E5B-4B07-BC31-15695C5A2143=1"
           Write-Host "[.] Trying to install VC 2012 U4 package, but it may require a reboot after. Downloading from: $vcredistUrl"
           try { 
-            wget $vcredistUrl -outfile "$env:temp\SecAud\vc2012redist_x64.exe" 
+            Invoke-WebRequest $vcredistUrl -outfile "$env:temp\SecAud\vc2012redist_x64.exe" 
           } catch { 
             Write-Host "[!] Failed to download $vcredistUrl !!" -ForegroundColor Red
           }
@@ -367,7 +367,7 @@ function Find-ConfigFileLine {  # CONTEXT Search, a match needs to be found but 
   return $false
 }
 
-function Change-ConfigFileLine {
+function Set-ConfigFileLine {
   param ([string]$ConfigOldLine,
          [string]$ConfigNewLine)
   if (Get-YesNo "Change [$($ConfigOldLine)] in $($ConfigFile) to [$($ConfigNewLine)] ?") {
@@ -572,7 +572,7 @@ function Remove-RegistryItem {
   }
 }
 
-function Download-NewestAdobeReader {
+function Get-NewestAdobeReader {
     # determining the latest version of Reader
     $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
     $session.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.67 Safari/537.36"
@@ -611,9 +611,8 @@ function Get-ServicePermIssues {
   param ([string]$Results)
 
   $ServicePermIssues = @()
-  $maxresults = (([regex]::Matches($Results, "------------------------------------------------------------")).count / 2) # Determine the number of service permission issues
   $ResultsSplit = $Results.split("`n").split("`r").split("`t") -split " {2,}"   # There are no more `r or `n newlines now in BTS Qualys reports- as of 3-13-23.  So.. Also split at multiple spaces to catch these, there is likely not one in the middle of an exe filename or path, HOPEFULLY..
-    # Shouldn't really matter how many lines there are if we are only looking for C:\ or _:\ separated by 2 or more spaces.. This should work!
+  # Shouldn't really matter how many lines there are if we are only looking for C:\ or _:\ separated by 2 or more spaces.. This should work!
   Write-Verbose "ServicePermIssue ResultsSplit (count): $($ResultsSplit.Count)"
   foreach ($result in $ResultsSplit) {
     #Write-Verbose "ServicePermIssueResult: $result"
@@ -627,7 +626,7 @@ function Get-ServicePermIssues {
   return $ServicePermIssues
 }
 
-Function Check-ServiceFilePerms {
+Function Get-ServiceFilePerms {
 param ([string]$FilesToCheck)
   $RelevantList = @("Everyone","BUILTIN\Users","BUILTIN\Authenticated Users","BUILTIN\Domain Users")
   $Output = @() 
@@ -648,7 +647,7 @@ param ([string]$FilesToCheck)
   Return $Output   # If something is returned, this is not good
 }
 
-Function Check-FilePerms {
+Function Get-FilePerms {
 param ([string]$FilesToCheck)
   #$RelevantList = @("Everyone","Users","Authenticated Users","Domain Users")
   Write-Verbose "Checking file perms for $FilesToCheck .."
@@ -687,7 +686,7 @@ param ([string]$RedirectPath)
     }
 }
 
-function Delete-Folder {
+function Remove-Folder {
   param ([string]$FolderToDelete,
          $Results)
 
@@ -713,7 +712,7 @@ function Delete-Folder {
   }
 }
 
-function Delete-File {
+function Remove-File {
   param ($FileToDelete,
          $Results)
   
@@ -854,7 +853,7 @@ function Backup-BitlockerKeys {
   }
 }
 
-function Check-FileVersion {
+function Get-FileVersion {
   param ([string]$FileName)
 
   return (Get-Item $FileName).VersionInfo.FileVersionRaw
@@ -863,7 +862,7 @@ function Check-FileVersion {
 function Find-Delimiter {
   param ([string]$CSVFilename)
 
-  $line = Get-Content $CSVFilename | Select -First 1
+  $line = Get-Content $CSVFilename | Select-Object -First 1
   $comma = $line -like "*Account Name,Associated Malware*"
   $semicolon = $line -like "*Account Name;Associated Malware*"
   $tabbed = $line -like "*Account Name`tAssociated Malware*"
@@ -975,10 +974,10 @@ if ($null -eq $CSVFilename) {
 } else {
   try {
     $delimiter = Find-Delimiter $CSVFilename
-    $CSVData = Import-CSV $CSVFilename -Delimiter $delimiter | sort "Vulnerability Description"
+    $CSVData = Import-CSV $CSVFilename -Delimiter $delimiter | Sort-Object "Vulnerability Description"
   } catch {
     Write-Host "[X] Couldn't open CSV file : $CSVFilename " -ForegroundColor Red
-    sl $pwd
+    Set-Location $pwd
     Exit
   }
   if (!($CSVData)) {
@@ -1277,14 +1276,14 @@ foreach ($QID in $QIDs) {
               Write-Output "[.] Creating $($path) as it was not found.."
               $pathonly = Split-Path $path
               $leaf = Split-Path $path -Leaf
-              New-Item -Path $pathonly -Name $leaf2 -Force
+              New-Item -Path $pathonly -Leaf $leaf -Force
             }
             if (!(Test-Path $path2)) {
               Write-Output "[.] Creating $($path2) as it was not found.."
               $path2only = Split-Path $path2 
               $leaf2 = Split-Path $path2 -Leaf
               New-Item $path2only -Force
-              New-Item -Path $path2only -Name $leaf2 -Force
+              New-Item -Path $path2only -Leaf $leaf2 -Force
             }
             Set-ItemProperty $path -Name NoDriveTypeAutorun -Type DWord -Value 0xFF
             Set-ItemProperty $path -Name NoAutorun -Type DWord -Value 0x1
@@ -1490,7 +1489,7 @@ foreach ($QID in $QIDs) {
             cmd /c "$($tmp)\ninite.exe"
             $ResultsFolder = Parse-ResultsFolder $Results
             if ($ResultsFolder -like "*AppData*") {
-              Delete-Folder $ResultsFolder
+              Remove-Folder $ResultsFolder
             }          
             $QIDsFirefox = 1
         } else { $QIDsFirefox = 1 }
@@ -1507,7 +1506,7 @@ foreach ($QID in $QIDs) {
                 $FolderFound = $true
               }
             }
-            if ($FolderFound) { Delete-Folder (Parse-ResultsFolder -Results $Results) }
+            if ($FolderFound) { Remove-Folder (Parse-ResultsFolder -Results $Results) }
             $QIDsZoom = 1
         } else { $QIDsZoom = 1 }
       }
@@ -1537,6 +1536,7 @@ foreach ($QID in $QIDs) {
             #wget "https://download.oracle.com/java/18/latest/jdk-18_windows-x64_bin.msi" -OutFile "$($tmp)\java17.msi"
             #msiexec /i "$($tmp)\java18.msi" /qn /quiet /norestart
             . "c:\Program Files (x86)\Common Files\Java\Java Update\jucheck.exe"
+            $SoftwareInstalling.Add("Java")
             $QIDsOracleJava = 1
         } else { $QIDsOracleJava = 1 }
       }
@@ -1557,7 +1557,7 @@ foreach ($QID in $QIDs) {
       { $QIDsDellCommandUpdate -contains $_ } {
         if (Get-YesNo "$_ Install newest Dell Command Update? " -Results $Results) { 
             #wget "https://dl.dell.com/FOLDER08334704M/2/Dell-Command-Update-Windows-Universal-Application_601KT_WIN_4.5.0_A00_01.EXE" -OutFile "$($tmp)\dellcommand.exe"
-            $DCUExe = (GCI "\\server\data\secaud\" | Where {$_.Name -like "Dell-Command-Update-*"}).FullName
+            $DCUExe = (Get-ChildItem "\\server\data\secaud\" | Where-Object {$_.Name -like "Dell-Command-Update-*"}).FullName
             cmd /c "$($DCUExe) /s"
             $QIDsDellCommandUpdate  = 1
         } else { $QIDsDellCommandUpdate  = 1 }
@@ -1777,7 +1777,7 @@ foreach ($QID in $QIDs) {
       }
       376609 {
         if (Get-YesNo "$_ Delete nvcpl.dll for NVIDIA GPU Display Driver Multiple Vulnerabilities (May 2022) ? " -Results $Results) { 
-          Delete-File "C:\Windows\System32\nvcpl.dll" -Results $Results
+          Remove-File "C:\Windows\System32\nvcpl.dll" -Results $Results
         }
       }    
       370468 {
@@ -1814,18 +1814,18 @@ foreach ($QID in $QIDs) {
       }
       91621 {
         if (Get-YesNo "$_ Delete Microsoft Defender Elevation of Privilege Vulnerability April 2020? " -Results $Results) { 
-          # This will ask twice due to Delete-File, but I want to offer results first. Could technically add -Results to Delete-File..
-          Delete-File "C:\WINDOWS\System32\MpSigStub.exe" -Results $Results
+          # This will ask twice due to Remove-File, but I want to offer results first. Could technically add -Results to Remove-File..
+          Remove-File "C:\WINDOWS\System32\MpSigStub.exe" -Results $Results
         }
       }
       91649 {
         if (Get-YesNo "$_ Delete Microsoft Defender Elevation of Privilege Vulnerability June 2020? " -Results $Results) { 
-          Delete-File "$($env:ProgramFiles)\Windows Defender\MpCmdRun.exe" -Results $Results
+          Remove-File "$($env:ProgramFiles)\Windows Defender\MpCmdRun.exe" -Results $Results
         }
       }
       91972 {
         if (Get-YesNo "$_ Delete Microsoft Windows Malicious Software Removal Tool Security Update for January 2023? " -Results $Results) { 
-          Delete-File "$($env:windir)\system32\MRT.exe" -Results $Results
+          Remove-File "$($env:windir)\system32\MRT.exe" -Results $Results
         }
       }
       105803 {
@@ -1840,7 +1840,7 @@ foreach ($QID in $QIDs) {
       }
       106105 {
         if (Get-YesNo "$_ Remove EOL/Obsolete Software: Microsoft .Net Core Version 3.1 Detected? " -Results $Results) { 
-          Delete-Folder "$($env:programfiles)\dotnet\shared\Microsoft.NETCore.App\3.1.32" -Results $Results
+          Remove-Folder "$($env:programfiles)\dotnet\shared\Microsoft.NETCore.App\3.1.32" -Results $Results
         }
       }
       378332 {
@@ -1857,13 +1857,13 @@ foreach ($QID in $QIDs) {
       }
       106116 {        
         if (Get-YesNo "$_ Delete EOL/Obsolete Software: Microsoft Visual C++ 2010 Redistributable Package Detected? " -Results $Results) { 
-          Delete-File "$($env:ProgramFiles)\Common Files\Microsoft Shared\VC\msdia100.dll" -Results $Results
-          Delete-File "$(${env:ProgramFiles(x86)})\Common Files\Microsoft Shared\VC\msdia100.dll" -Results $Results
+          Remove-File "$($env:ProgramFiles)\Common Files\Microsoft Shared\VC\msdia100.dll" -Results $Results
+          Remove-File "$(${env:ProgramFiles(x86)})\Common Files\Microsoft Shared\VC\msdia100.dll" -Results $Results
         }       
       }	
       110432 {
         $ResultsEXE = "C:\Program Files (x86)\Microsoft Office\root\Office16\GRAPH.EXE"
-        $ResultsEXEVersion = Check-FileVersion $ResultsEXE
+        $ResultsEXEVersion = Get-FileVersion $ResultsEXE
         if ($ResultsEXEVersion -le 16.0.16227.20258) {
           Write-Host "[!] Vulnerable version $ResultsEXE found : $ResultsEXEVersion <= 16.0.16227.20258"
 
@@ -1875,7 +1875,7 @@ foreach ($QID in $QIDs) {
         Write-Host "[.] Checking if $ResultsEXE exists.."
         if (Test-Path $ResultsEXE) {
           Write-Host "[.] Checking $ResultsEXE version.."
-          $ResultsEXEVersion = Check-FileVersion $ResultsEXE
+          $ResultsEXEVersion = Get-FileVersion $ResultsEXE
           if ([version]$ResultsEXEVersion -lt [version]10.2008.3001.0) {
             Write-Host "[!] Vulnerable version $ResultsEXE found : $ResultsEXEVersion < 10.2008.3001.0"  -ForegroundColor Red
             Write-Host "[!] Please update Snipping Tool manually!!!" -ForegroundColor Red
@@ -1904,7 +1904,38 @@ foreach ($QID in $QIDs) {
         if (Test-Path "$($env:programfiles)\intel\wifi") {
           if (Get-YesNo "$_ Remove the folder also ($($env:programfiles)\intel\wifi) ? ") {
             Write-Host "[.] Removing $($env:programfiles)\intel\wifi\ recursively.."
-            Delete-Folder "$($env:programfiles)\intel\wifi" -Results $Results
+            Remove-Folder "$($env:programfiles)\intel\wifi" -Results $Results
+          }
+        }
+      }
+      
+      90019 {
+        $LmCompat = (Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa").LmCompatibilityLevel
+        if ($LmCompat -eq 5) {
+          Write-Output "$_ Fix already in place it appears: LMCompatibilityLevel = 5, Good!"
+        } else {
+          if (Get-YesNo "$_ Fix LanMan/NTLMv1 Authentication? Currently LmCompatibilityLevel = $LmCompat ? " -Results $Results) { 
+            <#
+            0- Clients use LM and NTLM authentication, but they never use NTLMv2 session security. Domain controllers accept LM, NTLM, and NTLMv2 authentication.
+            1- Clients use LM and NTLM authentication, and they use NTLMv2 session security if the server supports it. Domain controllers accept LM, NTLM, and NTLMv2 authentication.
+            2- Clients use only NTLM authentication, and they use NTLMv2 session security if the server supports it. Domain controller accepts LM, NTLM, and NTLMv2 authentication.
+            3- Clients use only NTLMv2 authentication, and they use NTLMv2 session security if the server supports it. Domain controllers accept LM, NTLM, and NTLMv2 authentication.
+            4- Clients use only NTLMv2 authentication, and they use NTLMv2 session security if the server supports it. Domain controller refuses LM authentication responses, but it accepts NTLM and NTLMv2.
+            5- Clients use only NTLMv2 authentication, and they use NTLMv2 session security if the server supports it. Domain controller refuses LM and NTLM authentication responses, but it accepts NTLMv2.
+            #>
+            if (Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa" -Name "LmCompatibilityLevel") {
+              Write-Output "[+] Setting registry item: HKLM\System\CurrentControlSet\Control\Lsa LMCompatibilityLevel = 5"
+              Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Lsa" -Name "LmCompatibilityLevel" -Value "5" -Force | Out-Null
+            } else {
+              Write-Output "[+] Creating registry item: HKLM\System\CurrentControlSet\Control\Lsa LMCompatibilityLevel = 5"
+              New-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Lsa" -Name "LmCompatibilityLevel" -Value "5" -Force | Out-Null
+            }
+            Write-Output "[.] Checking fix: HKLM\System\CurrentControlSet\Control\Lsa LMCompatibilityLevel = 5"
+            if ((Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa").LmCompatibilityLevel -eq 5) {
+              Write-Output "[+] Found: LMCompatibilityLevel = 5, Good!"
+            } else {
+              Write-Output "[+] Found: LMCompatibilityLevel = $((Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa").LmCompatibilityLevel) - not 5!"
+            }
           }
         }
       }
@@ -1913,7 +1944,7 @@ foreach ($QID in $QIDs) {
           $ServicePermIssues = Get-ServicePermIssues -Results $Results
           Write-Verbose "IN MAIN LOOP: Returned from Get-ServicePermIssues: $ServicePermIssues"
           foreach ($file in $ServicePermIssues) {
-            if (!(Check-ServiceFilePerms $file)) {
+            if (!(Get-ServiceFilePerms $file)) {
               Write-Output "[+] Permissions are good for $file "
             } else { # FIX PERMS.
               
@@ -1983,11 +2014,11 @@ foreach ($QID in $QIDs) {
                 Write-Output "[!] ERROR: Couldn't modify Users to R+X permissions on $file .."
               }
               # Check that issue is actually fixed
-              if (!(Check-ServiceFilePerms $file)) {
+              if (!(Get-ServiceFilePerms $file)) {
                 Write-Output "[+] Permissions are good for $file "
               } else {
                 Write-Output "[!] WARNING: Permissions NOT fixed on $file .. "
-                Check-FilePerms "$($file)"
+                Get-FilePerms "$($file)"
               }
             }
           }
@@ -2063,6 +2094,11 @@ foreach ($QID in $QIDs) {
         Write-Host "[X] Skipping QID $_ - $ThisTitle" -ForegroundColor Red
       }
     }
+}
+
+if ($SoftwareInstalling.Length -gt 0) {
+  Write-Host "[.] Checking for finished software upgrading: $SoftwareInstalling"
+  #
 }
 
 Write-Host "[o] Done! Stopping transcript" -ForegroundColor Green
