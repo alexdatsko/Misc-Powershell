@@ -37,9 +37,9 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.45"
-     # New in this version: added 90019-NTLMv1,
-$VersionInfo = "v$($Version) - Last modified: 5/31/23"
+$Version = "0.35.46"
+     # New in this version: Fixed "2023-06-06 - Standalone issue w/ Find-LocalCSVFile"
+$VersionInfo = "v$($Version) - Last modified: 06/06/23"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -410,36 +410,57 @@ function Remove-ConfigFileLine {  # Wrapper for Change-ConfigFileLine
   Change-ConfigFileLine $ConfigOldLine ""
 }
 
+function Pick-File {
+  param ([string]$Filenames)
+  $Filenames | Foreach-Object {
+    Write-Host "[$i] $_" -ForegroundColor Blue
+    $i += 1
+  }
+  if (!($Automated) -and ($i -gt 1)) {   # Don't bother picking if there is just one file..
+    Write-Host "[$i] EXIT" -ForegroundColor Blue
+    $Selection = Read-Host "Select file to import, [Enter=0] ?"
+    if ($Selection -eq $i) { Write-Host "[-] Exiting!" -ForegroundColor Gray ; exit }
+    if ($Selection -eq "") { $Selection="0" }
+    $Sel = [int]$Selection
+  } else { 
+    if ($i -and ($filenames).Length -gt 0) {
+      $Sel=0
+      Write-Host "[+] Using $i - $($filenames[$i])" -ForegroundColor White
+    } else {
+      Write-Host "[!] No files found!"
+    }
+  }
+  if (@($Filenames).length -gt 1) {
+    $pickedfile = "$($Location)\$($Filenames[$Sel])"
+  } else {
+    if (@($Filenames).length -gt 0) {
+      $pickedfile = "$($Location)\$($Filenames)"  # If there is only 1, we are only grabbing the first letter above.. This will get the whole filename.
+    } else {
+      Write-Host "[!] No filenames returned!"
+    }
+  }
+  Write-Host "[i] Using file: $pickedfile" -ForegroundColor Blue
+  Return $pickedfile
+}
+
 function Find-LocalCSVFile {
-  param ([string]$Location)    
+  param ([string]$Location,
+         [string]$Oldpwd)
     #write-Host "Find-LocalCSVFile $Location $OldPwd"
     # FIGURE OUT CSV Filename
     $i = 0
+    Write-Verbose "Checking for CSV in Location: $Location"
     if (($null -eq $Location) -or ("." -eq $Location)) { $Location = $OldPwd }
     [array]$Filenames = Get-ChildItem "$($Location)\*.csv" | ForEach-Object { $_.Name }
-    $Filenames | Foreach-Object {
-      Write-Host "[$i] $_" -ForegroundColor Blue
-      $i += 1
+    if ($Filenames.Length -lt 1) {  # If no files found in $Location, check $OldPwd
+      Write-Verbose "Checking for CSV in Location: $OldPwd"
+      [array]$Filenames = Get-ChildItem "$($OldPwd)\*.csv" | ForEach-Object { $_.Name }
+    } 
+    if ($Filenames.Length -lt 1) {  # If no files found still, error out!
+      Write-Host "[!] Error, can't seem to find any CSV files.."
+      Exit
     }
-    if (!($Automated) -and ($i -gt 1)) {   # Don't bother picking if there is just one file..
-      Write-Host "[$i] EXIT" -ForegroundColor Blue
-      $Selection = Read-Host "Select file to import, [Enter=0] ?"
-      if ($Selection -eq $i) { Write-Host "[-] Exiting!" -ForegroundColor Gray ; exit }
-      if ($Selection -eq "") { $Selection="0" }
-      $Sel = [int]$Selection
-    } else { 
-      $Sel=0
-      Write-Host "[+] Using $i - $($filenames[$i])" -ForegroundColor White
-    }
-    if (@($Filenames).length -gt 1) {
-      $CSVFilename = "$($Location)\$($Filenames[$Sel])"
-    } else {
-      if (@($Filenames).length -gt 0) {
-        $CSVFilename = "$($Location)\$($Filenames)"  # If there is only 1, we are only grabbing the first letter above.. This will get the whole filename.
-      }
-    }
-    Write-Host "[i] Using file: $CSVFileName" -ForegroundColor Blue
-    Return $CSVFileName
+    return (Pick-File $Filenames)
 }
 
 function Find-ServerCSVFile {
@@ -965,7 +986,7 @@ Set-Location "$($tmp)"  # Cmd.exe cannot be run from a server share
 
 $CSVFilename = Find-ServerCSVFile "$($ServerName)\$($CSVLocation)"
 if ($null -eq $CSVFilename) {
-  $CSVFilename = Find-LocalCSVFile "."
+  $CSVFilename = Find-LocalCSVFile "." $OldPwd
 }
 # READ CSV
 if ($null -eq $CSVFilename) {
