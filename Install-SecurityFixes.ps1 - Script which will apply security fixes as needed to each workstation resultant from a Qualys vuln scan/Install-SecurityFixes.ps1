@@ -37,8 +37,8 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.49"
-     # New in this version: Bugfix for CSV filename, + SkipnSketch
+$Version = "0.35.50"
+     # New in this version: Bugfix for CSV filename take 2
 $VersionInfo = "v$($Version) - Last modified: 06/07/23"
 
 # Self-elevate the script if required
@@ -419,7 +419,7 @@ function Is-Array {
 }
 
 function Pick-File {
-  param ([string]$Filenames)
+  param ([array]$Filenames)
   $Filenames | Foreach-Object {
     Write-Host "[$i] $_" -ForegroundColor Blue
     $i += 1
@@ -433,7 +433,7 @@ function Pick-File {
   } else { 
     if ($i -and (!(Is-Array $filenames))) {  # If theres 1 result only
       $Sel=0
-      Write-Host "[+] Using $i - $($filenames)" -ForegroundColor White
+      Write-Host "[+] Using $sel - $($filenames)" -ForegroundColor White
     } else {
       Write-Host "[!] No files found!"
     }
@@ -441,13 +441,13 @@ function Pick-File {
   if (@($Filenames).length -gt 1) {
     $pickedfile = "$($Location)\$($Filenames[$Sel])"
   } else {
-    if (@($Filenames).length -gt 0) {
+    if (!(Is-Array $filenames)) {
       $pickedfile = "$($Location)\$($Filenames)"  # If there is only 1, we are only grabbing the first letter above.. This will get the whole filename.
     } else {
       Write-Host "[!] No filenames returned!"
     }
   }
-  Write-Host "[i] Using file: $pickedfile" -ForegroundColor Blue
+  Write-Verbose "[i] Using file: $pickedfile"
   Return $pickedfile
 }
 
@@ -464,11 +464,13 @@ function Find-LocalCSVFile {
       Write-Verbose "Checking for CSV in Location: $OldPwd"
       [array]$Filenames = Get-ChildItem "$($OldPwd)\*.csv" | ForEach-Object { $_.Name }
     } 
-    if ($Filenames.Length -lt 1) {  # If no files found still, error out!
+    if (!(Is-Array $Filenames)) {  # If no files found still, error out!
       Write-Host "[!] Error, can't seem to find any CSV files.."
       Exit
     }
-    return (Pick-File $Filenames)
+    Write-Verbose "Filenames:"
+    Write-Verbose "$Filenames"
+    return (Pick-File $Filenames)    
 }
 
 function Find-ServerCSVFile {
