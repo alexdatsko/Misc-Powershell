@@ -37,9 +37,9 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.46"
-     # New in this version: Fixed "2023-06-06 - Standalone issue w/ Find-LocalCSVFile"
-$VersionInfo = "v$($Version) - Last modified: 06/06/23"
+$Version = "0.35.48"
+     # New in this version: Fixed QID 378131 SnipNSketch - modified further
+$VersionInfo = "v$($Version) - Last modified: 06/07/23"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -1891,24 +1891,52 @@ foreach ($QID in $QIDs) {
         }
       }
       378131 {
-        Write-Host "[?] $_ Microsoft Windows Snipping Tool Information Disclosure Vulnerability" 
-        $ResultsEXE = "$env:windir\system32\SnippingTool.exe"
-        Write-Host "[.] Checking if $ResultsEXE exists.."
-        if (Test-Path $ResultsEXE) {
-          Write-Host "[.] Checking $ResultsEXE version.."
-          $ResultsEXEVersion = Get-FileVersion $ResultsEXE
-          if ([version]$ResultsEXEVersion -lt [version]10.2008.3001.0) {
-            Write-Host "[!] Vulnerable version $ResultsEXE found : $ResultsEXEVersion < 10.2008.3001.0"  -ForegroundColor Red
-            Write-Host "[!] Please update Snipping Tool manually!!!" -ForegroundColor Red
-            & explorer "https://apps.microsoft.com/store/detail/snipping-tool/9MZ95KL8MR0L?hl=en-us&gl=us"
+        if (Get-YesNo "$_ Microsoft Windows Snipping Tool Information Disclosure Vulnerability" -Results $Results) {
+          $i = 0
+          $RemovedApp=$false
+          $Results = (Get-AppXPackage *Microsoft.ScreenSketch* -AllUsers)
+          Write-Host "[.] Checking if Snip+Sketch app is installed"
+          if ($Results.Count -gt 0) {
+            Write-Host "[.] Checking Snip+Sketch version.."
+            foreach ($result in $Results) {
+              $SnipnSketchVersion = [System.Version]($Result).Version
+              $AppName = ($Result).PackageFullName
+              if ([System.Version]$SnipnSketchVersion -lt [System.Version]"10.2008.3001.0") {
+                Write-Host "[!] $($i): Vulnerable version Snip'n'Sketch version found : $AppName - $SnipnSketchVersion  < 10.2008.3001.0"  -ForegroundColor Red
+                Write-Host "[.] Removing $AppName" -ForegroundColor Yellow
+                #Get-appxpackage -allusers $AppName |  Remove-AppXPackage
+                Remove-AppxPackage -Package ($AppName).PackageFullName
+                $RemovedApp=$AppName
+                $i+=1
+              } else {
+                Write-Host "[!] $($i): Fixed version of Snip'n'Sketch found $AppName : $SnipnSketchVersion >= 10.2008.3001.0. Already patched"  -ForegroundColor Green
+                $i+=1
+              }
+            }
           } else {
-            Write-Host "[!] Fixed version $ResultsEXE found : $ResultsEXEVersion >= 10.2008.3001.0. Already patched"  -ForegroundColor Green
+            Write-Host "[!] No results found from '(Get-AppXPackage *Microsoft.ScreenSketch* -AllUsers)' -- Please check Microsoft Store for updates manually! Opening.."
+            & explorer "ms-windows-store:"
+            Write-Host "[.] Also: Trying to update Store apps with command: 'echo Y | winget upgrade -h --all' - Note - there may be a few UAC prompts for this!"
+            . "cmd.exe" "/c echo Y | winget upgrade -h --all"
           }
-        } else {
-          Write-Host "[!] Snipping tool doesn't exist at $ResultsEXE .. Please check Microsoft Store for updates manually! Opening.."
-          & explorer "ms-windows-store:"
-          Write-Host "[.] Trying to update Store apps with command: 'echo Y | winget upgrade -h --all' - Note - there may be a few UAC prompts for this!"
-          . "cmd.exe" "/c echo Y | winget upgrade -h --all"
+        
+          if ($RemovedApp) {
+            Write-Host "[.] Checking for $RemovedApp after removing.." -ForegroundColor Yellow
+            $Rechecks = Get-appxpackage -allusers $RemovedApp
+            if (!($Rechecks.Count -gt 0)) {
+              Write-Host "[+] Clean!" -ForegroundColor Green
+            } else {
+              foreach ($result in $Rechecks) {
+                $SnipnSketchVersion = [System.Version]($Result).Version
+                $AppName = ($Result).PackageFullName
+                if ([System.Version]$SnipnSketchVersion -lt [System.Version]"10.2008.3001.0") {
+                  Write-Host "[!] Vulnerable version Snip'n'Sketch version still found : $AppName - $SnipnSketchVersion  < 10.2008.3001.0"  -ForegroundColor Red
+                  Write-Host "[!] Please fix manually.." -ForegroundColor Red
+                }
+              }
+            }
+          }
+
         }
       }
       371476 {
@@ -2116,6 +2144,29 @@ foreach ($QID in $QIDs) {
       }
     }
 }
+
+<#        # File Version check boilerplate code
+        $ResultsEXE = "$env:windir\system32\SnippingTool.exe"
+        Write-Host "[.] Checking if $ResultsEXE exists.."
+        if (Test-Path $ResultsEXE) {
+          Write-Host "[.] Checking $ResultsEXE version.."
+          $ResultsEXEVersion = Get-FileVersion $ResultsEXE
+          if ([version]$ResultsEXEVersion -lt [version]10.2008.3001.0) {
+            Write-Host "[!] Vulnerable version $ResultsEXE found : $ResultsEXEVersion < 10.2008.3001.0"  -ForegroundColor Red
+            Write-Host "[!] Please update Snipping Tool manually!!!" -ForegroundColor Red
+            & explorer "https://apps.microsoft.com/store/detail/snipping-tool/9MZ95KL8MR0L?hl=en-us&gl=us"
+          } else {
+            Write-Host "[!] Fixed version $ResultsEXE found : $ResultsEXEVersion >= 10.2008.3001.0. Already patched"  -ForegroundColor Green
+          }
+        } else {
+          Write-Host "[!] Snipping tool doesn't exist at $ResultsEXE .. Please check Microsoft Store for updates manually! Opening.."
+          & explorer "ms-windows-store:"
+          Write-Host "[.] Trying to update Store apps with command: 'echo Y | winget upgrade -h --all' - Note - there may be a few UAC prompts for this!"
+          . "cmd.exe" "/c echo Y | winget upgrade -h --all"
+        }
+Generic 
+        #>
+
 
 if ($SoftwareInstalling.Length -gt 0) {
   Write-Host "[.] Checking for finished software upgrading: $SoftwareInstalling"
