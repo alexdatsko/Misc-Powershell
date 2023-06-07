@@ -37,8 +37,8 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.48"
-     # New in this version: Fixed QID 378131 SnipNSketch - modified further
+$Version = "0.35.49"
+     # New in this version: Bugfix for CSV filename, + SkipnSketch
 $VersionInfo = "v$($Version) - Last modified: 06/07/23"
 
 # Self-elevate the script if required
@@ -410,6 +410,14 @@ function Remove-ConfigFileLine {  # Wrapper for Change-ConfigFileLine
   Change-ConfigFileLine $ConfigOldLine ""
 }
 
+function Is-Array {
+  param($var)
+  if ($var -is [array]) {
+    return $true
+  }
+  return $false
+}
+
 function Pick-File {
   param ([string]$Filenames)
   $Filenames | Foreach-Object {
@@ -423,9 +431,9 @@ function Pick-File {
     if ($Selection -eq "") { $Selection="0" }
     $Sel = [int]$Selection
   } else { 
-    if ($i -and ($filenames).Length -gt 0) {
+    if ($i -and (!(Is-Array $filenames))) {  # If theres 1 result only
       $Sel=0
-      Write-Host "[+] Using $i - $($filenames[$i])" -ForegroundColor White
+      Write-Host "[+] Using $i - $($filenames)" -ForegroundColor White
     } else {
       Write-Host "[!] No files found!"
     }
@@ -1905,7 +1913,7 @@ foreach ($QID in $QIDs) {
                 Write-Host "[!] $($i): Vulnerable version Snip'n'Sketch version found : $AppName - $SnipnSketchVersion  < 10.2008.3001.0"  -ForegroundColor Red
                 Write-Host "[.] Removing $AppName" -ForegroundColor Yellow
                 #Get-appxpackage -allusers $AppName |  Remove-AppXPackage
-                Remove-AppxPackage -Package ($AppName).PackageFullName
+                Remove-AppxPackage -Package $AppName
                 $RemovedApp=$AppName
                 $i+=1
               } else {
