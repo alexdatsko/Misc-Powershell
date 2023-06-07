@@ -37,8 +37,8 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.50"
-     # New in this version: Bugfix for CSV filename take 2
+$Version = "0.35.51"
+     # New in this version: Bugfix for CSV filename take 3
 $VersionInfo = "v$($Version) - Last modified: 06/07/23"
 
 # Self-elevate the script if required
@@ -410,7 +410,7 @@ function Remove-ConfigFileLine {  # Wrapper for Change-ConfigFileLine
   Change-ConfigFileLine $ConfigOldLine ""
 }
 
-function Is-Array {
+function Is-Array {  
   param($var)
   if ($var -is [array]) {
     return $true
@@ -418,8 +418,9 @@ function Is-Array {
   return $false
 }
 
-function Pick-File {
+function Pick-File {    # Show a list of files with a number to the left of each one, pick by number
   param ([array]$Filenames)
+  $i=0
   $Filenames | Foreach-Object {
     Write-Host "[$i] $_" -ForegroundColor Blue
     $i += 1
@@ -434,18 +435,19 @@ function Pick-File {
     if ($i -and (!(Is-Array $filenames))) {  # If theres 1 result only
       $Sel=0
       Write-Host "[+] Using $sel - $($filenames)" -ForegroundColor White
-    } else {
+    } 
+    if ($i -eq 0) {
       Write-Host "[!] No files found!"
     }
   }
   if (@($Filenames).length -gt 1) {
     $pickedfile = "$($Location)\$($Filenames[$Sel])"
   } else {
-    if (!(Is-Array $filenames)) {
+    #if (!(Is-Array $filenames)) {   # This code is killing me, I think Is-Array is broken, leaving this out for now..
       $pickedfile = "$($Location)\$($Filenames)"  # If there is only 1, we are only grabbing the first letter above.. This will get the whole filename.
-    } else {
-      Write-Host "[!] No filenames returned!"
-    }
+    #} else {
+    #  Write-Host "[!] Odd, $filenames is an array but with length of 1 or less??"
+    #}
   }
   Write-Verbose "[i] Using file: $pickedfile"
   Return $pickedfile
@@ -456,8 +458,8 @@ function Find-LocalCSVFile {
          [string]$Oldpwd)
     #write-Host "Find-LocalCSVFile $Location $OldPwd"
     # FIGURE OUT CSV Filename
-    $i = 0
     Write-Verbose "Checking for CSV in Location: $Location"
+    Write-Verbose "OldPwd: $oldPwd"
     if (($null -eq $Location) -or ("." -eq $Location)) { $Location = $OldPwd }
     [array]$Filenames = Get-ChildItem "$($Location)\*.csv" | ForEach-Object { $_.Name }
     if ($Filenames.Length -lt 1) {  # If no files found in $Location, check $OldPwd
@@ -475,7 +477,9 @@ function Find-LocalCSVFile {
 
 function Find-ServerCSVFile {
   param ([string]$Location)
-  if (!(Test-Path "\\$($ServerName)")) {
+  Write-Verbose "[Find-ServerCSVFile] Server Name: $Servername"
+  Write-Verbose "[Find-ServerCSVFile] Location: $Location"
+  if (Test-Connection -ComputerName $servername -Count 2 -Delay 1 -Quiet) {
     Write-Host "[!] Can't access '$($serverName)', skipping Find-ServerCSVFile!"
     return $null
   }
@@ -485,6 +489,7 @@ function Find-ServerCSVFile {
     Write-Host "[i] Found file: $CSVFileName" -ForegroundColor Blue
     return $CSVFilename 
   } else {
+    Write-Verbose "Can't access \\$($servername)\$($Location) .."
     return $null
   }
 }
@@ -946,7 +951,7 @@ if (Update-QIDLists) { . "$($QIDsListFile)" }
 
 # Lets check the Config first for $ServerName, as that is our default..
 if ($ServerName) {
-  if (Test-Connection -ComputerName $ServerName -Count 2 -Delay 1 -Quiet -ErrorAction SilentlyContinue) {
+  if (Test-Connection -ComputerName $ServerName -Count 1 -Delay 1 -Quiet -ErrorAction SilentlyContinue) {
     Write-Output "[.] Checking location \\$($ServerName)\$($CSVLocation) .."
     if (Get-Item "\\$($ServerName)\$($CSVLocation)\Install-SecurityFixes.ps1") {
       Write-Host "[.] Found \\$($ServerName)\$($CSVLocation)\Install-SecurityFixes.ps1 .. Cleared to proceed." -ForegroundColor Green
@@ -954,7 +959,7 @@ if ($ServerName) {
   } else {
     # Lets also check SERVER in case config is wrong?
     Write-Output "[.] Checking default location \\SERVER\Data\SecAud .."
-    if (Test-Connection -ComputerName "SERVER" -Count 2 -Delay 1 -Quiet -ErrorAction SilentlyContinue) {
+    if (Test-Connection -ComputerName "SERVER" -Count 1 -Delay 1 -Quiet -ErrorAction SilentlyContinue) {
       if (Get-Item "\\SERVER\Data\SecAud\Install-SecurityFixes.ps1") {
         $ServerName = "SERVER"
         $CSVLocation = "Data\SecAud"
