@@ -37,9 +37,9 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.51"
-     # New in this version: Bugfix for CSV filename take 3
-$VersionInfo = "v$($Version) - Last modified: 06/07/23"
+$Version = "0.35.52"
+     # New in this version: Bugfix for CSV filename take 4, omg..
+$VersionInfo = "v$($Version) - Last modified: 06/08/23"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -432,7 +432,7 @@ function Pick-File {    # Show a list of files with a number to the left of each
     if ($Selection -eq "") { $Selection="0" }
     $Sel = [int]$Selection
   } else { 
-    if ($i -and (!(Is-Array $filenames))) {  # If theres 1 result only
+    if (!(Is-Array $filenames) -or $Automated) {  # If theres 1 result only, or -Automated is used, pick the first (newest) file and pray!
       $Sel=0
       Write-Host "[+] Using $sel - $($filenames)" -ForegroundColor White
     } 
@@ -440,7 +440,7 @@ function Pick-File {    # Show a list of files with a number to the left of each
       Write-Host "[!] No files found!"
     }
   }
-  if (@($Filenames).length -gt 1) {
+  if (Is-Array $filenames) {
     $pickedfile = "$($Location)\$($Filenames[$Sel])"
   } else {
     #if (!(Is-Array $filenames)) {   # This code is killing me, I think Is-Array is broken, leaving this out for now..
@@ -2097,6 +2097,14 @@ foreach ($QID in $QIDs) {
             Write-Output "[+] $a"
           }
           #>
+        }
+      }
+      {105457,105576} {
+        if (Get-YesNo "$_ Install MSXML Parser 4.0 SP3 update? " -Results $Results) { 
+          Write-Host "[.] Downloading installer to $($tmp)\msxml.exe .."
+          Invoke-WebRequest "https://download.microsoft.com/download/A/7/6/A7611FFC-4F68-4FB1-A931-95882EC013FC/msxml4-KB2758694-enu.exe" -OutFile "$($tmp)\msxml.exe"
+          Write-Host "[.] Running installer: $($tmp)\msxml.exe .."
+          cmd /c "$($tmp)\msxml.exe /log $($tmp)\msxml.log"
         }
       }
       91848 {
