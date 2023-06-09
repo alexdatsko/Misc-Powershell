@@ -65,8 +65,8 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.53"
-     # New in this version: Param help / -CSVFile param
+$Version = "0.35.55"
+     # New in this version: Another CSV picker failure x2
 $VersionInfo = "v$($Version) - Last modified: 06/09/23"
 
 # Self-elevate the script if required
@@ -461,26 +461,25 @@ function Pick-File {    # Show a list of files with a number to the left of each
     if ($Selection -eq $i) { Write-Host "[-] Exiting!" -ForegroundColor Gray ; exit }
     if ($Selection -eq "") { $Selection="0" }
     $Sel = [int]$Selection
-  } else { 
-    if (!(Is-Array $filenames) -or $Automated) {  # If theres 1 result only, or -Automated is used, pick the first (newest) file and pray!
+    return "$($Location)\$($Filenames[$Sel])"
+  } else { # either automated or only 1 file
+    if ($Automated) {  # If theres 1 result only, or -Automated is used, pick the first (newest) file and pray!
       $Sel=0
+      Write-Host "[+] AUTOMATED: Using $sel - $($filenames)" -ForegroundColor White
+      return "$($Location)\$($Filenames)"
+    } else {
+      # if only 1 file, return 1st file.
       Write-Host "[+] Using $sel - $($filenames)" -ForegroundColor White
-    } 
+      return "$($Location)\$($Filenames)"
+    }
     if ($i -eq 0) {
-      Write-Host "[!] No files found!"
+      Write-Host "[!] No files found! Error in Pick-File" -ForegroundColor Red
+      exit
     }
   }
-  if (Is-Array $filenames) {
-    $pickedfile = "$($Location)\$($Filenames[$Sel])"
-  } else {
-    #if (!(Is-Array $filenames)) {   # This code is killing me, I think Is-Array is broken, leaving this out for now..
-      $pickedfile = "$($Location)\$($Filenames)"  # If there is only 1, we are only grabbing the first letter above.. This will get the whole filename.
-    #} else {
-    #  Write-Host "[!] Odd, $filenames is an array but with length of 1 or less??"
-    #}
-  }
-  Write-Verbose "[i] Using file: $pickedfile"
-  Return $pickedfile
+  # if we got here, something is wrong..
+  Write-Host "[!] Error in Pick-File" -ForegroundColor Red
+  exit
 }
 
 function Find-LocalCSVFile {
@@ -2143,7 +2142,7 @@ foreach ($QID in $QIDs) {
           Write-Host "[.] Downloading installer to $($tmp)\msxml.exe .."
           Invoke-WebRequest "https://download.microsoft.com/download/A/7/6/A7611FFC-4F68-4FB1-A931-95882EC013FC/msxml4-KB2758694-enu.exe" -OutFile "$($tmp)\msxml.exe"
           Write-Host "[.] Running installer: $($tmp)\msxml.exe .."
-          cmd /c "$($tmp)\msxml.exe /log $($tmp)\msxml.log"
+          cmd /c "$($tmp)\msxml.exe /quiet /qn /norestart /log $($tmp)\msxml.log"
         }
         $MSXmlParser4 = 1
       }
