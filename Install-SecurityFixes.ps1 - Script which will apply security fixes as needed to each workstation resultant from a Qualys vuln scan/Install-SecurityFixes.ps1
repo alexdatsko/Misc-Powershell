@@ -1,11 +1,39 @@
-#########################################
+[cmdletbinding()]  # For verbose, debug etc
+param (
+  [switch] $Automated = $false,    # this allows us to run without supervision and apply all changes (could be dangerous!)
+  [string] $CSVFile,               # Allow us to pick a CSV file on the commandline
+  [switch] $Help                   # Allow -Help to display help for parameters
+)
+
+$AllHelp = "########################################################
 # Install-SecurityFixes.ps1
 # Alex Datsko - alex.datsko@mmeconsulting.com
 
-[cmdletbinding()]  # For verbose, debug etc
-param (
-  [switch] $Automated = $false   # this allows us to run without supervision and apply all changes (could be dangerous!)
-)
+<#
+.SYNOPSIS
+    This script installs security fixes for some Qualys scan items.
+.DESCRIPTION
+    This script takes an output of a Qualys scan in a CSV file, determines if the hostname is present in the file, and applies fixes as needed.
+.PARAMETER Help
+    Displays help information for the script.
+.PARAMETER CSVFile
+    Specifies the path to the CSV file to use.
+.PARAMETER Automated
+    Indicates whether the script is running in automated mode. Fixes will be applied automatically.
+.PARAMETER Verbose
+    Enables verbose output for detailed information.
+#>
+"
+
+if ($Help) {
+  $parameterNames = $PSBoundParameters.Keys -join ', '
+  Write-Verbose "Providing help for $parameterNames .."
+  # Lets just print this here for now, because I can't seem to get the appropriate Get-Help commands to work, ugh.
+
+  Write-Host $AllHelp
+  exit
+}
+
 #Clear
 
 $oldPwd = $pwd                               # Grab location script was run from
@@ -37,9 +65,9 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.52"
-     # New in this version: Bugfix for CSV filename take 4, omg..
-$VersionInfo = "v$($Version) - Last modified: 06/08/23"
+$Version = "0.35.53"
+     # New in this version: Param help / -CSVFile param
+$VersionInfo = "v$($Version) - Last modified: 06/09/23"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -61,6 +89,8 @@ $host.ui.RawUI.WindowTitle = "$($env:COMPUTERNAME) - Install-SecurityFixes.ps1"
 if ($Automated) {
   Write-Host "`n[!] Running in automated mode!`n"   -ForegroundColor Red
 }
+
+####################################################### FUNCTIONS #######################################################
 
 function Get-YesNo {
   param ([string] $text,
@@ -999,9 +1029,16 @@ if (!(Test-Path $($tmp))) {
 $oldpwd=(Get-Location).Path
 Set-Location "$($tmp)"  # Cmd.exe cannot be run from a server share
 
-$CSVFilename = Find-ServerCSVFile "$($ServerName)\$($CSVLocation)"
-if ($null -eq $CSVFilename) {
-  $CSVFilename = Find-LocalCSVFile "." $OldPwd
+### Find CSV File name
+if (!($CSVFile -like "*.csv")) {  # Check for command line param -CSVFile
+  $CSVFilename = Find-ServerCSVFile "$($ServerName)\$($CSVLocation)"
+  if ($null -eq $CSVFilename) {
+    $CSVFilename = Find-LocalCSVFile "." $OldPwd
+  }
+} else {
+  Write-Verbose "Parameter found: -CSVFile $CSVFile"
+  Write-Verbose "Using: $($oldPwd)\$($CSVFile)"
+  $CSVFilename = "$($oldPwd)\$($CSVFile)"
 }
 # READ CSV
 if ($null -eq $CSVFilename) {
@@ -1009,7 +1046,9 @@ if ($null -eq $CSVFilename) {
   Exit
 } else {
   try {
+    Write-Verbose "Finding delimeter for $CSVFilename"
     $delimiter = Find-Delimiter $CSVFilename
+    Write-Host "[.] Importing data from $CSVFilename" -ForegroundColor Yellow
     $CSVData = Import-CSV $CSVFilename -Delimiter $delimiter | Sort-Object "Vulnerability Description"
   } catch {
     Write-Host "[X] Couldn't open CSV file : $CSVFilename " -ForegroundColor Red
@@ -2099,13 +2138,14 @@ foreach ($QID in $QIDs) {
           #>
         }
       }
-      {105457,105576} {
+      $QIDsMSXMLParser4 {
         if (Get-YesNo "$_ Install MSXML Parser 4.0 SP3 update? " -Results $Results) { 
           Write-Host "[.] Downloading installer to $($tmp)\msxml.exe .."
           Invoke-WebRequest "https://download.microsoft.com/download/A/7/6/A7611FFC-4F68-4FB1-A931-95882EC013FC/msxml4-KB2758694-enu.exe" -OutFile "$($tmp)\msxml.exe"
           Write-Host "[.] Running installer: $($tmp)\msxml.exe .."
           cmd /c "$($tmp)\msxml.exe /log $($tmp)\msxml.log"
         }
+        $MSXmlParser4 = 1
       }
       91848 {
         if (Get-YesNo "$_ Install Store Installer app update to 1.16.13405.0 ? " -Results $Results) { 
