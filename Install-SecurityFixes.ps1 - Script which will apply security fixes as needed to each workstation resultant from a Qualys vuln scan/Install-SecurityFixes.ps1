@@ -65,8 +65,8 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.58"
-     # New in this version:  Added QID 91869
+$Version = "0.35.59"
+     # New in this version:  Added QID 91869 91866
 $VersionInfo = "v$($Version) - Last modified: 06/15/23"
 
 # Self-elevate the script if required
@@ -2048,6 +2048,17 @@ foreach ($QID in $QIDs) {
           Remove-SpecificAppXPackage -Name "Office" -Version "18.1903.1152.0" 
         }
       }
+      91866 { 
+        if (Get-YesNo "$_ Remove Microsoft Windows Codecs Library HEVC Video and VP9 Extensions Remote Code Execution (RCE) Vulnerability for February 2022" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "HEIFImageExtension" -Version "1.0.42352.0"
+          Remove-SpecificAppXPackage -Name "Microsoft.VP9VideoExtensions" -Version "1.0.41182.0" 
+        }
+      }
+      91914 { 
+        if (Get-YesNo "$_ Remove Microsoft.VP9VideoExtensions Version 1.0.41182.0" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "Microsoft.VP9VideoExtensions" -Version "1.0.41182.0" 
+        }
+      }
       91869 { 
         if (Get-YesNo "$_ Remove Microsoft Windows Codecs Library Remote Code Execution (RCE) (VP9VideoExtensions) Vulnerability for March 2022" -Results $Results) {
           #Microsoft vulnerable Microsoft.VP9VideoExtensions detected  Version     '1.0.41182.0'  Microsoft vulnerable Microsoft.HEIFImageExtension detected  Version     '1.0.42352.0'#
@@ -2062,11 +2073,6 @@ foreach ($QID in $QIDs) {
       91914 { 
         if (Get-YesNo "$_ Remove Microsoft.Windows.Photos Version 2021.21090.10007.0" -Results $Results) {
           Remove-SpecificAppXPackage -Name "Microsoft.Windows.Photos" -Version "2021.21090.10007.0" 
-        }
-      }
-      91914 { 
-        if (Get-YesNo "$_ Remove Microsoft.VP9VideoExtensions Version 1.0.41182.0" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "Microsoft.VP9VideoExtensions" -Version "1.0.41182.0" 
         }
       }
       378131 {
