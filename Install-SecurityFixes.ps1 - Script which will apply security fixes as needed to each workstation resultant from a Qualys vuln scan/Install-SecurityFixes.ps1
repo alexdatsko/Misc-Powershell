@@ -65,8 +65,8 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.59"
-     # New in this version:  Added QID 91869 91866
+$Version = "0.35.62"
+     # New in this version:  Added Many more windows store app vulns
 $VersionInfo = "v$($Version) - Last modified: 06/15/23"
 
 # Self-elevate the script if required
@@ -2070,11 +2070,77 @@ foreach ($QID in $QIDs) {
           Remove-SpecificAppXPackage -Name "HEIF" -Version "1.0.42352.0" 
         }
       }
+      91845 {   ## Microsoft Windows Codecs Library HEVC Video And Web Media Extensions Remote Code Execution (RCE) Vulnerability for December 2021
+        if (Get-YesNo "$_ Remove Microsoft Windows Codecs Library HEVC Video And Web Media Extensions Remote Code Execution (RCE) Vulnerability for December 2021" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "HEVCVideoExtension" -Version "1.0.33232.0"
+        }
+      }
       91914 { 
         if (Get-YesNo "$_ Remove Microsoft.Windows.Photos Version 2021.21090.10007.0" -Results $Results) {
           Remove-SpecificAppXPackage -Name "Microsoft.Windows.Photos" -Version "2021.21090.10007.0" 
         }
       }
+      91819 { 
+        if (Get-YesNo "$_ Remove Microsoft HEVCVideoExtension Version 0.33232.0 " -Results $Results) {
+          Remove-SpecificAppXPackage -Name "HEVCVideoExtension" -Version "1.0.33232.0" 
+        }
+      }
+      91773 { 
+        if (Get-YesNo "$_ Remove Microsoft 3D Viewer Multiple Vulnerabilities - June 2021" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "Microsoft3DViewer" -Version "7.2009.29132.0" 
+        }
+      }
+      91834 { 
+        if (Get-YesNo "$_ Remove  Microsoft 3D Viewer Remote Code Execution (RCE) Vulnerability - November 2021" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "Microsoft3DViewer" -Version "7.2009.29132.0" 
+        }
+      }
+      91774 { 
+        if (Get-YesNo "$_ Remove Microsoft Paint 3D Remote Code Execution Vulnerability - June 2021" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "MSPaint" -Version "6.2009.30067.0" 
+        }
+      }
+      91761 {
+        if (Get-YesNo "$_ Remove Microsoft Windows Codecs Library and VP9 Video Extensions Multiple Vulnerabilities" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "VP9VideoExtensions" -Version "1.0.32521.0" 
+        }
+      }
+      91775 {
+        if (Get-YesNo "$_ Remove Microsoft Windows VP9 Video Extension Remote Code Execution Vulnerability  " -Results $Results) {
+          Remove-SpecificAppXPackage -Name "VP9VideoExtensions" -Version "1.0.32521.0" 
+        }
+      }
+      91919 {
+        if (Get-YesNo "$_ Remove Microsoft Windows Codecs Library HEVC Video and AV1 Extensions Remote Code Execution (RCE) Vulnerability for June 2022" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "HEVCVideoExtension" -Version "1.0.33232.0" 
+        }
+      }
+      91788 {
+        if (Get-YesNo "$_ Remove Microsoft Windows Codecs Library High Efficiency Video Coding (HEVC) Video Extensions Remote Code Execution (RCE) Vulnerabilities" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "HEVCVideoExtension" -Version "1.0.33232.0" 
+        }
+      }
+      91726 {
+        if (Get-YesNo "$_ Remove Microsoft Windows Codecs Library Remote Code Execution Vulnerabilities - January 2021 " -Results $Results) {
+          Remove-SpecificAppXPackage -Name "HEVCVideoExtension" -Version "1.0.33232.0" 
+        }
+      }   
+      91885 {
+        if (Get-YesNo "$_ Remove Microsoft HEVC Video Extensions Remote Code Execution (RCE) Vulnerability for April 2022" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "HEVCVideoExtension" -Version "1.0.33232.0" 
+        }
+      } 
+      91855 {
+        if (Get-YesNo "$_ Remove Microsoft HEVC Video Extensions Remote Code Execution (RCE) Vulnerability for January 2022" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "HEVCVideoExtension" -Version "1.0.33232.0" 
+        }
+      } 
+      91820 {
+        if (Get-YesNo "$_ Remove Microsoft MPEG-2 Video Extension Remote Code Execution (RCE) Vulnerability " -Results $Results) {
+          Remove-SpecificAppXPackage -Name "MPEG2VideoExtension" -Version "1.0.22661.0" 
+        }
+      } 
+
       378131 {
         if (Get-YesNo "$_ Microsoft Windows Snipping Tool Information Disclosure Vulnerability" -Results $Results) {
           Remove-SpecificAppXPackage -Name "Microsoft.ScreenSketch" -Version "10.2008.2277.0"
