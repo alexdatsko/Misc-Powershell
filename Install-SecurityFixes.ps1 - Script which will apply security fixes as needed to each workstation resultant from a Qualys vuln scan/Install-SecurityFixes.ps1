@@ -65,8 +65,8 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.57"
-     # New in this version:  Further Store app fixes
+$Version = "0.35.58"
+     # New in this version:  Added QID 91869
 $VersionInfo = "v$($Version) - Last modified: 06/15/23"
 
 # Self-elevate the script if required
@@ -2046,6 +2046,12 @@ foreach ($QID in $QIDs) {
       91850 {
         if (Get-YesNo "$_ Remove Microsoft Office app Remote Code Execution (RCE) Vulnerability 18.1903.1152.0" -Results $Results) {
           Remove-SpecificAppXPackage -Name "Office" -Version "18.1903.1152.0" 
+        }
+      }
+      91869 { 
+        if (Get-YesNo "$_ Remove Microsoft Windows Codecs Library Remote Code Execution (RCE) (VP9VideoExtensions) Vulnerability for March 2022" -Results $Results) {
+          #Microsoft vulnerable Microsoft.VP9VideoExtensions detected  Version     '1.0.41182.0'  Microsoft vulnerable Microsoft.HEIFImageExtension detected  Version     '1.0.42352.0'#
+          Remove-SpecificAppXPackage -Name "VP9VideoExtensions" -Version "1.0.41182.0" 
         }
       }
       91847 { 
