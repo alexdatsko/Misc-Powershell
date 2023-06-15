@@ -65,9 +65,9 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.56"
-     # New in this version:  Added QIDsOffice2007 vulns, + Remove-SpecificAppXPackage
-$VersionInfo = "v$($Version) - Last modified: 06/09/23"
+$Version = "0.35.57"
+     # New in this version:  Further Store app fixes
+$VersionInfo = "v$($Version) - Last modified: 06/15/23"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -952,17 +952,22 @@ function Remove-SpecificAppXPackage {
   $i = 0
   $RemovedApp=$false
   $AllResults = (Get-AppXPackage "*$($Name)*" -AllUsers)
-  Write-Host "[.] Checking if $Name app is installed"
+  Write-Host "[.] Checking if $Name store app is installed"
   if ($AllResults.Count -gt 0) {
     Write-Host "[.] Yes. $(($AllResults).Count) results. Checking $Name versions.."
     foreach ($result in $AllResults) {
       $AppVersion = [System.Version]($Result).Version
       $AppName = ($Result).PackageFullName
       if ([System.Version]$AppVersion -le [System.Version]$Version) {
-        Write-Host "[!] $($i): Vulnerable version of Office app found : $AppName - $AppVersion <= $Version"  -ForegroundColor Red
-        Write-Host "[.] Removing $AppName" -ForegroundColor Yellow
-        $null = (Remove-AppxPackage -Package $AppName -ErrorAction SilentlyContinue)            # Remove
-        $null = (Remove-AppxPackage -Package $AppName -AllUsers -ErrorAction SilentlyContinue)  # Remove with -AllUsers, this may create an error because a 'user is logged-off'..
+        Write-Host "[!] $($i): Vulnerable version of store app found : $AppName - $AppVersion <= $Version"  -ForegroundColor Red
+        Write-Host "[.] Removing $AppName :" -ForegroundColor Yellow
+        try {
+          $null = (Remove-AppxPackage -Package $AppName -ErrorAction SilentlyContinue)            # Remove
+        } catch { }
+        Write-Host "[.] Removing $AppName -AllUsers :" -ForegroundColor Yellow
+        try {
+          $null = (Remove-AppxPackage -Package $AppName -AllUsers -ErrorAction SilentlyContinue)  # Remove with -AllUsers, this may create an error because a 'user is logged-off'..
+        } catch { }
         #Remove-AppxProvisionedPackage -Path c:\offline -PackageName MyAppxPkg   # May also need this?
         $RemovedApp=$AppName
         $i+=1
