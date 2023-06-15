@@ -1,14 +1,1 @@
-2023-06-06 - Standalone issue w/ Find-ServerCSVFile
-
-[!] Can't access 'SERVER', skipping Find-ServerCSVFile!
-Cannot index into a null array.
-At C:\temp\secaud\Install-SecurityFixes.ps1:432 char:36
-+       Write-Host "[+] Using $i - $($filenames[$i])" -ForegroundColor  ...
-+                                    ~~~~~~~~~~~~~~
-    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
-    + FullyQualifiedErrorId : NullArray
-
-[+] Using 0 -
-[i] Using file:
-[X] Couldn't find CSV file :
-
+-Automated doesn't resume when re-running new downloaded script

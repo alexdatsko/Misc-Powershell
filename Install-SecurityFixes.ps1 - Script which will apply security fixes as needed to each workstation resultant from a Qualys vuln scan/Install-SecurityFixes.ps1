@@ -65,8 +65,8 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.55"
-     # New in this version: Another CSV picker failure x2
+$Version = "0.35.56"
+     # New in this version:  Added QIDsOffice2007 vulns, + Remove-SpecificAppXPackage
 $VersionInfo = "v$($Version) - Last modified: 06/09/23"
 
 # Self-elevate the script if required
@@ -77,7 +77,7 @@ if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdent
         Start-Process -FilePath PowerShell.exe -Verb RunAs -ArgumentList $Command
         Set-Location $pwd
         Exit
- }
+  }
 }
 
 # Change title of window
@@ -941,9 +941,58 @@ function Find-Delimiter {
     $space     { return " "}
     $pipe      { return "|"}
     Default    { Write-Error "[!] Cannot determine delimiter!" }
-  } 
-  
+  }  
 } 
+
+function Remove-SpecificAppXPackage {
+  param([string]$Name,
+        [string]$Version,
+        [string]$Results)
+
+  $i = 0
+  $RemovedApp=$false
+  $AllResults = (Get-AppXPackage "*$($Name)*" -AllUsers)
+  Write-Host "[.] Checking if $Name app is installed"
+  if ($AllResults.Count -gt 0) {
+    Write-Host "[.] Yes. $(($AllResults).Count) results. Checking $Name versions.."
+    foreach ($result in $AllResults) {
+      $AppVersion = [System.Version]($Result).Version
+      $AppName = ($Result).PackageFullName
+      if ([System.Version]$AppVersion -le [System.Version]$Version) {
+        Write-Host "[!] $($i): Vulnerable version of Office app found : $AppName - $AppVersion <= $Version"  -ForegroundColor Red
+        Write-Host "[.] Removing $AppName" -ForegroundColor Yellow
+        $null = (Remove-AppxPackage -Package $AppName -ErrorAction SilentlyContinue)            # Remove
+        $null = (Remove-AppxPackage -Package $AppName -AllUsers -ErrorAction SilentlyContinue)  # Remove with -AllUsers, this may create an error because a 'user is logged-off'..
+        #Remove-AppxProvisionedPackage -Path c:\offline -PackageName MyAppxPkg   # May also need this?
+        $RemovedApp=$AppName
+        $i+=1
+      } else {
+        Write-Host "[!] $($i): Fixed version of $Name found: $AppName - $AppVersion > $Version. Already patched"  -ForegroundColor Green
+        $i+=1
+      }
+    }
+  } else {
+    Write-Host "[!] No results found from '(Get-AppXPackage *$Name* -AllUsers)' -- Please check Microsoft Store for updates manually! Opening.."
+    & explorer "ms-windows-store:"
+  }
+
+  if ($RemovedApp) {
+    Write-Host "[.] Checking for $RemovedApp after removing.." -ForegroundColor Yellow
+    $Rechecks = Get-appxpackage -allusers $RemovedApp
+    if (!($Rechecks.Count -gt 0)) {
+      Write-Host "[+] Clean!" -ForegroundColor Green
+    } else {
+      foreach ($result in $Rechecks) {
+        $AppVersion = [System.Version]($Result).Version
+        $AppName = ($Result).PackageFullName
+        if ([System.Version]$AppVersion -le [System.Version]$Version) {
+          Write-Host "[!] Vulnerable version Office app still found : $AppName - $AppVersion <= $Version"  -ForegroundColor Red
+          Write-Host "[!] Please either reboot and test again, or fix manually.." -ForegroundColor Red
+        }
+      }
+    }
+  }
+}
 
 ################################################################################################################## MAIN ############################################################################################################
 ################################################################################################################## MAIN ############################################################################################################
@@ -1176,13 +1225,14 @@ $CSVData | ForEach-Object {
     }
 
   # Search by title:
-    if ($_.Results -like "Microsoft vulnerable Microsoft.*") {
-      if (!($QIDsUpdateMicrosoftStoreApps -contains $QID)) {
-        Add-VulnToQIDList $QID $_.Title  'QIDsUpdateMicrosoftStoreApps' $QIDsAdded
-        . $($QIDsListFile)
-        $QIDsAdded+=[int]$QID
-      }
-    }
+#    if ($_.Results -like "Microsoft vulnerable Microsoft.*") {
+#      if (!($QIDsUpdateMicrosoftStoreApps -contains $QID)) {
+#        Add-VulnToQIDList $QID $_.Title  'QIDsUpdateMicrosoftStoreApps' $QIDsAdded
+#        . $($QIDsListFile)
+#        $QIDsAdded+=[int]$QID
+#      }
+#    }
+
   }
 }
 Write-Output "[.] Done checking for new vulns.`n"
@@ -1409,7 +1459,7 @@ foreach ($QID in $QIDs) {
             Remove-RegistryItem $Path
         }
       }
-      { $QIDsUpdateMicrosoftStoreApps -contains $_ } {
+<#      { $QIDsUpdateMicrosoftStoreApps -contains $_ } {
         if (Get-YesNo "$_ Update all store apps? " -Results $Results) {
           <#
           $namespaceName = "root\cimv2\mdm\dmmap"
@@ -1434,7 +1484,7 @@ foreach ($QID in $QIDs) {
           }
           # Show message when all updates are complete
           Write-Host "[!] All app updates are complete.`n"    
-          #>
+          
           # Just open the store for now so we can manually update. ugh.
           Write-Host "[.] Trying to update Store apps with command: 'echo Y | winget upgrade -h --all' - Note - there may be a few UAC prompts for this!"
           . "cmd.exe" "/c echo Y | winget upgrade -h --all"
@@ -1443,7 +1493,7 @@ foreach ($QID in $QIDs) {
         }
         $QIDsUpdateMicrosoftStoreApps = 1
       }
-      
+#>      
         ####################################################### Installers #######################################
         # Install newest apps via Ninite
 
@@ -1943,53 +1993,74 @@ foreach ($QID in $QIDs) {
 
         }
       }
-      378131 {
-        if (Get-YesNo "$_ Microsoft Windows Snipping Tool Information Disclosure Vulnerability" -Results $Results) {
-          $i = 0
-          $RemovedApp=$false
-          $Results = (Get-AppXPackage *Microsoft.ScreenSketch* -AllUsers)
-          Write-Host "[.] Checking if Snip+Sketch app is installed"
-          if ($Results.Count -gt 0) {
-            Write-Host "[.] Checking Snip+Sketch version.."
-            foreach ($result in $Results) {
-              $SnipnSketchVersion = [System.Version]($Result).Version
-              $AppName = ($Result).PackageFullName
-              if ([System.Version]$SnipnSketchVersion -lt [System.Version]"10.2008.3001.0") {
-                Write-Host "[!] $($i): Vulnerable version Snip'n'Sketch version found : $AppName - $SnipnSketchVersion  < 10.2008.3001.0"  -ForegroundColor Red
-                Write-Host "[.] Removing $AppName" -ForegroundColor Yellow
-                #Get-appxpackage -allusers $AppName |  Remove-AppXPackage
-                Remove-AppxPackage -Package $AppName
-                $RemovedApp=$AppName
-                $i+=1
-              } else {
-                Write-Host "[!] $($i): Fixed version of Snip'n'Sketch found $AppName : $SnipnSketchVersion >= 10.2008.3001.0. Already patched"  -ForegroundColor Green
-                $i+=1
-              }
-            }
+      $QIDsOffice2007 {
+        <#
+        HKLM\SOFTWARE\Wow6432Node\Microsoft\Office\12.0\Common\ProductVersion LastProduct = 12.0.6612.1000  KB4092465 is not installed   %ProgramFiles(x86)%\Common Files\Microsoft Shared\Office12\mso.dll  Version is  12.0.6785.5000  KB4461607 is not installed   C:\Program Files (x86)\Microsoft Office\Office12\\excelcnv.exe  Version is  12.0.6787.5000#
+        HKLM\SOFTWARE\Wow6432Node\Microsoft\Office\12.0\Common\ProductVersion LastProduct = 12.0.6612.1000  KB4461565 is not installed   C:\Program Files (x86)\Microsoft Office\Office12\\excelcnv.exe  Version is  12.0.6787.5000  KB2597975 is not installed   C:\Program Files (x86)\Microsoft Office\Office12\\Pptview.exe  Version is  12.0.6654.5000#
+        HKLM\SOFTWARE\Wow6432Node\Microsoft\Office\12.0\Common\ProductVersion LastProduct = 12.0.6612.1000  KB4461518 is not installed   C:\Program Files (x86)\Microsoft Office\Office12\\excelcnv.exe  Version is  12.0.6787.5000#
+        HKLM\SOFTWARE\Wow6432Node\Microsoft\Office\12.0\Common\ProductVersion LastProduct = 12.0.6612.1000  KB4092444 is not installed   %ProgramFiles(x86)%\Common Files\Microsoft Shared\Office12\ogl.dll  Version is  12.0.6776.5000#
+        HKLM\SOFTWARE\Wow6432Node\Microsoft\Office\12.0\Common\ProductVersion LastProduct = 12.0.6612.1000  KB4092466 is not installed   C:\Program Files (x86)\Microsoft Office\Office12\\excelcnv.exe  Version is  12.0.6787.5000#
+        HKLM\SOFTWARE\Wow6432Node\Microsoft\Office\12.0\Common\ProductVersion LastProduct = 12.0.6612.1000  KB4011202 is not installed   %ProgramFiles(x86)%\Common Files\Microsoft Shared\Office12\ogl.dll  Version is  12.0.6776.5000#
+        HKLM\SOFTWARE\Wow6432Node\Microsoft\Office\12.0\Common\ProductVersion LastProduct = 12.0.6612.1000  KB4011207 is not installed   %ProgramFiles(x86)%\Microsoft Office\Office12\ppcnv.dll  Version is  12.0.6776.5000#
+        HKLM\SOFTWARE\Wow6432Node\Microsoft\Office\12.0\Common\ProductVersion LastProduct = 12.0.6612.1000  KB4092444 is not installed   %ProgramFiles(x86)%\Common Files\Microsoft Shared\Office12\ogl.dll  Version is  12.0.6776.5000#
+        HKLM\SOFTWARE\Wow6432Node\Microsoft\Office\12.0\Common\ProductVersion LastProduct = 12.0.6612.1000  KB4011202 is not installed   %ProgramFiles(x86)%\Common Files\Microsoft Shared\Office12\ogl.dll  Version is  12.0.6776.5000#
+        #>
+        $Path="HKLM\SOFTWARE\Wow6432Node\Microsoft\Office\12.0\Common\ProductVersion\LastProduct"
+        if (Get-YesNo "$_ Microsoft Office and Microsoft Office Services and Web Apps Security Update 2018/2019 " -Results $Results) {
+          $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like "*Office 2007*"})
+          if ($Products) {
+            Write-Host "[!] WARNING: Office 2007 product found! Can't auto-fix this.. Need one or more of these KB's installed: "
+            Write-Host "  KB4092464, KB4461565, KB4461518, KB4092444, KB4092466, KB4011202, KB4011207, KB4011202"
+            Write-Host "[!] Product found installed:"
+            Write-Host "$Products"
           } else {
-            Write-Host "[!] No results found from '(Get-AppXPackage *Microsoft.ScreenSketch* -AllUsers)' -- Please check Microsoft Store for updates manually! Opening.."
-            & explorer "ms-windows-store:"
-            Write-Host "[.] Also: Trying to update Store apps with command: 'echo Y | winget upgrade -h --all' - Note - there may be a few UAC prompts for this!"
-            . "cmd.exe" "/c echo Y | winget upgrade -h --all"
-          }
-        
-          if ($RemovedApp) {
-            Write-Host "[.] Checking for $RemovedApp after removing.." -ForegroundColor Yellow
-            $Rechecks = Get-appxpackage -allusers $RemovedApp
-            if (!($Rechecks.Count -gt 0)) {
-              Write-Host "[+] Clean!" -ForegroundColor Green
-            } else {
-              foreach ($result in $Rechecks) {
-                $SnipnSketchVersion = [System.Version]($Result).Version
-                $AppName = ($Result).PackageFullName
-                if ([System.Version]$SnipnSketchVersion -lt [System.Version]"10.2008.3001.0") {
-                  Write-Host "[!] Vulnerable version Snip'n'Sketch version still found : $AppName - $SnipnSketchVersion  < 10.2008.3001.0"  -ForegroundColor Red
-                  Write-Host "[!] Please fix manually.." -ForegroundColor Red
+            # If Office2007 is not installed, it should be safe to remove these conversion apps that may be vulnerable.
+            $Result = (($Results -split('is not installed'))[1] -split ('Version is'))[0].trim()
+            if (Test-Path $Result) {
+              if (Get-YesNo "Delete $Result ?") {
+                Write-Verbose "Removing file $Result"
+                Remove-File $Result
+                if (!(Test-Path $Result)) {
+                  Write-Verbose "Removed file $Result"
+                } else {
+                  Write-Host "[!] ERROR: Couldn't remove $Result !!"
                 }
               }
             }
+            if (Get-Item $Path) {
+              if (Get-YesNo "Delete registry item $Path ?") {
+                Remove-RegistryItem $Path
+              }
+              # $QIDsOffice2007 = 1 # Not doing this, need to check for each EXE
+            } else {
+              Write-Verbose "Looks like registry key $Path was already removed."
+            }
           }
-
+        }
+      }
+      91850 {
+        if (Get-YesNo "$_ Remove Microsoft Office app Remote Code Execution (RCE) Vulnerability 18.1903.1152.0" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "Office" -Version "18.1903.1152.0" 
+        }
+      }
+      91847 { 
+        if (Get-YesNo "$_ Remove Microsoft.HEIFImageExtension Version 1.0.42352.0" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "HEIF" -Version "1.0.42352.0" 
+        }
+      }
+      91914 { 
+        if (Get-YesNo "$_ Remove Microsoft.Windows.Photos Version 2021.21090.10007.0" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "Microsoft.Windows.Photos" -Version "2021.21090.10007.0" 
+        }
+      }
+      91914 { 
+        if (Get-YesNo "$_ Remove Microsoft.VP9VideoExtensions Version 1.0.41182.0" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "Microsoft.VP9VideoExtensions" -Version "1.0.41182.0" 
+        }
+      }
+      378131 {
+        if (Get-YesNo "$_ Microsoft Windows Snipping Tool Information Disclosure Vulnerability" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "Microsoft.ScreenSketch" -Version "10.2008.2277.0"
         }
       }
       371476 {
