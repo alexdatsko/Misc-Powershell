@@ -65,9 +65,9 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.62"
-     # New in this version:  Added Many more windows store app vulns
-$VersionInfo = "v$($Version) - Last modified: 06/15/23"
+$Version = "0.35.63"
+     # New in this version:  Make -Automated persist thru script updates
+$VersionInfo = "v$($Version) - Last modified: 06/16/23"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -250,6 +250,16 @@ function Update-ScriptFile {   # Need a copy of this, to re-run main script
   }  
 }
 
+function Get-Vars {
+  $vars = ""
+  if ($Automated) { $vars += " -Automated" }
+  if ($Verbose) { $vars += " -Verbose" }
+  if ($CSVFile) { $vars += " -CSVFile $CSVFile" }
+  if ($Help) { $vars += " -Help" }
+  Write-Verbose "Get-Vars: Vars = '$Vars'"
+  return $vars
+}
+
 Function Update-Script {
   # For 0.32 I am assuming $pwd is going to be the correct path
   Write-Output "[.] Checking for updated version of script on github.. Current Version = $($Version)"
@@ -257,7 +267,9 @@ Function Update-Script {
   if (Update-ScriptFile -URL $url -FilenameTmp "$($tmp)\Install-SecurityFixes.ps1" -FilenamePerm "$($pwd)\Install-SecurityFixes.ps1" -VersionStr '$Version = *' -VersionToCheck $Version) {
     Write-Host "[+] Update found, re-running script .."
     Stop-Transcript
-    . "$($pwd)\Install-SecurityFixes.ps1"   # Dot source and run from here once, then exit.
+    $Vars = Get-Vars
+    Write-Verbose "Re-running script with Vars: '$Vars'"
+    . "$($pwd)\Install-SecurityFixes.ps1" $Vars  # Dot source and run from here once, then exit.
     Stop-Transcript
     exit
   } else {
@@ -2298,7 +2310,7 @@ foreach ($QID in $QIDs) {
           Write-Host "[.] Running installer: $($tmp)\msxml.exe .."
           cmd /c "$($tmp)\msxml.exe /quiet /qn /norestart /log $($tmp)\msxml.log"
         }
-        $MSXmlParser4 = 1
+        $QIDsMSXMLParser4 = 1
       }
       91848 {
         if (Get-YesNo "$_ Install Store Installer app update to 1.16.13405.0 ? " -Results $Results) { 
