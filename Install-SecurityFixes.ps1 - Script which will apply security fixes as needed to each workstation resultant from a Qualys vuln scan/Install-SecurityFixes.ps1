@@ -65,8 +65,8 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.64"
-     # New in this version:  Added YesNo option 'a' to enable automation for further questions, also '?' option legend
+$Version = "0.35.65"
+     # New in this version:  Added YesNo option 'a' and fixes
 $VersionInfo = "v$($Version) - Last modified: 06/23/23"
 
 # Self-elevate the script if required
@@ -111,7 +111,7 @@ function Get-YesNo {
       $yesno = Read-Host  "`n[?] $text [y/N/a/s/?] "
       if ($yesno.ToUpper()[0] -eq 'Y') { return $true } 
       if ($yesno.ToUpper()[0] -eq 'N' -or $yesno -eq '') { return $false } 
-      if ($yesno.ToUpper()[0] -eq 'A') { $global:Automated = $true; Write-Host "[!] Enabling Automated mode! Ctrl-C to exit"; return $true } 
+      if ($yesno.ToUpper()[0] -eq 'A') { $script:Automated = $true; Write-Host "[!] Enabling Automated mode! Ctrl-C to exit"; return $true } 
       if ($yesno.ToUpper()[0] -eq '?') { Print-YesNoHelp } 
       if ($yesno.ToUpper()[0] -eq 'S') { 
           Write-Host "[i] Results: " -ForegroundColor Yellow
@@ -1326,6 +1326,9 @@ foreach ($QID in $QIDs) {
     $ThisQID = $QID
     $ThisTitle = (($Rows | Where-Object { $_.QID -eq $ThisQID }) | Select-Object -First 1)."Vulnerability Description"
     $Results = (($Rows | Where-Object { $_.QID -eq $ThisQID }) | Select-Object -First 1)."Results"
+    If ($Automated) {
+      Write-Verbose "[Running in Automated mode]"
+    }
     switch ([int]$QID)
     {
       376023 { 
