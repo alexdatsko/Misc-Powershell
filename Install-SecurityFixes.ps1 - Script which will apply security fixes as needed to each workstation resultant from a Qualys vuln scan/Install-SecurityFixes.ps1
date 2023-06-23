@@ -111,7 +111,7 @@ function Get-YesNo {
       $yesno = Read-Host  "`n[?] $text [y/N/a/s/?] "
       if ($yesno.ToUpper()[0] -eq 'Y') { return $true } 
       if ($yesno.ToUpper()[0] -eq 'N' -or $yesno -eq '') { return $false } 
-      if ($yesno.ToUpper()[0] -eq 'A') { $Automated = $true; Write-Host "[!] Enabling Automated mode! Ctrl-C to exit"; return $true } 
+      if ($yesno.ToUpper()[0] -eq 'A') { $global:Automated = $true; Write-Host "[!] Enabling Automated mode! Ctrl-C to exit"; return $true } 
       if ($yesno.ToUpper()[0] -eq '?') { Print-YesNoHelp } 
       if ($yesno.ToUpper()[0] -eq 'S') { 
           Write-Host "[i] Results: " -ForegroundColor Yellow
