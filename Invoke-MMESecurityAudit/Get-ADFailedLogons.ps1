@@ -55,16 +55,6 @@ function Write-EventArray {
       $ip = ($xmlitem.Event.EventData.Data | where-object {$_.Name -eq "IpAddress"}).'#text'     
       Write-Verbose $($xmlitem.Event.EventData.Data | Out-String)
       Write-Verbose "$datetime,$eventid_found,$computer,$subjectusername,$tarusername,$logontype,$ip"
-      $csvObject = New-Object -TypeName PSObject -Property @{
-        DateTime = $datetime
-        EventID = $eventid_found
-        Computer = $computer
-        SubjectUserName = $subjectusername
-        TarUserName = $tarusername
-        LogonType = $logontype
-        IP = $ip
-      }
-      #$csvObject | Export-Csv -Path $filename -Append -NoTypeInformation -Force
       """$datetime"",""$eventid_found"",""$computer"",""$subjectusername"",""$tarusername"",""$logontype"",""$ip""" | out-file $filename -Append
       $items+=1
     }

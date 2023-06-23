@@ -65,9 +65,9 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.63"
-     # New in this version:  Make -Automated persist thru script updates
-$VersionInfo = "v$($Version) - Last modified: 06/16/23"
+$Version = "0.35.64"
+     # New in this version:  Added YesNo option 'a' to enable automation for further questions, also '?' option legend
+$VersionInfo = "v$($Version) - Last modified: 06/23/23"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -92,6 +92,15 @@ if ($Automated) {
 
 ####################################################### FUNCTIONS #######################################################
 
+function Print-YesNoHelp {
+  Write-Host "[?] Legend: (Not case sensitive)"
+  Write-Host "  Y = Yes"
+  Write-Host "  N = No"
+  Write-Host "  A = Automated mode, assumes yes to this and every other question"
+  Write-Host "  ? = (Print this list)"
+  Write-Host "  S = Show Results from CSV"
+}
+
 function Get-YesNo {
   param ([string] $text,
          [string] $results)
@@ -99,9 +108,11 @@ function Get-YesNo {
   $done = 0
   if (!($Automated)) { 
     while ($done -eq 0) {
-      $yesno = Read-Host  "`n[?] $text [y/N/s] "
+      $yesno = Read-Host  "`n[?] $text [y/N/a/s/?] "
       if ($yesno.ToUpper()[0] -eq 'Y') { return $true } 
       if ($yesno.ToUpper()[0] -eq 'N' -or $yesno -eq '') { return $false } 
+      if ($yesno.ToUpper()[0] -eq 'A') { $Automated = $true; Write-Host "[!] Enabling Automated mode! Ctrl-C to exit"; return $true } 
+      if ($yesno.ToUpper()[0] -eq '?') { Print-YesNoHelp } 
       if ($yesno.ToUpper()[0] -eq 'S') { 
           Write-Host "[i] Results: " -ForegroundColor Yellow
           foreach ($result in $Results) {
@@ -1428,8 +1439,10 @@ foreach ($QID in $QIDs) {
             }
             Set-ItemProperty $path -Name NoDriveTypeAutorun -Type DWord -Value 0xFF
             Set-ItemProperty $path -Name NoAutorun -Type DWord -Value 0x1
-            New-Item $path2 -Name NoDriveTypeAutorun -Type DWord -Value 0xFF
-            New-Item $path2 -Name NoAutorun -Type DWord -Value 0x1
+            try {
+              $null = New-Item $path2 -Name NoDriveTypeAutorun -Type DWord -Value 0xFF -ErrorAction SilentlyContinue
+              $null = New-Item $path2 -Name NoAutorun -Type DWord -Value 0x1 -ErrorAction SilentlyContinue
+            } catch {} # Don't care if these fail, if they already exist..
             Set-ItemProperty $path2 -Name NoDriveTypeAutorun -Type DWord -Value 0xFF
             Set-ItemProperty $path2 -Name NoAutorun -Type DWord -Value 0x1
         }
