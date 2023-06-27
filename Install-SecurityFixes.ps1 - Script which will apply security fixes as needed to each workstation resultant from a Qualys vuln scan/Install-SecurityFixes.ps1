@@ -65,8 +65,8 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.66"
-     # New in this version:  Added QIDs 91974,91975 - Microsoft 3D Builder Remote Code Execution (RCE) Vulnerability 
+$Version = "0.35.67"
+     # New in this version:  Get-Delimiter broken again, new field name.. ugh
 $VersionInfo = "v$($Version) - Last modified: 06/27/23"
 
 # Self-elevate the script if required
@@ -954,14 +954,20 @@ function Find-Delimiter {
   $comma = $line -like "*Account Name,Associated Malware*"
   $semicolon = $line -like "*Account Name;Associated Malware*"
   $tabbed = $line -like "*Account Name`tAssociated Malware*"
-  $space = $line -like "*Account Name Associated Malware*"
+  #$space = $line -like "*Account Name Associated Malware*" # this would break everything
   $pipe = $line -like "*Account Name|Associated Malware*"
+  
+  # update 6/27/23 for new field..
+  $comma = $line -like "*Account Name,Asset Inventory*"
+  $semicolon = $line -like "*Account Name;Asset Inventory*"
+  $tabbed = $line -like "*Account Name`tAsset Inventory*"
+  $pipe = $line -like "*Account Name|Asset Inventory*"
 
   switch($True) {
     $comma     { return ","}
     $semicolon { return ";"}
     $tabbed    { return "`t"}
-    $space     { return " "}
+    #$space     { return " "}  # this would break everything
     $pipe      { return "|"}
     Default    { Write-Error "[!] Cannot determine delimiter!" }
   }  
