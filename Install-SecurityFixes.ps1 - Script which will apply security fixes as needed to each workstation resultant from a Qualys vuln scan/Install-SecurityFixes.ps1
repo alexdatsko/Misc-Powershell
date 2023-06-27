@@ -65,9 +65,9 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.65"
-     # New in this version:  Added YesNo option 'a' and fixes
-$VersionInfo = "v$($Version) - Last modified: 06/23/23"
+$Version = "0.35.66"
+     # New in this version:  Added QIDs 91974,91975 - Microsoft 3D Builder Remote Code Execution (RCE) Vulnerability 
+$VersionInfo = "v$($Version) - Last modified: 06/27/23"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -2168,12 +2168,23 @@ foreach ($QID in $QIDs) {
           Remove-SpecificAppXPackage -Name "MPEG2VideoExtension" -Version "1.0.22661.0" 
         }
       } 
-
       378131 {
         if (Get-YesNo "$_ Microsoft Windows Snipping Tool Information Disclosure Vulnerability" -Results $Results) {
           Remove-SpecificAppXPackage -Name "Microsoft.ScreenSketch" -Version "10.2008.2277.0"
         }
       }
+      91974 {
+        if (Get-YesNo "$_ Microsoft 3D Builder Remote Code Execution (RCE) Vulnerability for January 2023" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "Microsoft.3DBuilder" -Version "18.0.1931.0"
+        }
+      }
+      91975 {
+        if (Get-YesNo "$_ Microsoft 3D Builder Remote Code Execution (RCE) Vulnerability for February 2023" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "Microsoft.3DBuilder" -Version "18.0.1931.0"
+        }
+      }
+      
+
       371476 {
         Write-Host "[.] Checking for product: 'Intel PROset*' " -ForegroundColor Yellow
         $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Intel PROset*'})
