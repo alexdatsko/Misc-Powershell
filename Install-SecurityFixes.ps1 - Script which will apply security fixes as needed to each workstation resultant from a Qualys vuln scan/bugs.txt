@@ -1,1 +1,10 @@
 -Automated doesn't resume when re-running new downloaded script
+
+[0] Gluck Orthodontics_Internal_2023-05-15.csv
+[1] Gluck Orthodontics_Internal_2023-06-15.csv
+[+] AUTOMATED: Using 0 - Gluck Orthodontics_Internal_2023-05-15.csv Gluck Orthodontics_Internal_2023-06-15.csv
+Get-Content : Cannot find path 'C:\temp\secaud\Gluck Orthodontics_Internal_2023-05-15.csv Gluck Orthodontics_Internal_2023-06-15.csv' because it does not
+exist.
+At C:\temp\secaud\Install-SecurityFixes.ps1:953 char:11
+
+?? Ask to remove last months CSV?

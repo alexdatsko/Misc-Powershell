@@ -65,9 +65,9 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.35.68"
-     # New in this version:  Get-Delimiter- Refactored, much better
-$VersionInfo = "v$($Version) - Last modified: 06/27/23"
+$Version = "0.36.0"
+     # New in this version:  Added reg key check for the DellPowershellModule, also fixed Dell db_util2.sys bug
+$VersionInfo = "v$($Version) - Last modified: 06/30/23"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -111,7 +111,7 @@ function Get-YesNo {
       $yesno = Read-Host  "`n[?] $text [y/N/a/s/?] "
       if ($yesno.ToUpper()[0] -eq 'Y') { return $true } 
       if ($yesno.ToUpper()[0] -eq 'N' -or $yesno -eq '') { return $false } 
-      if ($yesno.ToUpper()[0] -eq 'A') { $script:Automated = $true; Write-Host "[!] Enabling Automated mode! Ctrl-C to exit"; return $true } 
+      if ($yesno.ToUpper()[0] -eq 'A') { $script:Automated = $true; $global:Automated = $true; Write-Host "[!] Enabling Automated mode! Ctrl-C to exit"; return $true } 
       if ($yesno.ToUpper()[0] -eq '?') { Print-YesNoHelp } 
       if ($yesno.ToUpper()[0] -eq 'S') { 
           Write-Host "[i] Results: " -ForegroundColor Yellow
@@ -133,6 +133,42 @@ function Get-YesNo {
 # skip to # MAIN # 
 
 ################################################# SCRIPT FUNCTIONS ###############################################
+
+function Set-RegistryEntry {
+  param(
+      [string]$Path = "HKLM:\Software\MME Consulting Inc\Install-SecurityFixes",
+      [string]$Name,
+      [int]$Value = 1
+  )
+
+  # Check if the path exists
+  if (-Not(Test-Path -Path $Path)) {
+      # If the path does not exist, create it
+      New-Item -Path $Path -Force | Out-Null
+  }
+
+  # Create or set the value of the registry entry
+  Set-ItemProperty -Path $Path -Name $Name -Value $Value
+}
+
+function Get-RegistryEntry {
+  param(
+      [string]$Path = "HKLM:\Software\MME Consulting Inc\Install-SecurityFixes",
+      [string]$Name
+  )
+
+  # Check if the path exists
+  if (Test-Path -Path $Path) {
+      # If the path exists, check if the property exists
+      if ((Get-ItemProperty -Path $Path).PSObject.Properties.Name -contains $Name) {
+          # If the property exists, return its value
+          return (Get-ItemProperty -Path $Path).$Name
+      }
+  }
+
+  # If the path or the property do not exist, return 0
+  return 0
+}
 
 function Read-QIDLists {    # NOT USING, THIS IS NOT 
   # READ IN VALUES FROM QIDsList 
@@ -331,42 +367,43 @@ Function Get-OSType {  # 1=Workstation, 2=DC, 3=Server
 Function Install-DellBiosProvider {
   # install the DellBIOSProvider powershell module if set in the config
   if ($InstallDellBIOSProvider) {
-    #if ((Get-ComputerInfo).OsProductType -eq "WorkStation") {   # Not backwards compatible with Windows 8.1 etc
-    if ([int](Get-OSType) -lt 2) {   # 1=Ws, 2=DC, 3=Server
-      if (!(Get-InstalledModule -Name DellBIOSProvider -ErrorAction SilentlyContinue)) {
-        Write-Host "[.] Trying to install the NuGet package provider.. [this may take a minute..]" 
-        try { $null = Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force } catch { Write-Host "[!] Couldn't install NuGet provider!" ; return $false}
-        Write-Host "[.] Trying to install the Dell BIOS provider module.. [this may take a minute..]" 
-        try { Install-Module DellBIOSProvider -Force } catch { 
-          Write-Host "[!] Couldn't install DellBIOSProvder! "
-          $vcredistUrl = "https://www.microsoft.com/en-us/download/confirmation.aspx?id=30679&6B49FDFB-8E5B-4B07-BC31-15695C5A2143=1"
-          Write-Host "[.] Trying to install VC 2012 U4 package, but it may require a reboot after. Downloading from: $vcredistUrl"
-          try { 
-            Invoke-WebRequest $vcredistUrl -outfile "$env:temp\SecAud\vc2012redist_x64.exe" 
-          } catch { 
-            Write-Host "[!] Failed to download $vcredistUrl !!" -ForegroundColor Red
-          }
-          if (Test-Path "$env:temp\SecAud\vc2012redist_x64.exe") {
-            Write-Host "[.] Trying to install VC 2012 U4 package, but it may require a reboot after."
+    if (Get-RegistryEntry "DellProviderModule" -eq "0") {
+      if ([int](Get-OSType) -lt 2) {   # 1=Ws, 2=DC, 3=Server
+        if (!(Get-InstalledModule -Name DellBIOSProvider -ErrorAction SilentlyContinue)) {
+          Write-Host "[.] Trying to install the NuGet package provider.. [this may take a minute..]" 
+          try { $null = Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force } catch { Write-Host "[!] Couldn't install NuGet provider!" ; return $false}
+          Write-Host "[.] Trying to install the Dell BIOS provider module.. [this may take a minute..]" 
+          try { Install-Module DellBIOSProvider -Force } catch { 
+            Write-Host "[!] Couldn't install DellBIOSProvder! "
+            $vcredistUrl = "https://www.microsoft.com/en-us/download/confirmation.aspx?id=30679&6B49FDFB-8E5B-4B07-BC31-15695C5A2143=1"
+            Write-Host "[.] Trying to install VC 2012 U4 package, but it may require a reboot after. Downloading from: $vcredistUrl"
             try { 
-              . "$env:temp\SecAud\vc2012redist_x64.exe" "/q" 
-              Write-Host "[+] Looks to have succeeded. The workstation will need a reboot for this to apply properly and the DellBIOSProvider module to work properly." -ForegroundColor Green
-            } catch {
-              Write-Host "[!] Couldn't install VC 2012 U4 package!" -ForegroundColor Red
+              Invoke-WebRequest $vcredistUrl -outfile "$env:temp\SecAud\vc2012redist_x64.exe" 
+            } catch { 
+              Write-Host "[!] Failed to download $vcredistUrl !!" -ForegroundColor Red
+            }
+            if (Test-Path "$env:temp\SecAud\vc2012redist_x64.exe") {
+              Write-Host "[.] Trying to install VC 2012 U4 package, but it may require a reboot after."
+              try { 
+                . "$env:temp\SecAud\vc2012redist_x64.exe" "/q" 
+                Write-Host "[+] Looks to have succeeded. The workstation will need a reboot for this to apply properly and the DellBIOSProvider module to work properly." -ForegroundColor Green
+              } catch {
+                Write-Host "[!] Couldn't install VC 2012 U4 package!" -ForegroundColor Red
+                return $false 
+              }
               return $false 
             }
-            return $false 
           }
+          Write-Host "[+] Done!" -ForegroundColor Green
+          return $true
+        } else {
+          Write-Host "[.] DellBIOSProvider already installed." 
+          return $true
         }
-        Write-Host "[+] Done!" -ForegroundColor Green
-        return $true
       } else {
-        Write-Host "[.] DellBIOSProvider already installed." 
-        return $true
+        Write-Verbose "[.] Non-Workstation OS found, ignoring DellBiosProvider module install"
+        return $false
       }
-    } else {
-      Write-Verbose "[.] Non-Workstation OS found, ignoring DellBiosProvider module install"
-      return $false
     }
   }
 }
@@ -395,6 +432,7 @@ Function Set-DellBiosProviderDefaults {
             Write-Host "[+] Found WakeonLAN=Enabled already"
           }
           Write-Host "[+] Done w/ Dell SMBios settings." -ForegroundColor Green
+          Set-RegistryEntry "DellProviderModule" -Value 1 # Set this so we only try it once!
         } else {
           Write-Host "[-] Dell SMBios issue running 'Import-Module DellBiosProvider' - can't set WakeOnLan etc." -ForegroundColor Red
         }
@@ -1277,6 +1315,7 @@ $Rows | ForEach-Object {
     $QIDs += $ThisQID
     $QIDsVerbose += "[QID$($ThisQID) - [$($_.Title)]"
     $Results=($_.Results)
+    $VulnDesc=($_."Vulnerability Description")
     # ----------------- GRAB OTHER IMPORTANT INFO FROM THIS ROW IF NEEDED! ------------------
     switch ([int]$ThisQID) {
       372294 {
@@ -1398,7 +1437,14 @@ foreach ($QID in $QIDs) {
       }
       375589 {  
         if (Get-YesNo "$_ - Delete Dell DbUtil_2_3.sys ? " -Results $Results) {
-            cmd /c 'del c:\users\dbutil_2_3*.sys /s /f /q'
+          # %windir%\Temp\dbutil_2_3.sys   found#
+          $Filename = ($Results -split " found")[0].trim().replace("%windir%","$env:windir")
+          try {
+            Remove-Item $Filename -Force
+            Write-Host "[+] Removed $Filename" -ForegroundColor Green
+          } catch {
+            Write-Host "[!] Couldn't remove $Filename ! Manual intervention required.." -ForegroundColor Red
+          }
         }
       }
       100413 {
@@ -1619,12 +1665,62 @@ foreach ($QID in $QIDs) {
         } else { $QIDsAppleiTunes = 1 } # Do not ask again
       }
       { $QIDsChrome -contains $_ } {
-        if (Get-YesNo "$_ Install newest Google Chrome? " -Results $Results) { 
-            #  Google Chrome - https://ninite.com/chrome/ninite.exe
-            Invoke-WebRequest "https://ninite.com/chrome/ninite.exe" -OutFile "$($tmp)\ninite.exe"
-            cmd /c "$($tmp)\ninite.exe"
-            $QIDsChrome = 1 # All done, remove variable to prevent this from running twice
+        if (Get-YesNo "$_ Check if Google Chrome is up to date? " -Results $Results) { 
+          # Type 1 = Google Chrome Prior to 110.0.5481.177/110.0.5481.178 Multiple Vulnerabilities
+          # Type 2 = Google Chrome Prior to 113.0.5672.63 Multiple Vulnerabilities
+          # Type 3 = Google Chrome Prior to 114.0.5735.106 for Linux and Mac and 114.0.5735.110 for Windows Multiple Vulnerabilities
+          Write-Verbose "VulnDesc: $VulnDesc"
+          if ($VulnDesc -like "*/*") {  # Type 1
+            $VulnDescChromeWinVersion = ((($VulnDesc -split "Prior to") -split "/")[1]).trim()  # Take the first version, which will be oldest..
+          } else {
+            if ($VulnDesc -like "*Linux and Mac*") { # Type 3
+              $VulnDescChromeWinVersion = (((($VulnDesc -split "Prior to") -split "for Windows")[1] -split "Linux and Mac and")[1]).trim()  
+            } else { # Type 2
+              $VulnDescChromeWinVersion = (((($VulnDesc -split "Prior to") -split "/")[1] -split "Multiple Vulnerabilities")[0]).trim()
+            }
+          }
+          # $Results = %ProgramFiles%\Google\Chrome\Application\114.0.5735.91\chrome.dll file version is 114.0.5735.91#
+          # %ProgramFiles(x86)%\Google\Chrome\Application\114.0.5735.91\chrome.dll file version is 114.0.5735.91#
+          $ChromeEXE = (($Results -split "file version")[0]).trim().replace("%ProgramFiles%",(Resolve-Path -Path "$env:ProgramFiles").Path).replace("%ProgramFiles(x86)%",(Resolve-Path -Path "${env:ProgramFiles(x86)}").Path)
+          if (Test-Path $ChromeEXE) {
+            $ChromeEXEVersion = Get-FileVersion $ChromeEXE
+            Write-Verbose "Chrome version found : $ChromeEXE - $ChromeEXEVersion - checking against $VulnDescChromeWinVersion"
+            if ([version]$ChromeEXEVersion -le [version]$VulnDescChromeWinVersion) {
+              Write-Host "[!] Vulnerable version $ChromeEXE found : $ChromeEXEVersion <= $VulnDescChromeWinVersion - Opening.."
+  <#
+              Invoke-WebRequest "https://ninite.com/chrome/ninite.exe" -OutFile "$($tmp)\ninite.exe"
+              cmd /c "$($tmp)\ninite.exe"  # Will wait for you to hit done, not automation friendly
+  #>
+              & $ChromeEXE  # This is not automation friendly either..
+            } else {
+              Write-Host "[+] Chrome Version found : $ChromeEXEVersion > $VulnDescChromeWinVersion - already patched!" -ForegroundColor Green
+            }
+          } else {
+            Write-Host "[!] Chrome EXE no longer found: $ChromeEXE - likely its already been updated."
+          }
+          $QIDsChrome = 1 # All done, remove variable to prevent this from running twice
         } else { $QIDsChrome = 1 }
+      }
+      { $QIDsEdge -contains $_ } {
+        if (Get-YesNo "$_ Check if Microsoft Edge is up to date? " -Results $Results) { 
+          # Microsoft Edge Based on Chromium Prior to 114.0.1823.37 Multiple Vulnerabilities
+          Write-Verbose "VulnDesc: $VulnDesc"
+          $EdgeEXE = (($Results -split "file version")[0]).trim().replace("%ProgramFiles%",(Resolve-Path -Path "$env:ProgramFiles").Path).replace("%ProgramFiles(x86)%",(Resolve-Path -Path "${env:ProgramFiles(x86)}").Path)
+          if (Test-Path $EdgeEXE) {
+            $VulnDescEdgeWinVersion = (((($VulnDesc -split "Prior to") -split "for Windows")[1]) -split " Multiple")[0].trim()
+            $EdgeEXEVersion = Get-FileVersion $EdgeEXE
+            Write-Verbose "Edge version found : $EdgeEXE - $EdgeEXEVersion - checking against $VulnDescEdgeWinVersion"
+            if ($EdgeEXEVersion -le 16.0.16227.20258) {
+              Write-Host "[!] Vulnerable version $EdgeEXE found : $EdgeEXEVersion <= $VulnDescEdgeWinVersion - Opening.."
+              & $EdgeEXE # This is not automation friendly..
+            } else {
+              Write-Host "[+] Edge Version found : $EdgeEXEVersion > $VulnDescEdgeWinVersion - already patched!" -ForegroundColor Green
+            }
+          } else {
+            Write-Host "[!] Edge EXE no longer found: $EdgeEXE - likely its already been updated."
+          }
+          $QIDsEdge = 1
+        } else { $QIDsEdge = 1 }
       }
       { $QIDsFirefox -contains $_ } {
         if (Get-YesNo "$_ Install newest Firefox? " -Results $Results) { 
@@ -1637,7 +1733,7 @@ foreach ($QID in $QIDs) {
             }          
             $QIDsFirefox = 1
         } else { $QIDsFirefox = 1 }
-      }
+      }      
       { $QIDsZoom -contains $_ } {
         if (Get-YesNo "$_ Install newest Zoom Client? " -Results $Results) { 
             #  Zoom client - https://ninite.com/zoom/ninite.exe
@@ -2010,7 +2106,6 @@ foreach ($QID in $QIDs) {
         $ResultsEXEVersion = Get-FileVersion $ResultsEXE
         if ($ResultsEXEVersion -le 16.0.16227.20258) {
           Write-Host "[!] Vulnerable version $ResultsEXE found : $ResultsEXEVersion <= 16.0.16227.20258"
-
         }
       }
       $QIDsOffice2007 {
