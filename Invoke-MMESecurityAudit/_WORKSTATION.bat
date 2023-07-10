@@ -4,10 +4,10 @@ set servername=server
 :::::::::::::::::::::::::::::::::::::
 c:
 cd \
-net user Administrator CradleSharpSkill22 /add /y /expires:never  
-net user Administrator CradleSharpSkill22 /y /expires:never /active:yes
-net user MME KenoGapDisco22 /add /y /expires:never /fullname:"MME Consulting, Inc." /comment:"MME's Alternate Admin Login"
-net user MME KenoGapDisco22 /y /expires:never /active:yes /fullname:"MME Consulting, Inc." /comment:"MME's Alternate Admin Login"
+net user Administrator DenyNervousBurning22 /add /y /expires:never  
+net user Administrator DenyNervousBurning22 /y /expires:never /active:yes
+net user MME BelgiumTurnerPayroll22 /add /y /expires:never /fullname:"MME Consulting, Inc." /comment:"MME's Alternate Admin Login"
+net user MME BelgiumTurnerPayroll22 /y /expires:never /active:yes /fullname:"MME Consulting, Inc." /comment:"MME's Alternate Admin Login"
 net localgroup administrators MME /add
 cls
 echo.
