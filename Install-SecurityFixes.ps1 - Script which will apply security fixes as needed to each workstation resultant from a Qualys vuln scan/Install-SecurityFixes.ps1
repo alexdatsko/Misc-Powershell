@@ -65,9 +65,9 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.36.0"
-     # New in this version:  Added reg key check for the DellPowershellModule, also fixed Dell db_util2.sys bug
-$VersionInfo = "v$($Version) - Last modified: 06/30/23"
+$Version = "0.36.1"
+     # New in this version:  Updated script logic a little
+$VersionInfo = "v$($Version) - Last modified: 07/10/23"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -170,7 +170,7 @@ function Get-RegistryEntry {
   return 0
 }
 
-function Read-QIDLists {    # NOT USING, THIS IS NOT 
+function Read-QIDLists {    # NOT USING!!!!
   # READ IN VALUES FROM QIDsList 
   if ($QIDsListFile -like "*.ps1") {
     if (Test-Path $QIDsListFile) {
