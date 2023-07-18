@@ -65,8 +65,8 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.36.4"
-     # New in this version:  Updated all QIDs for MS Store versions- pull the $Appxversion from $Results
+$Version = "0.36.5"
+     # New in this version:  Updated all QIDs for MS Store versions- pull the $Appxversion from $Results, (quick fix for 91689)
 $VersionInfo = "v$($Version) - Last modified: 07/18/23"
 
 # Self-elevate the script if required
@@ -2176,10 +2176,10 @@ foreach ($QID in $QIDs) {
       }
       91869 { 
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
-        if (Get-YesNo "$_ Remove Microsoft Windows Codecs Library Remote Code Execution (RCE) (VP9VideoExtensions) Vulnerability for March 2022" -Results $Results) {
-          #Microsoft vulnerable Microsoft.VP9VideoExtensions detected  Version     '1.0.41182.0'  
+        if (Get-YesNo "$_ Remove Microsoft Windows Codecs Library Remote Code Execution (RCE) Vulnerability for March 2022" -Results $Results) {
+          #Microsoft vulnerable Microsoft.VP9VideoExtensions detected  Version     '1.0.41182.0'  !!!! wrong appx..
           #Microsoft vulnerable Microsoft.HEIFImageExtension detected  Version     '1.0.42352.0'#
-          Remove-SpecificAppXPackage -Name "VP9VideoExtensions" -Version $AppxVersion # "1.0.41182.0" 
+          Remove-SpecificAppXPackage -Name "HEIFImageExtension" -Version $AppxVersion # "1.0.41182.0" 
         }
       }
       91847 { 
