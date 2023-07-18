@@ -65,9 +65,9 @@ try {
 # ----------- Script specific vars:  ---------------
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.36.1"
-     # New in this version:  Updated script logic a little
-$VersionInfo = "v$($Version) - Last modified: 07/10/23"
+$Version = "0.36.3"
+     # New in this version:  Updated 91850 as I found the new Office app version is '18.2008.12711.0' instead of '18.1903.1152.0' which I've seen previously.. 2nd variant.
+$VersionInfo = "v$($Version) - Last modified: 07/18/23"
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -999,6 +999,7 @@ function Remove-SpecificAppXPackage {
 
   $i = 0
   $RemovedApp=$false
+  Write-Verbose "[Remove-SpecificAppXPackage] : begin"
   $AllResults = (Get-AppXPackage "*$($Name)*" -AllUsers)
   Write-Host "[.] Checking if $Name store app is installed"
   if ($AllResults.Count -gt 0) {
@@ -2154,8 +2155,10 @@ foreach ($QID in $QIDs) {
         }
       }
       91850 {
-        if (Get-YesNo "$_ Remove Microsoft Office app Remote Code Execution (RCE) Vulnerability 18.1903.1152.0" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "Office" -Version "18.1903.1152.0" 
+        # $Results = "Microsoft vulnerable Office app detected  Version     '18.2008.12711.0'#""
+        $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
+        if (Get-YesNo "$_ Remove Microsoft Office app Remote Code Execution (RCE) Vulnerability $AppxVersion" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "Office" -Version $AppxVersion
         }
       }
       91866 { 
