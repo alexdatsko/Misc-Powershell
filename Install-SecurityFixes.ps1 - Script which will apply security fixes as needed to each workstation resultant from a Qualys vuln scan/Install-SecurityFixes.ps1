@@ -11,7 +11,7 @@ $AllHelp = "########################################################
 
 <#
 .SYNOPSIS
-    This script installs security fixes for some Qualys scan items.
+    This script installs security fixes for some Qualys scan items, and offers to apply the fixes.
 .DESCRIPTION
     This script takes an output of a Qualys scan in a CSV file, determines if the hostname is present in the file, and applies fixes as needed.
 .PARAMETER Help
@@ -64,10 +64,14 @@ try {
 
 # ----------- Script specific vars:  ---------------
 
+#### VERSION ###################################################
+
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.36.5"
-     # New in this version:  Updated all QIDs for MS Store versions- pull the $Appxversion from $Results, (quick fix for 91689)
-$VersionInfo = "v$($Version) - Last modified: 07/18/23"
+$Version = "0.36.8"
+     # New in this version:  Added QID 92038 - Microsoft Office and Windows HTML Remote Code Execution Vulnerability (Zero Day) for July 2023
+$VersionInfo = "v$($Version) - Last modified: 07/26/23"
+
+#### VERSION ###################################################
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -554,10 +558,10 @@ function Find-LocalCSVFile {
     [array]$Filenames = Get-ChildItem "$($Location)\*.csv" | ForEach-Object { $_.Name }
     if ($Filenames.Length -lt 1) {  # If no files found in $Location, check $OldPwd
       Write-Verbose "Checking for CSV in Location: $OldPwd"
-      [array]$Filenames = Get-ChildItem "$($OldPwd)\*.csv" | ForEach-Object { $_.Name }
+      [array]$Filenames = Get-ChildItem "$($OldPwd)\*Internal*.csv" | ForEach-Object { $_.Name }  # Find only internal scans
     } 
     if (!(Is-Array $Filenames)) {  # If no files found still, error out!
-      Write-Host "[!] Error, can't seem to find any CSV files.."
+      Write-Host "[!] Error, can't seem to find any CSV files (or none with 'Internal' in the filename).."
       Exit
     }
     Write-Verbose "Filenames:"
@@ -576,7 +580,7 @@ function Find-ServerCSVFile {
   if (!($null -eq $Location)) { $Location = "data\secaud" }  # Default to \\$servername\data\secaud if can't read from config..
   if (Test-Path "\\$($ServerName)\$($Location)") {
     $CSVFilename=(Get-ChildItem "\\$($ServerName)\$($Location)" -Filter "*.csv" | Sort-Object LastWriteTime | Select-Object -last 1).FullName
-    Write-Host "[i] Found file: $CSVFileName" -ForegroundColor Blue
+    Write-Host "[i] Found most recent CSV file: $CSVFileName" -ForegroundColor Blue
     return $CSVFilename 
   } else {
     Write-Verbose "Can't access \\$($servername)\$($Location) .."
@@ -1000,12 +1004,26 @@ function Remove-SpecificAppXPackage {
   $i = 0
   $RemovedApp=$false
   Write-Verbose "[Remove-SpecificAppXPackage] : begin"
+
+<#
+  Cannot convert value "of Microsoft 3D Builder detected" to type "System.Version". Error: "Version string portion was too short or too long."
+At \\dc-server\data\SecAud\Install-SecurityFixes.ps1:1010 char:11
++       if ([System.Version]$AppVersion -le [System.Version]$Version) {
++           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidArgument: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvalidCastParseTargetInvocation
+#>
+
+  $VersionResults = ($Results).replace("of ","").replace(" detected","")   # TEMPORARY.. WILL ONLY WORK UNTIL AN APPX PACKAGE NAME HAS "OF " IN IT!!!!
+  Write-Verbose "Results: $Results"
+  Write-Verbose "VersionResults: $VersionResults"
   $AllResults = (Get-AppXPackage "*$($Name)*" -AllUsers)
   Write-Host "[.] Checking if $Name store app is installed"
   if ($AllResults.Count -gt 0) {
     Write-Host "[.] Yes. $(($AllResults).Count) results. Checking $Name versions.."
     foreach ($result in $AllResults) {
-      $AppVersion = [System.Version]($Result).Version
+      $AppVersion = [System.Version]($VersionResults).Version
+      Write-Verbose "AppVersion: $AppVersion"
       $AppName = ($Result).PackageFullName
       if ([System.Version]$AppVersion -le [System.Version]$Version) {
         Write-Host "[!] $($i): Vulnerable version of store app found : $AppName - $AppVersion <= $Version"  -ForegroundColor Red
@@ -1047,6 +1065,58 @@ function Remove-SpecificAppXPackage {
     }
   }
 }
+
+# Test's if the script is running in an elevated fashion (required for HKLM edits)
+function Test-IsElevated {
+    $id = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+    $p = New-Object System.Security.Principal.WindowsPrincipal($id)
+    $p.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+# This is just to make setting regkey's easier (Used for CVE-2023-36884 , QID 92038)
+function Set-RegKey {
+    param (
+        $Path,
+        $Name,
+        $Value,
+        [ValidateSet("DWord", "QWord", "String", "ExpandedString", "Binary", "MultiString", "Unknown")]
+        $PropertyType = "DWord"
+    )
+    if (-not $(Test-Path -Path $Path)) {
+        # Check if path does not exist and create the path
+        New-Item -Path $Path -Force | Out-Null
+    }
+    if ((Get-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue)) {
+        # Update property and print out what it was changed from and changed to
+        $CurrentValue = (Get-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue).$Name
+        try {
+            Set-ItemProperty -Path $Path -Name $Name -Value $Value -Force -Confirm:$false -ErrorAction Stop | Out-Null
+        }
+        catch {
+            Write-Error "[Error] Unable to Set registry key for $Name please see below error!"
+            Write-Error $_
+            exit 1
+        }
+        Write-Host "$Path\$Name changed from $CurrentValue to $($(Get-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue).$Name)"
+    }
+    else {
+        # Create property with value
+        try {
+            New-ItemProperty -Path $Path -Name $Name -Value $Value -PropertyType $PropertyType -Force -Confirm:$false -ErrorAction Stop | Out-Null
+        }
+        catch {
+            Write-Error "[Error] Unable to Set registry key for $Name please see below error!"
+            Write-Error $_
+            exit 1
+        }
+        Write-Host "Set $Path\$Name to $($(Get-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue).$Name)"
+    }
+}
+
+# All the microsoft office products with their corresponding dword value
+$RemediationValues = @{ "Excel" = "Excel.exe"; "Graph" = "Graph.exe"; "Access" = "MSAccess.exe"; "Publisher" = "MsPub.exe"; "PowerPoint" = "PowerPnt.exe"; "OldPowerPoint" = "PowerPoint.exe" ; "Visio" = "Visio.exe"; "Project" = "WinProj.exe"; "Word" = "WinWord.exe"; "Wordpad" = "Wordpad.exe" }
+###
+
 
 ################################################################################################################## MAIN ############################################################################################################
 ################################################################################################################## MAIN ############################################################################################################
@@ -2290,7 +2360,40 @@ foreach ($QID in $QIDs) {
           Remove-SpecificAppXPackage -Name "Microsoft.3DBuilder" -Version $AppxVersion # "18.0.1931.0"
         }
       }
-      
+      92038 {
+        if (Get-YesNo "$_ Microsoft Office and Windows HTML Remote Code Execution Vulnerability (Zero Day) for July 2023" -Results $Results) {
+          $OfficeProducts = "All"   # Lets just add all the keys here..
+          Write-Host "[.] Applying remediation for ALL Office products.."
+          if ($OfficeProducts -notlike "All") {
+              $OfficeProducts = $OfficeProducts.split(',') | ForEach-Object { $_.Trim() }
+              $RemediationTargets = $RemediationValues.GetEnumerator() | ForEach-Object { $_ | Where-Object { $OfficeProducts -match $_.Key } }
+          }
+          else {
+              $RemediationTargets = $RemediationValues.GetEnumerator()
+          }
+          # Path to all the registry keys
+          $Path = "Registry::HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_BLOCK_CROSS_PROTOCOL_FILE_NAVIGATION"
+          # We'll want to display an error if we don't have anything to do
+          if ($RemediationTargets) { 
+              # For Each product we're targeting we'll set the regkey. The Set-RegKey function already checks if it was succesful and will display an error and exit if it fails
+              $RemediationTargets | ForEach-Object { 
+                  Write-Verbose "$($_.Name) was selected for remediation."
+                  if (-not $Undo) {
+                      Set-RegKey -Path $Path -Name $_.Value -Value 1
+                      Write-Verbose "Success!"
+                  }
+              }
+              Write-Host "[!] Completed. A reboot may be required." -Foregroundcolor Green
+          }
+          else {
+              Write-Host $RemediationTargets
+              Write-Warning "No products were selected! The valid value's for -OfficeProducts is listed below you can also use a comma seperated list or simply put 'All'."
+              $RemediationValues | Sort-Object Name | Format-Table | Out-String | Write-Host
+              Write-Error "ERROR: Nothing to do!"
+              exit 1
+          }
+        }
+      }
 
       371476 {
         Write-Host "[.] Checking for product: 'Intel PROset*' " -ForegroundColor Yellow
