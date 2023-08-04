@@ -42,7 +42,7 @@ function Write-EventArray {
     if (!(Test-Path $filename)) {
       Write-Host "Writing to new file $filename .. "
       "SEP=," | Out-File $filename 
-      "datetime,eventid,computer,subjectusername,tarusername,logontype,ip" | Out-File $filename -Append
+      "datetime,eventid,computer,subjectusername,tarusername,tardomname,servicename,ipaddress,logontype,ip" | Out-File $filename -Append
     } else {
       Write-Host "Writing to existing file $filename .. "
     }
@@ -52,11 +52,14 @@ function Write-EventArray {
       $datetime = [DateTime]::Parse($xmlitem.Event.System.TimeCreated.SystemTime).ToLocalTime()
       $subjectusername = ($xmlitem.Event.EventData.Data | where-object {$_.Name -eq "SubjectUserName"}).'#text'
       $tarusername = ($xmlitem.Event.EventData.Data | where-object {$_.Name -eq "TargetUserName"}).'#text'
+      $tardomname = ($xmlitem.Event.EventData.Data | where-object {$_.Name -eq "TargetDomainName"}).'#text'
+      $servicename = ($xmlitem.Event.EventData.Data | where-object {$_.Name -eq "ServiceName"}).'#text'
+      $ipaddress = ($xmlitem.Event.EventData.Data | where-object {$_.Name -eq "IpAddress"}).'#text'
       $logontype = ($xmlitem.Event.EventData.Data | where-object {$_.Name -eq "LogonType"}).'#text'
       $ip = ($xmlitem.Event.EventData.Data | where-object {$_.Name -eq "IpAddress"}).'#text'     
       Write-Verbose $($xmlitem.Event.EventData.Data | Out-String)
-      Write-Verbose "$datetime,$eventid_found,$computer,$subjectusername,$tarusername,$logontype,$ip"
-      """$datetime"",""$eventid_found"",""$computer"",""$subjectusername"",""$tarusername"",""$logontype"",""$ip""" | out-file $filename -Append
+      Write-Verbose "$datetime,$eventid_found,$computer,$subjectusername,$tarusername,$tardomname,$servicename,$ipaddress,$logontype,$ip"
+      """$datetime"",""$eventid_found"",""$computer"",""$subjectusername"",""$tarusername"",""$tardomname"",""$servicename"",""$ipaddress"",""$logontype"",""$ip""" | out-file $filename -Append
       $items+=1
     }
     "$date - Reported on $items items for $eventid" | Tee -Append $logfile

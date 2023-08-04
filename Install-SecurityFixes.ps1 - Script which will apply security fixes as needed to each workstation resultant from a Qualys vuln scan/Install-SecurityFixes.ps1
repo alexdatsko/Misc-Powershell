@@ -67,9 +67,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.36.8"
-     # New in this version:  Added QID 92038 - Microsoft Office and Windows HTML Remote Code Execution Vulnerability (Zero Day) for July 2023
-$VersionInfo = "v$($Version) - Last modified: 07/26/23"
+$Version = "0.36.9"
+     # New in this version:  Added QID 92030 - Microsoft Raw Image Extension and VP9 Video Extension Information Disclosure Vulnerability -  Microsoft.VP9VideoExtensions detected  Version     '1.0.52781.0'#
+$VersionInfo = "v$($Version) - Last modified: 08/02/23"
 
 #### VERSION ###################################################
 
@@ -1387,6 +1387,9 @@ $Rows | ForEach-Object {
     $QIDsVerbose += "[QID$($ThisQID) - [$($_.Title)]"
     $Results=($_.Results)
     $VulnDesc=($_."Vulnerability Description")
+    if ($Results -like "*vulnerable*") {  # lets try this..
+      $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim() 
+    }
     # ----------------- GRAB OTHER IMPORTANT INFO FROM THIS ROW IF NEEDED! ------------------
     switch ([int]$ThisQID) {
       372294 {
@@ -2358,6 +2361,12 @@ foreach ($QID in $QIDs) {
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Microsoft 3D Builder Remote Code Execution (RCE) Vulnerability for February 2023" -Results $Results) {
           Remove-SpecificAppXPackage -Name "Microsoft.3DBuilder" -Version $AppxVersion # "18.0.1931.0"
+        }
+      }
+      92030 { 
+        $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
+        if (Get-YesNo "$_ Microsoft Raw Image Extension and VP9 Video Extension Information Disclosure Vulnerability" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "VP9VideoExtensions" -Version $AppxVersion # "1.0.52781.0"
         }
       }
       92038 {
