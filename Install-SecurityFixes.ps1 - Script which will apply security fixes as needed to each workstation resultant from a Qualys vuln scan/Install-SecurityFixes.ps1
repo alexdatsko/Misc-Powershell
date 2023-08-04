@@ -67,9 +67,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.36.9"
-     # New in this version:  Added QID 92030 - Microsoft Raw Image Extension and VP9 Video Extension Information Disclosure Vulnerability -  Microsoft.VP9VideoExtensions detected  Version     '1.0.52781.0'#
-$VersionInfo = "v$($Version) - Last modified: 08/02/23"
+$Version = "0.37.01"
+     # New in this version:  FIX: QID 91975, 91974  MS Store 3d Builder RCE, parsing $Results .. wasn't being passed to Remove-SpecificAppxVersion, duh..
+$VersionInfo = "v$($Version) - Last modified: 08/04/23"
 
 #### VERSION ###################################################
 
@@ -1005,39 +1005,40 @@ function Remove-SpecificAppXPackage {
   $RemovedApp=$false
   Write-Verbose "[Remove-SpecificAppXPackage] : begin"
 
-<#
-  Cannot convert value "of Microsoft 3D Builder detected" to type "System.Version". Error: "Version string portion was too short or too long."
-At \\dc-server\data\SecAud\Install-SecurityFixes.ps1:1010 char:11
-+       if ([System.Version]$AppVersion -le [System.Version]$Version) {
-+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : InvalidArgument: (:) [], RuntimeException
-    + FullyQualifiedErrorId : InvalidCastParseTargetInvocation
-#>
+# Problem 8-4-23: 2 different versions of $Results, and I need the version for each
+#   Vulnerable version of Microsoft 3D Builder detected  Version     '18.0.1931.0'#
+#   Microsoft vulnerable Microsoft.Microsoft3DViewer detected  Version     '7.2105.4012.0'#
+# Answer: split at ' and remove extra chars..
 
-  $VersionResults = ($Results).replace("of ","").replace(" detected","")   # TEMPORARY.. WILL ONLY WORK UNTIL AN APPX PACKAGE NAME HAS "OF " IN IT!!!!
+  $VersionResults = ($Results -split "'")[1].replace("'","").replace("#","") # I know, I am doing this twice. All of this code should be refactored a bit
   Write-Verbose "Results: $Results"
   Write-Verbose "VersionResults: $VersionResults"
+  Write-Verbose "Grabbing AppXPackage list with : (Get-AppXPackage ""*$($Name)*"" -AllUsers)"
   $AllResults = (Get-AppXPackage "*$($Name)*" -AllUsers)
   Write-Host "[.] Checking if $Name store app is installed"
   if ($AllResults.Count -gt 0) {
     Write-Host "[.] Yes. $(($AllResults).Count) results. Checking $Name versions.."
     foreach ($result in $AllResults) {
-      $AppVersion = [System.Version]($VersionResults).Version
-      Write-Verbose "AppVersion: $AppVersion"
+      $AppVersion = [System.Version]($Result).Version
       $AppName = ($Result).PackageFullName
+      Write-Verbose "AppName: $AppName"
+      Write-Verbose "AppVersion: $AppVersion"
       if ([System.Version]$AppVersion -le [System.Version]$Version) {
-        Write-Host "[!] $($i): Vulnerable version of store app found : $AppName - $AppVersion <= $Version"  -ForegroundColor Red
-        Write-Host "[.] Removing $AppName :" -ForegroundColor Yellow
-        try {
-          $null = (Remove-AppxPackage -Package $AppName -ErrorAction SilentlyContinue)            # Remove
-        } catch { }
-        Write-Host "[.] Removing $AppName -AllUsers :" -ForegroundColor Yellow
-        try {
-          $null = (Remove-AppxPackage -Package $AppName -AllUsers -ErrorAction SilentlyContinue)  # Remove with -AllUsers, this may create an error because a 'user is logged-off'..
-        } catch { }
-        #Remove-AppxProvisionedPackage -Path c:\offline -PackageName MyAppxPkg   # May also need this?
-        $RemovedApp=$AppName
-        $i+=1
+        Write-Host "[!] $($i): Vulnerable version of store app found : $AppName - [$($AppVersion)] <= [$($Version)]"  -ForegroundColor Red
+        if (Get-YesNo "$AppName - $AppVersion <= $Version .  Remove? ") {  # Final check, in case there are issues getting $Version or $VersionResults ..
+          Write-Host "[.] Removing $AppName :" -ForegroundColor Yellow
+          try {
+            $null = (Remove-AppxPackage -Package $AppName -ErrorAction SilentlyContinue)            # Remove
+          } catch { } # Ignore errors..
+          Write-Host "[.] Removing $AppName -AllUsers :" -ForegroundColor Yellow
+          try {
+            $null = (Remove-AppxPackage -Package $AppName -AllUsers -ErrorAction SilentlyContinue)  # Remove with -AllUsers, this may create an error because a 'user is logged-off'.. but shouldn't matter.
+          } catch { } # Ignore errors..
+          $RemovedApp=$AppName
+          $i+=1
+        } else {
+          Write-Host "[!] Skipping."
+        }
       } else {
         Write-Host "[!] $($i): Fixed version of $Name found: $AppName - $AppVersion > $Version. Already patched"  -ForegroundColor Green
         $i+=1
@@ -2231,20 +2232,20 @@ foreach ($QID in $QIDs) {
         # $Results = "Microsoft vulnerable Office app detected  Version     '18.2008.12711.0'#""
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft Office app Remote Code Execution (RCE) Vulnerability $AppxVersion" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "Office" -Version $AppxVersion # "18.2008.12711.0"
+          Remove-SpecificAppXPackage -Name "Office" -Version $AppxVersion -Results $Results # "18.2008.12711.0"
         }
       }
       91866 { 
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft Windows Codecs Library HEVC Video and VP9 Extensions Remote Code Execution (RCE) Vulnerability for February 2022" -Results $Results) {
           Remove-SpecificAppXPackage -Name "HEIFImageExtension" -Version "1.0.42352.0"
-          Remove-SpecificAppXPackage -Name "Microsoft.VP9VideoExtensions" -Version $AppxVersion # "1.0.41182.0" 
+          Remove-SpecificAppXPackage -Name "Microsoft.VP9VideoExtensions" -Version $AppxVersion -Results $Results # "1.0.41182.0" 
         }
       }
       91914 { 
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft.VP9VideoExtensions Version 1.0.41182.0" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "Microsoft.VP9VideoExtensions" -Version $AppxVersion # "1.0.41182.0" 
+          Remove-SpecificAppXPackage -Name "Microsoft.VP9VideoExtensions" -Version $AppxVersion -Results $Results # "1.0.41182.0" 
         }
       }
       91869 { 
@@ -2252,121 +2253,125 @@ foreach ($QID in $QIDs) {
         if (Get-YesNo "$_ Remove Microsoft Windows Codecs Library Remote Code Execution (RCE) Vulnerability for March 2022" -Results $Results) {
           #Microsoft vulnerable Microsoft.VP9VideoExtensions detected  Version     '1.0.41182.0'  !!!! wrong appx..
           #Microsoft vulnerable Microsoft.HEIFImageExtension detected  Version     '1.0.42352.0'#
-          Remove-SpecificAppXPackage -Name "HEIFImageExtension" -Version $AppxVersion # "1.0.41182.0" 
+          Remove-SpecificAppXPackage -Name "HEIFImageExtension" -Version $AppxVersion -Results $Results # "1.0.41182.0" 
         }
       }
       91847 { 
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft.HEIFImageExtension Version 1.0.42352.0" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "HEIF" -Version $AppxVersion # "1.0.42352.0" 
+          Remove-SpecificAppXPackage -Name "HEIF" -Version $AppxVersion -Results $Results # "1.0.42352.0" 
         }
       }
       91845 {   
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft Windows Codecs Library HEVC Video And Web Media Extensions Remote Code Execution (RCE) Vulnerability for December 2021" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "HEVCVideoExtension" -Version $AppxVersion # "1.0.33232.0"
+          Remove-SpecificAppXPackage -Name "HEVCVideoExtension" -Version $AppxVersion -Results $Results # "1.0.33232.0"
         }
       }
       91914 { 
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft.Windows.Photos Version 2021.21090.10007.0" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "Microsoft.Windows.Photos" -Version $AppxVersion # "2021.21090.10007.0" 
+          Remove-SpecificAppXPackage -Name "Microsoft.Windows.Photos" -Version $AppxVersion -Results $Results # "2021.21090.10007.0" 
         }
       }
       91819 { 
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft HEVCVideoExtension Version 0.33232.0 " -Results $Results) {
-          Remove-SpecificAppXPackage -Name "HEVCVideoExtension" -Version $AppxVersion # "1.0.33232.0" 
+          Remove-SpecificAppXPackage -Name "HEVCVideoExtension" -Version $AppxVersion -Results $Results # "1.0.33232.0" 
         }
       }
       91773 { 
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft 3D Viewer Multiple Vulnerabilities - June 2021" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "Microsoft3DViewer" -Version $AppxVersion # "7.2009.29132.0" 
+          Remove-SpecificAppXPackage -Name "Microsoft3DViewer" -Version $AppxVersion -Results $Results # "7.2009.29132.0" 
         }
       }
       91834 { 
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove  Microsoft 3D Viewer Remote Code Execution (RCE) Vulnerability - November 2021" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "Microsoft3DViewer" -Version $AppxVersion # "7.2009.29132.0" 
+          Remove-SpecificAppXPackage -Name "Microsoft3DViewer" -Version $AppxVersion -Results $Results # "7.2009.29132.0" 
         }
       }
       91774 { 
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft Paint 3D Remote Code Execution Vulnerability - June 2021" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "MSPaint" -Version $AppxVersion # "6.2009.30067.0" 
+          Remove-SpecificAppXPackage -Name "MSPaint" -Version $AppxVersion -Results $Results # "6.2009.30067.0" 
         }
       }
       91761 {
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft Windows Codecs Library and VP9 Video Extensions Multiple Vulnerabilities" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "VP9VideoExtensions" -Version $AppxVersion # "1.0.32521.0" 
+          Remove-SpecificAppXPackage -Name "VP9VideoExtensions" -Version $AppxVersion -Results $Results # "1.0.32521.0" 
         }
       }
       91775 {
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft Windows VP9 Video Extension Remote Code Execution Vulnerability  " -Results $Results) {
-          Remove-SpecificAppXPackage -Name "VP9VideoExtensions" -Version $AppxVersion # "1.0.32521.0" 
+          Remove-SpecificAppXPackage -Name "VP9VideoExtensions" -Version $AppxVersion -Results $Results # "1.0.32521.0" 
         }
       }
       91919 {
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft Windows Codecs Library HEVC Video and AV1 Extensions Remote Code Execution (RCE) Vulnerability for June 2022" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "HEVCVideoExtension" -Version $AppxVersion # "1.0.33232.0" 
+          Remove-SpecificAppXPackage -Name "HEVCVideoExtension" -Version $AppxVersion -Results $Results # "1.0.33232.0" 
         }
       }
       91788 {
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft Windows Codecs Library High Efficiency Video Coding (HEVC) Video Extensions Remote Code Execution (RCE) Vulnerabilities" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "HEVCVideoExtension" -Version $AppxVersion # "1.0.33232.0" 
+          Remove-SpecificAppXPackage -Name "HEVCVideoExtension" -Version $AppxVersion -Results $Results # "1.0.33232.0" 
         }
       }
       91726 {
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft Windows Codecs Library Remote Code Execution Vulnerabilities - January 2021 " -Results $Results) {
-          Remove-SpecificAppXPackage -Name "HEVCVideoExtension" -Version $AppxVersion # "1.0.33232.0" 
+          Remove-SpecificAppXPackage -Name "HEVCVideoExtension" -Version $AppxVersion -Results $Results # "1.0.33232.0" 
         }
       }   
       91885 {
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft HEVC Video Extensions Remote Code Execution (RCE) Vulnerability for April 2022" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "HEVCVideoExtension" -Version $AppxVersion # "1.0.33232.0" 
+          Remove-SpecificAppXPackage -Name "HEVCVideoExtension" -Version $AppxVersion -Results $Results # "1.0.33232.0" 
         }
       } 
       91855 {
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft HEVC Video Extensions Remote Code Execution (RCE) Vulnerability for January 2022" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "HEVCVideoExtension" -Version $AppxVersion # "1.0.33232.0" 
+          Remove-SpecificAppXPackage -Name "HEVCVideoExtension" -Version $AppxVersion -Results $Results # "1.0.33232.0" 
         }
       } 
       91820 {
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft MPEG-2 Video Extension Remote Code Execution (RCE) Vulnerability " -Results $Results) {
-          Remove-SpecificAppXPackage -Name "MPEG2VideoExtension" -Version $AppxVersion # "1.0.22661.0" 
+          Remove-SpecificAppXPackage -Name "MPEG2VideoExtension" -Version $AppxVersion -Results $Results # "1.0.22661.0" 
         }
       } 
       378131 {
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Microsoft Windows Snipping Tool Information Disclosure Vulnerability" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "Microsoft.ScreenSketch" -Version $AppxVersion # "10.2008.2277.0"
+          Remove-SpecificAppXPackage -Name "Microsoft.ScreenSketch" -Version $AppxVersion -Results $Results # "10.2008.2277.0"
         }
       }
       91974 {
-        $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
+        # Vulnerable version of Microsoft 3D Builder detected  Version     '18.0.1931.0'#
+        $AppxVersion = ($results -split "'")[1].replace("'","").replace("#","").trim()  # Cheating here, using ' is probably easier anyway...
         if (Get-YesNo "$_ Microsoft 3D Builder Remote Code Execution (RCE) Vulnerability for January 2023" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "Microsoft.3DBuilder" -Version $AppxVersion # "18.0.1931.0"
+          Remove-SpecificAppXPackage -Name "Microsoft.3DBuilder" -Version $AppxVersion -Results $Results # "18.0.1931.0"
         }
       }
-      91975 {
-        $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
+      91975 { 
+        # Vulnerable version of Microsoft 3D Builder detected  Version     '18.0.1931.0'#
+        write-Verbose "Results: $Results"
+        $AppxVersion = ($results -split "'")[1].replace("'","").replace("#","").trim() # Cheating here, using ' is probably easier anyway...
+        write-Verbose "AppxVersion: $AppxVersion"
         if (Get-YesNo "$_ Microsoft 3D Builder Remote Code Execution (RCE) Vulnerability for February 2023" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "Microsoft.3DBuilder" -Version $AppxVersion # "18.0.1931.0"
+          Remove-SpecificAppXPackage -Name "Microsoft.3DBuilder" -Version $AppxVersion -Results $Results # "18.0.1931.0"
         }
       }
       92030 { 
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Microsoft Raw Image Extension and VP9 Video Extension Information Disclosure Vulnerability" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "VP9VideoExtensions" -Version $AppxVersion # "1.0.52781.0"
+          Remove-SpecificAppXPackage -Name "VP9VideoExtensions" -Version $AppxVersion -Results $Results # "1.0.52781.0"
         }
       }
       92038 {
@@ -2388,7 +2393,7 @@ foreach ($QID in $QIDs) {
               $RemediationTargets | ForEach-Object { 
                   Write-Verbose "$($_.Name) was selected for remediation."
                   if (-not $Undo) {
-                      Set-RegKey -Path $Path -Name $_.Value -Value 1
+                      Set-RegKey -Path $Path -Name $_.Value -Value 11
                       Write-Verbose "Success!"
                   }
               }
