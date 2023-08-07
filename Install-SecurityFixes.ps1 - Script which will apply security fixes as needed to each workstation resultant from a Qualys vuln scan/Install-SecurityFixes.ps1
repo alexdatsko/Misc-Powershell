@@ -1533,9 +1533,9 @@ foreach ($QID in $QIDs) {
         if (Get-YesNo "$_ Microsoft Windows DNS Resolver Addressing Spoofing Vulnerability (ADV200013) fix ? " -Results $Results) {
           $RegPath = "HKLM:\System\CurrentControlSet\Services\DNS\Parameters"
           Write-Host "[.] Making value change for $RegPath - MaximumUdpPacketSize = DWORD 1221"
-          New-ItemProperty -Path $RegPath -Name MaximumUdpPacketSize -Value 1221 -PropertyType DWORD -Force -ErrorAction SilentlyContinue
+          New-ItemProperty -Path $RegPath -Name MaximumUdpPacketSize -Value 1221 -PropertyType DWORD -Force -ErrorAction Continue
           Write-Host "[.] Restarting DNS service.."
-          Restart-Service DNS
+          Restart-Service DNS -Force -ErrorAction Continue
           Write-Host "[!] Done!"
         } 
       }
