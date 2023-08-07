@@ -67,8 +67,8 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.03"
-     # New in this version:  QID 91704 Windows Server DNS vuln - set MaximumUDPPacket reg value
+$Version = "0.37.04"
+     # New in this version:  QID 92038 Fix CVE-2023-36884, reg entry = 1, not 11...
 $VersionInfo = "v$($Version) - Last modified: 08/07/23"
 
 #### VERSION ###################################################
@@ -2401,7 +2401,7 @@ foreach ($QID in $QIDs) {
               $RemediationTargets | ForEach-Object { 
                   Write-Verbose "$($_.Name) was selected for remediation."
                   if (-not $Undo) {
-                      Set-RegKey -Path $Path -Name $_.Value -Value 11
+                      Set-RegKey -Path $Path -Name $_.Value -Value 1
                       Write-Verbose "Success!"
                   }
               }
