@@ -67,9 +67,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.01"
-     # New in this version:  FIX: QID 91975, 91974  MS Store 3d Builder RCE, parsing $Results .. wasn't being passed to Remove-SpecificAppxVersion, duh..
-$VersionInfo = "v$($Version) - Last modified: 08/04/23"
+$Version = "0.37.03"
+     # New in this version:  QID 91704 Windows Server DNS vuln - set MaximumUDPPacket reg value
+$VersionInfo = "v$($Version) - Last modified: 08/07/23"
 
 #### VERSION ###################################################
 
@@ -1426,6 +1426,7 @@ Write-Host "`n"
 foreach ($QID in $QIDs) {
     $ThisQID = $QID
     $ThisTitle = (($Rows | Where-Object { $_.QID -eq $ThisQID }) | Select-Object -First 1)."Vulnerability Description"
+    $VulnName = $ThisTitle  # Referenced differently below..
     $Results = (($Rows | Where-Object { $_.QID -eq $ThisQID }) | Select-Object -First 1)."Results"
     If ($Automated) {
       Write-Verbose "[Running in Automated mode]"
@@ -1528,21 +1529,31 @@ foreach ($QID in $QIDs) {
             cmd /c 'reg add "HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_ENABLE_PRINT_INFO_DISCLOSURE_FIX" /v iexplore.exe /t REG_DWORD /d 1 /f'
         }
       }
+      { 91704 -contains $_ } {
+        if (Get-YesNo "$_ Microsoft Windows DNS Resolver Addressing Spoofing Vulnerability (ADV200013) fix ? " -Results $Results) {
+          $RegPath = "HKLM:\System\CurrentControlSet\Services\DNS\Parameters"
+          Write-Host "[.] Making value change for $RegPath - MaximumUdpPacketSize = DWORD 1221"
+          New-ItemProperty -Path $RegPath -Name MaximumUdpPacketSize -Value 1221 -PropertyType DWORD -Force -ErrorAction SilentlyContinue
+          Write-Host "[.] Restarting DNS service.."
+          Restart-Service DNS
+          Write-Host "[!] Done!"
+        } 
+      }
       { 105170,105171 -contains $_ } { 
         if (Get-YesNo "$_ - Windows Explorer Autoplay not Disabled ? " -Results $Results) {
-            #cmd /c 'reg add "HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer\"  /v NoDriveTypeAutoRun /t REG_DWORD /d 255 /f'
-            #cmd /c 'reg add "HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\policies\Explorer\"  /v NoDriveTypeAutoRun /t REG_DWORD /d 255 /f'
-            # QID105170,105171 - disable autoplay
-            $path ='HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer'
+            $path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer'
             $path2 = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\policies\Explorer'
+            Write-Host "[.] Setting registry keys in:"
+            $path
+            $path2
             if (!(Test-Path $path)) {
-              Write-Output "[.] Creating $($path) as it was not found.."
+              Write-Verbose "Creating $($path) as it was not found.."
               $pathonly = Split-Path $path
               $leaf = Split-Path $path -Leaf
               New-Item -Path $pathonly -Leaf $leaf -Force
             }
             if (!(Test-Path $path2)) {
-              Write-Output "[.] Creating $($path2) as it was not found.."
+              Write-Verbose "Creating $($path2) as it was not found.."
               $path2only = Split-Path $path2 
               $leaf2 = Split-Path $path2 -Leaf
               New-Item $path2only -Force
@@ -1556,6 +1567,7 @@ foreach ($QID in $QIDs) {
             } catch {} # Don't care if these fail, if they already exist..
             Set-ItemProperty $path2 -Name NoDriveTypeAutorun -Type DWord -Value 0xFF
             Set-ItemProperty $path2 -Name NoAutorun -Type DWord -Value 0x1
+            Write-Host "[!] Done!"
         }
       }
       90044 {
@@ -1572,7 +1584,7 @@ foreach ($QID in $QIDs) {
         }
       }
       90043 {
-        if (Get-YesNo "$_ - SMB Signing Disabled / Not required (Both LanManWorkstation and LanManServer)) ? " -Results $Results) {
+        if (Get-YesNo "$_ - SMB Signing Disabled / Not required (Both LanManWorkstation and LanManServer)) " -Results $Results) {
             cmd /c 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManWorkstation\Parameters"  /v EnableSecuritySignature /t REG_DWORD /d 1 /f'
             cmd /c 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManWorkstation\Parameters"  /v RequireSecuritySignature /t REG_DWORD /d 1 /f'
             cmd /c 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters"  /v EnableSecuritySignature /t REG_DWORD /d 1 /f'
@@ -1584,10 +1596,6 @@ foreach ($QID in $QIDs) {
         if (Get-YesNo "$_ - Remove Windows10 UpdateAssistant? " -Results $Results) {
             $Name="UpdateAssistant"
             $Path = "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\{D5C69738-B486-402E-85AC-2456D98A64E4}"
-
-            #get-wmiobject -class Win32_Product | ?{ $_.Name -like '*Assistant*'} | Format-Table IdentifyingNumber, Name, LocalPackage -AutoSize
-            #Write-Host "[ ] Finding GUID for $Name .. Please wait"  -ForegroundColor Gray
-            #$GUID = (get-wmiobject -class Win32_Product | ?{ $_.Name -like $Name}).IdentifyingNumber
             $GUID= "{D5C69738-B486-402E-85AC-2456D98A64E4}"
             Write-Host "[.] Checking for product: '$GUID' (Microsoft Windows 10 Update Assistant) .." -ForegroundColor Yellow
             $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like $GUID})
@@ -1682,7 +1690,7 @@ foreach ($QID in $QIDs) {
             # msiexec.exe /q ALLUSERS=2 /m MSIDTJBS /i “RST_x64.msi” REBOOT=ReallySuppress
         }   
       }
-      { $QIDsIntelGraphicsDriver  -contains $_ } {
+      { ($QIDsIntelGraphicsDriver  -contains $_) -or ($VulnName -like "*Intel Graphics*") } {
         if (Get-YesNo "$_ Install newest Intel Graphics Driver? " -Results $Results) { 
           Write-Output "[!] THIS WILL NEED TO BE RUN MANUALLY... OPENING BROWSER TO INTEL SUPPORT ASSISTANT PAGE!"
           explorer "https://www.intel.com/content/www/us/en/support/intel-driver-support-assistant.html"
@@ -1720,7 +1728,7 @@ foreach ($QID in $QIDs) {
         } else { $QIDsIntelGraphicsDriver=1 }
       }
       
-      { $QIDsAppleiCloud -contains $_ } {
+      { ($QIDsAppleiCloud -contains $_) -or ($VulnName -like "*Apple iCloud*") } {
         <#
         if (Get-YesNo "$_ Install newest Apple iCloud? ") { 
             Invoke-WebRequest "" -OutFile "$($tmp)\icloud.exe"
@@ -1732,14 +1740,14 @@ foreach ($QID in $QIDs) {
         "$_ Can't deploy Apple iCloud via script yet!!! Please install manually! Opening Browser to iCloud page: "
         explorer "https://apps.microsoft.com/store/detail/icloud/9PKTQ5699M62?hl=en-us&gl=us"
       }
-      { $QIDsAppleiTunes -contains $_ } {
+      { ($QIDsAppleiTunes -contains $_ ) -or ($VulnName -like "*Apple iTunes*")} {
         if (Get-YesNo "$_ Install newest Apple iTunes? " -Results $Results) { 
             Invoke-WebRequest "https://ninite.com/itunes/ninite.exe" -OutFile "$($tmp)\itunes.exe"
             cmd /c "$($tmp)\itunes.exe"
             $QIDsAppleiTunes = 1 # All done, remove variable to prevent this from running twice
         } else { $QIDsAppleiTunes = 1 } # Do not ask again
       }
-      { $QIDsChrome -contains $_ } {
+      { ($QIDsChrome -contains $_) -or ($VulnName -like "*Google Chrome*")} {
         if (Get-YesNo "$_ Check if Google Chrome is up to date? " -Results $Results) { 
           # Type 1 = Google Chrome Prior to 110.0.5481.177/110.0.5481.178 Multiple Vulnerabilities
           # Type 2 = Google Chrome Prior to 113.0.5672.63 Multiple Vulnerabilities
@@ -1776,7 +1784,7 @@ foreach ($QID in $QIDs) {
           $QIDsChrome = 1 # All done, remove variable to prevent this from running twice
         } else { $QIDsChrome = 1 }
       }
-      { $QIDsEdge -contains $_ } {
+      { ($QIDsEdge -contains $_) -or ($VulnName -like "*Microsoft Edge*")} {
         if (Get-YesNo "$_ Check if Microsoft Edge is up to date? " -Results $Results) { 
           # Microsoft Edge Based on Chromium Prior to 114.0.1823.37 Multiple Vulnerabilities
           Write-Verbose "VulnDesc: $VulnDesc"
@@ -1797,7 +1805,7 @@ foreach ($QID in $QIDs) {
           $QIDsEdge = 1
         } else { $QIDsEdge = 1 }
       }
-      { $QIDsFirefox -contains $_ } {
+      { ($QIDsFirefox -contains $_) -or ($VulnName -like "*Mozilla Firefox*") } {
         if (Get-YesNo "$_ Install newest Firefox? " -Results $Results) { 
             #  Firefox - https://ninite.com/firefox/ninite.exe
             Invoke-WebRequest "https://ninite.com/firefox/ninite.exe" -OutFile "$($tmp)\ninite.exe"
@@ -1809,7 +1817,7 @@ foreach ($QID in $QIDs) {
             $QIDsFirefox = 1
         } else { $QIDsFirefox = 1 }
       }      
-      { $QIDsZoom -contains $_ } {
+      { ($QIDsZoom -contains $_) -or ($VulnName -like "*Zoom*") } {
         if (Get-YesNo "$_ Install newest Zoom Client? " -Results $Results) { 
             #  Zoom client - https://ninite.com/zoom/ninite.exe
             Invoke-WebRequest "https://ninite.com/zoom/ninite.exe" -OutFile "$($tmp)\ninite.exe"
@@ -1825,7 +1833,7 @@ foreach ($QID in $QIDs) {
             $QIDsZoom = 1
         } else { $QIDsZoom = 1 }
       }
-      { $QIDsTeamViewer -contains $_ } {
+      { ($QIDsTeamViewer -contains $_) -or ($VulnName -like "*TeamViewer*") } {
         if (Get-YesNo "$_ Install newest Teamviewer? " -Results $Results) { 
             #  Teamviewer - https://ninite.com/teamviewer15/ninite.exe
             Invoke-WebRequest "https://ninite.com/teamviewer15/ninite.exe" -OutFile "$($tmp)\ninite.exe"
@@ -1833,7 +1841,7 @@ foreach ($QID in $QIDs) {
             $QIDsTeamViewer = 1
         } else { $QIDsTeamViewer = 1 }
       }
-      { $QIDsDropbox -contains $_ } {
+      { ($QIDsDropbox -contains $_) -or ($VulnName -like "*Dropbox*") } {
         if (Get-YesNo "$_ Install newest Dropbox? " -Results $Results) { 
             #  Dropbox - https://ninite.com/dropbox/ninite.exe
             Invoke-WebRequest "https://ninite.com/dropbox/ninite.exe" -OutFile "$($tmp)\ninite.exe"
@@ -1845,7 +1853,7 @@ foreach ($QID in $QIDs) {
         ############################
         # Others: (non-ninite)
   
-      { $QIDsOracleJava -contains $_ } {
+      { ($QIDsOracleJava -contains $_) -or ($VulnName -like "*Oracle Java*")} {
         if (Get-YesNo "$_ Check Oracle Java for updates? " -Results $Results) { 
             #  Oracle Java 17 - https://download.oracle.com/java/17/latest/jdk-17_windows-x64_bin.msi
             #wget "https://download.oracle.com/java/18/latest/jdk-18_windows-x64_bin.msi" -OutFile "$($tmp)\java17.msi"
@@ -1855,14 +1863,14 @@ foreach ($QID in $QIDs) {
             $QIDsOracleJava = 1
         } else { $QIDsOracleJava = 1 }
       }
-      { $QIDsAdoptOpenJDK -contains $_ } {
+      { ($QIDsAdoptOpenJDK -contains $_) -or ($VulnName -like "*Adopt OpenJDK*") } {
         if (Get-YesNo "$_ Install newest Adopt Java JDK? " -Results $Results) { 
             Invoke-WebRequest "https://ninite.com/adoptjavax8/ninite.exe" -OutFile "$($tmp)\ninitejava8x64.exe"
             cmd /c "$($tmp)\ninitejava8x64.exe"
             $QIDsAdoptOpenJDK = 1
         } else { $QIDsAdoptOpenJDK = 1 }
       }
-      { $QIDsVirtualBox -contains $_ } {
+      { ($QIDsVirtualBox -contains $_) -or ($VulnName -like "*VirtualBox*") } {
         if (Get-YesNo "$_ Install newest VirtualBox 6.1.36? " -Results $Results) { 
             Invoke-WebRequest "https://download.virtualbox.org/virtualbox/6.1.36/VirtualBox-6.1.36-152435-Win.exe" -OutFile "$($tmp)\virtualbox.exe"
             cmd /c "$($tmp)\virtualbox.exe"
@@ -1887,7 +1895,7 @@ foreach ($QID in $QIDs) {
           }  
         }
       }
-      { $QIDsAdobeReader -contains $_ } {
+      { ($QIDsAdobeReader -contains $_) -or ($VulnName -like "*Adobe Reader*") } {
         if (Get-YesNo "$_ Install newest Adobe Reader DC ? ") {
           Download-NewestAdobeReader
           #cmd /c "$($tmp)\readerdc.exe"
@@ -2056,7 +2064,7 @@ foreach ($QID in $QIDs) {
           }
         }
       }
-      { $QIDsNVIDIA -contains $_ } {
+      { ($QIDsNVIDIA -contains $_) -or ($VulnName -like "*NVIDIA*") } {
         if (Get-YesNo "$_ Install newest NVidia drivers ? " -Results $Results) { 
             $NvidiacardFound = $false
             Write-Host "[.] Video Cards found:"
