@@ -68,8 +68,8 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.07"
-     # New in this version:  QID 92032 MSPaint July RCE ..fix2- for Remove-SpecificAppxPackage , added support for AppxProvisionedPackages, sheesh.
+$Version = "0.37.08"
+     # New in this version:  QID 378627	Dell Command Update Windows Universal Application Vulnerability (DSA-2023-031) - install newest 5.0.0
 $VersionInfo = "v$($Version) - Last modified: 08/10/23"
 
 #### VERSION ###################################################
