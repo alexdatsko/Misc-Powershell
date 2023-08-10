@@ -67,9 +67,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.04"
-     # New in this version:  QID 92038 Fix CVE-2023-36884, reg entry = 1, not 11...
-$VersionInfo = "v$($Version) - Last modified: 08/07/23"
+$Version = "0.37.05"
+     # New in this version:  QID 92032 MSPaint July RCE
+$VersionInfo = "v$($Version) - Last modified: 08/10/23"
 
 #### VERSION ###################################################
 
@@ -2382,6 +2382,14 @@ foreach ($QID in $QIDs) {
           Remove-SpecificAppXPackage -Name "VP9VideoExtensions" -Version $AppxVersion -Results $Results # "1.0.52781.0"
         }
       }
+      92032 {  # Vulnerable Microsoft Paint 3D detected  Version     '6.2105.4017.0'  Version     '6.2203.1037.0'#
+        $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
+        if (Get-YesNo "$_ Microsoft Paint 3D Remote Code Execution (RCE) Vulnerability for July 2023" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "MSPaint" -Version $AppxVersion -Results $Results # "6.2105.4017.0"
+          Remove-SpecificAppXPackage -Name "MSPaint" -Version $AppxVersion -Results $Results # "6.2203.1037.0"
+        }
+      }
+
       92038 {
         if (Get-YesNo "$_ Microsoft Office and Windows HTML Remote Code Execution Vulnerability (Zero Day) for July 2023" -Results $Results) {
           $OfficeProducts = "All"   # Lets just add all the keys here..
