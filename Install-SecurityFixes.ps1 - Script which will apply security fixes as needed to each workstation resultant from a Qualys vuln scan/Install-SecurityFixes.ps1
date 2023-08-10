@@ -44,6 +44,7 @@ $SoftwareInstalling=[System.Collections.ArrayList]@()
 $QIDsAdded = @()
 
 $tmp = "$($env:temp)\SecAud"                 # "temp" Temporary folder to save downloaded files to, this will be overwritten when checking config ..
+
 try {
   Stop-Transcript -ErrorAction SilentlyContinue | Out-Null
 }
@@ -67,8 +68,8 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.05"
-     # New in this version:  QID 92032 MSPaint July RCE
+$Version = "0.37.07"
+     # New in this version:  QID 92032 MSPaint July RCE ..fix2- for Remove-SpecificAppxPackage , added support for AppxProvisionedPackages, sheesh.
 $VersionInfo = "v$($Version) - Last modified: 08/10/23"
 
 #### VERSION ###################################################
@@ -313,7 +314,7 @@ function Get-Vars {
 
 Function Update-Script {
   # For 0.32 I am assuming $pwd is going to be the correct path
-  Write-Output "[.] Checking for updated version of script on github.. Current Version = $($Version)"
+  Write-Host "[.] Checking for updated version of script on github.. Current Version = $($Version)"
   $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/Install-SecurityFixes.ps1"
   if (Update-ScriptFile -URL $url -FilenameTmp "$($tmp)\Install-SecurityFixes.ps1" -FilenamePerm "$($pwd)\Install-SecurityFixes.ps1" -VersionStr '$Version = *' -VersionToCheck $Version) {
     Write-Host "[+] Update found, re-running script .."
@@ -324,7 +325,7 @@ Function Update-Script {
     Stop-Transcript
     exit
   } else {
-    Write-Output "[-] No update found for $($Version)."
+    Write-Host "[-] No update found for $($Version)."
     return $false
   }
 }
@@ -1034,6 +1035,21 @@ function Remove-SpecificAppXPackage {
           try {
             $null = (Remove-AppxPackage -Package $AppName -AllUsers -ErrorAction SilentlyContinue)  # Remove with -AllUsers, this may create an error because a 'user is logged-off'.. but shouldn't matter.
           } catch { } # Ignore errors..
+          Write-Host -NoNewLine "[.] Checking for ProvisionedPackage for $AppName : " -ForegroundColor Yellow
+          try {
+            $null = ($AppxProvisioned = get-appxprovisionedpackage -online | where-object {$_.PackageName -eq $AppName})
+            if ($AppxProvisioned -ne $null) {
+              Write-Host "Found. `n[.] Removing $((AppxProvisioned).PackageName). `n    RestartNeeded: $(($AppxProvisioned  | remove-appxprovisionedpackage -online).RestartNeeded)" -ForegroundColor Yellow
+              $TestProvisionedAppxRemoval = (get-appxprovisionedpackage -online | where-object {$_.PackageName -eq $AppName}) # Quick check again
+              if ($TestProvisionedAppxRemoval -eq $null) {
+                Write-Host "[+] Remove-AppxProvisionedPackage success!" -ForegroundColor Green
+              } else {
+                Write-Host "[+] Remove-AppxProvisionedPackage failure. couldn't remove package using:  `n    $AppxProvisioned | Remove-AppXProvisionedPackage -Online" -ForegroundColor Red
+              }
+            } else {
+               Write-Host "Not found." -ForegroundColor Yellow
+            }
+          } catch { } # Ignore errors..
           $RemovedApp=$AppName
           $i+=1
         } else {
@@ -1052,14 +1068,25 @@ function Remove-SpecificAppXPackage {
   if ($RemovedApp) {
     Write-Host "[.] Checking for $RemovedApp after removing.." -ForegroundColor Yellow
     $Rechecks = Get-appxpackage -allusers $RemovedApp
-    if (!($Rechecks.Count -gt 0)) {
+    $RechecksProvisioned = (Get-appxProvisionedPackage -Online | Where-Object { $_.PackageName -like $RemovedApp })
+    if (!($Rechecks.Count -gt 0) -and ($RechecksProvisioned -eq $null)) {
       Write-Host "[+] Clean!" -ForegroundColor Green
     } else {
       foreach ($result in $Rechecks) {
         $AppVersion = [System.Version]($Result).Version
         $AppName = ($Result).PackageFullName
         if ([System.Version]$AppVersion -le [System.Version]$Version) {
-          Write-Host "[!] Vulnerable version Office app still found : $AppName - $AppVersion <= $Version"  -ForegroundColor Red
+          Write-Host "[!] Vulnerable version of Appx Package still found : $AppName - $AppVersion <= $Version"  -ForegroundColor Red
+          Write-Vebose "result: $result"
+          Write-Host "[!] Please either reboot and test again, or fix manually.." -ForegroundColor Red
+        }
+      }
+      foreach ($result in $RechecksProvisioned) {
+        $AppVersion = [System.Version]($Result).Version
+        $AppName = ($Result).PackageName
+        if ([System.Version]$AppVersion -le [System.Version]$Version) {
+          Write-Host "[!] Vulnerable version of Provisioned Appx Package still found : $AppName - $AppVersion <= $Version"  -ForegroundColor Red
+          Write-Vebose "result: $result"
           Write-Host "[!] Please either reboot and test again, or fix manually.." -ForegroundColor Red
         }
       }
@@ -1166,7 +1193,8 @@ if ($ServerName) {
       if (Get-Item "\\SERVER\Data\SecAud\Install-SecurityFixes.ps1") {
         $ServerName = "SERVER"
         $CSVLocation = "Data\SecAud"
-        Write-Host "[.] Found \\$($ServerName)\$($CSVLocation)}\Install-SecurityFixes.ps1 .. Cleared to proceed." -ForegroundColor Green
+        $SecAudPath = "$($ServerName)\$($CSVLocation)"
+        Write-Host "[.] Found \\$($SecAudPath)\Install-SecurityFixes.ps1 .. Cleared to proceed." -ForegroundColor Green
       }
     }    
   }
@@ -1877,12 +1905,19 @@ foreach ($QID in $QIDs) {
             $QIDsVirtualBox = 1
         } else { $QIDsVirtualBox = 1 } 
       }
-      { $QIDsDellCommandUpdate -contains $_ } {
+      { ($QIDsDellCommandUpdate -contains $_) -or ($VulnName -like "*Dell Command Update*")} {
         if (Get-YesNo "$_ Install newest Dell Command Update? " -Results $Results) { 
-            #wget "https://dl.dell.com/FOLDER08334704M/2/Dell-Command-Update-Windows-Universal-Application_601KT_WIN_4.5.0_A00_01.EXE" -OutFile "$($tmp)\dellcommand.exe"
-            $DCUExe = (Get-ChildItem "\\server\data\secaud\" | Where-Object {$_.Name -like "Dell-Command-Update-*"}).FullName
-            cmd /c "$($DCUExe) /s"
-            $QIDsDellCommandUpdate  = 1
+          $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Dell Command Update*'})
+          if ($Products) {
+            Remove-Software -Products $Products -Results $Results
+          } else {
+            Write-Host "[!] Dell Command products not found under 'Dell Command*' : `n    $Products !!`n" -ForegroundColor Red
+          }              
+          #wget "https://dl.dell.com/FOLDER08334704M/2/Dell-Command-Update-Windows-Universal-Application_601KT_WIN_4.5.0_A00_01.EXE" -OutFile "$($tmp)\dellcommand.exe"  # OLD AND VULN NOW..
+          wget "https://dl.dell.com/FOLDER10408469M/1/Dell-Command-Update-Application_HYR95_WIN_5.0.0_A00.EXE" -OutFile "$($SecAudPath)\Dell-Command-Update-Application_HYR95_WIN_5.0.0_A00.EXE"
+          $DCUExe = (Get-ChildItem $SecAudPath | Where-Object {$_.Name -like "Dell-Command-Update-*"}).FullName
+          cmd /c "$($DCUExe) /qn"
+          $QIDsDellCommandUpdate  = 1
         } else { $QIDsDellCommandUpdate  = 1 }
       }
       { 105734 -eq $_ } {
@@ -1891,7 +1926,7 @@ foreach ($QID in $QIDs) {
           if ($Products) {
             Remove-Software -Products $Products -Results $Results
           } else {
-            Write-Host "[!] Adobe products not found under 'Adobe Reader*' $Products !!`n" -ForegroundColor Red
+            Write-Host "[!] Adobe products not found under 'Adobe Reader*' : `n    $Products !!`n" -ForegroundColor Red
           }  
         }
       }
@@ -2385,8 +2420,8 @@ foreach ($QID in $QIDs) {
       92032 {  # Vulnerable Microsoft Paint 3D detected  Version     '6.2105.4017.0'  Version     '6.2203.1037.0'#
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Microsoft Paint 3D Remote Code Execution (RCE) Vulnerability for July 2023" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "MSPaint" -Version $AppxVersion -Results $Results # "6.2105.4017.0"
-          Remove-SpecificAppXPackage -Name "MSPaint" -Version $AppxVersion -Results $Results # "6.2203.1037.0"
+          Remove-SpecificAppXPackage -Name "MSPaint" -Version "6.2105.4017.0" -Results $Results # "6.2105.4017.0"
+          Remove-SpecificAppXPackage -Name "MSPaint" -Version "6.2203.1037.0" -Results $Results # "6.2203.1037.0"
         }
       }
 
