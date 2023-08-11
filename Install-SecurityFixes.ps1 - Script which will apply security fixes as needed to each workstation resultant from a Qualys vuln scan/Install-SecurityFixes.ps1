@@ -68,11 +68,17 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.08"
+$Version = "0.37.09"
      # New in this version:  QID 378627	Dell Command Update Windows Universal Application Vulnerability (DSA-2023-031) - install newest 5.0.0
 $VersionInfo = "v$($Version) - Last modified: 08/10/23"
 
 #### VERSION ###################################################
+
+# Common URL Variables for updates:
+
+$DellCommandURL = "https://dl.dell.com/FOLDER10408469M/1/Dell-Command-Update-Application_HYR95_WIN_5.0.0_A00.EXE"
+$DCUFilename = ($DellCommandURL -split "/")[-1]
+
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -1038,10 +1044,10 @@ function Remove-SpecificAppXPackage {
           Write-Host -NoNewLine "[.] Checking for ProvisionedPackage for $AppName : " -ForegroundColor Yellow
           try {
             $null = ($AppxProvisioned = get-appxprovisionedpackage -online | where-object {$_.PackageName -eq $AppName})
-            if ($AppxProvisioned -ne $null) {
+            if ($null -ne $AppxProvisioned) {
               Write-Host "Found. `n[.] Removing $((AppxProvisioned).PackageName). `n    RestartNeeded: $(($AppxProvisioned  | remove-appxprovisionedpackage -online).RestartNeeded)" -ForegroundColor Yellow
               $TestProvisionedAppxRemoval = (get-appxprovisionedpackage -online | where-object {$_.PackageName -eq $AppName}) # Quick check again
-              if ($TestProvisionedAppxRemoval -eq $null) {
+              if ($null -ne $TestProvisionedAppxRemoval) {
                 Write-Host "[+] Remove-AppxProvisionedPackage success!" -ForegroundColor Green
               } else {
                 Write-Host "[+] Remove-AppxProvisionedPackage failure. couldn't remove package using:  `n    $AppxProvisioned | Remove-AppXProvisionedPackage -Online" -ForegroundColor Red
@@ -1069,7 +1075,7 @@ function Remove-SpecificAppXPackage {
     Write-Host "[.] Checking for $RemovedApp after removing.." -ForegroundColor Yellow
     $Rechecks = Get-appxpackage -allusers $RemovedApp
     $RechecksProvisioned = (Get-appxProvisionedPackage -Online | Where-Object { $_.PackageName -like $RemovedApp })
-    if (!($Rechecks.Count -gt 0) -and ($RechecksProvisioned -eq $null)) {
+    if (!($Rechecks.Count -gt 0) -and ($null -eq $RechecksProvisioned)) {
       Write-Host "[+] Clean!" -ForegroundColor Green
     } else {
       foreach ($result in $Rechecks) {
@@ -1185,6 +1191,7 @@ if ($ServerName) {
     Write-Output "[.] Checking location \\$($ServerName)\$($CSVLocation) .."
     if (Get-Item "\\$($ServerName)\$($CSVLocation)\Install-SecurityFixes.ps1") {
       Write-Host "[.] Found \\$($ServerName)\$($CSVLocation)\Install-SecurityFixes.ps1 .. Cleared to proceed." -ForegroundColor Green
+      $SecAudPath = "\\$($ServerName)\$($CSVLocation)"
     }
   } else {
     # Lets also check SERVER in case config is wrong?
@@ -1193,7 +1200,7 @@ if ($ServerName) {
       if (Get-Item "\\SERVER\Data\SecAud\Install-SecurityFixes.ps1") {
         $ServerName = "SERVER"
         $CSVLocation = "Data\SecAud"
-        $SecAudPath = "$($ServerName)\$($CSVLocation)"
+        $SecAudPath = "\\$($ServerName)\$($CSVLocation)"
         Write-Host "[.] Found \\$($SecAudPath)\Install-SecurityFixes.ps1 .. Cleared to proceed." -ForegroundColor Green
       }
     }    
@@ -1203,6 +1210,7 @@ if ($ServerName) {
     $ServerName = Read-Host "[!] Couldn't ping SERVER or '$($ServerName)' .. please enter the server name where we can find the .CSV file, or press enter to read it out of the current folder: "
     if (!($ServerName)) { 
       $ServerName = "$($env:computername)"
+      $SecAudPath = "\\$($ServerName)\c$\temp\secaud"  # Change this?
     }
   } else { 
     Write-Host "[!] ERROR: Can't find a CSV to use, or the servername to check, and -Automated was specified.." -ForegroundColor Red
@@ -1907,16 +1915,44 @@ foreach ($QID in $QIDs) {
       }
       { ($QIDsDellCommandUpdate -contains $_) -or ($VulnName -like "*Dell Command Update*")} {
         if (Get-YesNo "$_ Install newest Dell Command Update? " -Results $Results) { 
-          $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Dell Command Update*'})
+          $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like '*Dell Command | Update*'})
           if ($Products) {
             Remove-Software -Products $Products -Results $Results
           } else {
-            Write-Host "[!] Dell Command products not found under 'Dell Command*' : `n    $Products !!`n" -ForegroundColor Red
+            Write-Host "[!] Dell Command products not found under '*Dell Command | Update*' : `n    Products: [ $Products ]`n" -ForegroundColor Red
           }              
           #wget "https://dl.dell.com/FOLDER08334704M/2/Dell-Command-Update-Windows-Universal-Application_601KT_WIN_4.5.0_A00_01.EXE" -OutFile "$($tmp)\dellcommand.exe"  # OLD AND VULN NOW..
-          wget "https://dl.dell.com/FOLDER10408469M/1/Dell-Command-Update-Application_HYR95_WIN_5.0.0_A00.EXE" -OutFile "$($SecAudPath)\Dell-Command-Update-Application_HYR95_WIN_5.0.0_A00.EXE"
-          $DCUExe = (Get-ChildItem $SecAudPath | Where-Object {$_.Name -like "Dell-Command-Update-*"}).FullName
-          cmd /c "$($DCUExe) /qn"
+          $DCUExe = (Get-ChildItem "$SecAudPath" | Where-Object {$_.Name -like "Dell-Command-Update-*"} | Sort CreationTime -Descending | Select -First 1).FullName
+          if ($DCUExe -like $DCUFilename) {              
+            Write-Host "[+] Found, DCU has already been downloaded: $DCUExe" -ForegroundColor Green
+          } else {
+            Write-Host "[.] Installing newest Dell command update 5.0.0 .." -ForegroundColor Yellow
+            Write-Verbose "Downloading $DellCommandURL to $($SecAudPath)\$($DCUFilename).."
+            Invoke-WebRequest $DellCommandURL -UserAgent "I'm using edge, I swear.." -OutFile "$($SecAudPath)\$($DCUFilename)"  # Dell doesn't want powershell downloads!
+            Write-Verbose "Saved to $($SecAudPath)\$($DCUFilename)"
+            Write-Verbose "DCUExe $DCUExe"
+            $DCUExe = (Get-ChildItem "$SecAudPath" | Where-Object {$_.Name -like "Dell-Command-Update-*"} | Sort CreationTime -Descending | Select -First 1).FullName
+          }
+          if ($DCUExe) {
+            Write-Host "[.] Launching .. $($DCUExe)" -ForegroundColor Yellow
+            try {
+              Start-Process -FilePath "$($DCUExe)" -ArgumentList "/s"
+              Write-Host "[.] Looks to have Launched .. " -ForegroundColor Yellow
+            } catch {
+              Write-Host "[!] ERROR - $DCUExe could not be launched `n    With Start-Process -FilepPath ""$($DCUExe)"" -ArgumentList ""/s""" -ForegroundColor Red
+            }
+            Write-Host "[.] Sleeping for 5 seconds.."
+            Start-Sleep 5
+            $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like '*Dell Command | Update*'}) | Select -First 1
+            if ($Products) {
+              Write-Host "[+] Found, DCU has already been downloaded: $(($Products).Version) found" -ForegroundColor Green
+            } else {
+              Write-Host "[-] DCU couldn't be installed, or isn't done yet after 5 seconds. Check manually!!! " -ForegroundColor Red
+              . appwiz.cpl
+            }
+          } else {
+            Write-Host "[X] Download failed!! $DellCommandURL did not write to SecAudPath : $SecAudPath " -ForegroundColor Red
+          }
           $QIDsDellCommandUpdate  = 1
         } else { $QIDsDellCommandUpdate  = 1 }
       }
