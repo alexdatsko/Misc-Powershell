@@ -640,15 +640,34 @@ Function Add-VulnToQIDList {
 
 ################################################# VULN REMED FUNCTIONS ###############################################
 
+
+function Search-Software {
+  param(
+    [string]$SoftwareName)
+
+  $SearchString="*$($SoftwareName)*"
+  $Results = (get-wmiobject Win32_Product | Where-Object { $_.Name -like $SearchString })
+  if ($Results) {
+    return $Results
+  } else {
+    $Results = Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object { $_.DisplayName -like $SearchString }
+    if ($Results) {
+      return $Results.DisplayName
+    } else {
+      return $null
+    }
+  }
+}
+
 function Remove-Software {
   param ($Products,
          $Results)
   
-  foreach ($Product in $Products) { # Remove multiple products if passed..
+  foreach ($Product in $Products) { # Remove multiple products if passed.. This only works if found by 
     $Guid = $Product | Select-Object -ExpandProperty IdentifyingNumber
     $Name = $Product | Select-Object -ExpandProperty Name
     if (Get-YesNo "Uninstall $Name - $Guid ") { 
-        Write-Host "[.] Removing $Guid (Waiting max of 30 seconds after).. Searching WMI first"
+        Write-Host "[.] Removing $Guid (Waiting max of 30 seconds after).. "
         $x=0
         cmd /c "msiexec /x $Guid /quiet /qn"
         Write-Host "[.] Checking for removal of $Guid .." -ForegroundColor White -NoNewline
@@ -668,7 +687,7 @@ function Remove-Software {
     } else {
       Write-Host "[.] Not found in WMI, searching Uninstaller registry.."
         if (Get-ItemProperty -Path HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* |
-            Where-Object DisplayName -eq CCleaner -OutVariable Results) {
+            Where-Object DisplayName -eq "" -OutVariable Results) {
             & "$($Results.InstallLocation)\uninst.exe" /S
         }
     }
@@ -993,8 +1012,8 @@ function Backup-BitlockerKeys {
 
 function Get-FileVersion {
   param ([string]$FileName)
-
-  return (Get-Item $FileName).VersionInfo.FileVersionRaw
+  $ThisVersion = (Get-Item $FileName).VersionInfo.ProductVersion  # or FileVersion??
+  return $ThisVersion
 }
 
 function Find-Delimiter {
@@ -1013,8 +1032,7 @@ function Get-VersionResults {
   #   single: Vulnerable version of Microsoft 3D Builder detected  Version     '18.0.1931.0'#
   #   single: Microsoft vulnerable Microsoft.Microsoft3DViewer detected  Version     '7.2105.4012.0'#    
   #   multiple: Vulnerable Microsoft Paint 3D detected  Version     '6.2105.4017.0'  Version     '6.2203.1037.0'#
-  Write-Verbose "Get-VersionResults - SplitResults : "
-  Write-Verbose $splitresults
+  Write-Verbose "Get-VersionResults - SplitResults : $splitresults"
   Foreach ($result in $SplitResults) {
     if ($result -like "*detected*") {
       $appname = ($result).replace("Vulnerable version of","").replace("Microsoft vulnerable","").replace("Vulnerable","").replace("detected","").trim()
@@ -1719,7 +1737,7 @@ foreach ($QID in $QIDs) {
       { ($QIDsGhostScript -contains $_) -or ($VulnName -like "*GhostScript*") } {
         if (Get-YesNo "$_ Install GhostScript 10.01.2 64bit? " -Results $Results) {
           Write-Host "[.] Searching for old versions of GPL Ghostscript .."
-          $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'GPL Ghostscript*'})
+          $Products = Search-Software "GPL Ghostscript" 
           if ($Products) {
             Remove-Software -Products $Products -Results $Results
           } else {
