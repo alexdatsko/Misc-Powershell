@@ -68,8 +68,8 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.12"
-     # New in this version:  Fixed the Get-RegistryEntry reference, whole mistake was not using -Name. Also added Ghostscript 10.01.2 download for .12
+$Version = "0.37.13"
+     # New in this version:  Update for QID 378699: Also removal for Ghostscript versions < 10.01.2 
 $VersionInfo = "v$($Version) - Last modified: 08/21/23"
 
 #### VERSION ###################################################
@@ -1716,8 +1716,16 @@ foreach ($QID in $QIDs) {
         ####################################################### Installers #######################################
         # Install newest apps via Ninite
 
-      { $QIDsGhostScript -contains $_ ) -or ($VulnName -like "*GhostScript*") } {
+      { ($QIDsGhostScript -contains $_) -or ($VulnName -like "*GhostScript*") } {
         if (Get-YesNo "$_ Install GhostScript 10.01.2 64bit? " -Results $Results) {
+          Write-Host "[.] Searching for old versions of GPL Ghostscript .."
+          $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'GPL Ghostscript*'})
+          if ($Products) {
+            Remove-Software -Products $Products -Results $Results
+          } else {
+            Write-Host "[!] Ghostscript product not found under 'GPL Ghostscript*' : `n    Products: [ $Products ]`n" -ForegroundColor Red
+          }              
+
           $ghostscripturl = "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10012/gs10012w64.exe"
           Invoke-WebRequest $ghostscripturl -OutFile "$($tmp)\ghostscript.exe"
           cmd.exe /c "$($tmp)\ghostscript.exe /S"
