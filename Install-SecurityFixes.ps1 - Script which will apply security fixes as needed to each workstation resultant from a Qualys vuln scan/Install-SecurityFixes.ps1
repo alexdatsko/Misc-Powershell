@@ -68,9 +68,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.09"
-     # New in this version:  QID 378627	Dell Command Update Windows Universal Application Vulnerability (DSA-2023-031) - install newest 5.0.0
-$VersionInfo = "v$($Version) - Last modified: 08/10/23"
+$Version = "0.37.12"
+     # New in this version:  Fixed the Get-RegistryEntry reference, whole mistake was not using -Name. Also added Ghostscript 10.01.2 download for .12
+$VersionInfo = "v$($Version) - Last modified: 08/21/23"
 
 #### VERSION ###################################################
 
@@ -152,13 +152,11 @@ function Set-RegistryEntry {
       [int]$Value = 1
   )
 
-  # Check if the path exists
   if (-Not(Test-Path -Path $Path)) {
-      # If the path does not exist, create it
-      New-Item -Path $Path -Force | Out-Null
+    Write-Verbose "Set-RegistryEntry: !! (Test-Path -Path $Path) - Creating"
+    New-Item -Path $Path -Force | Out-Null
   }
-
-  # Create or set the value of the registry entry
+  Write-Verbose "Set-RegistryEntry: Creating: Set-ItemProperty -Path $Path -Name $Name -Value $Value"
   Set-ItemProperty -Path $Path -Name $Name -Value $Value
 }
 
@@ -167,17 +165,20 @@ function Get-RegistryEntry {
       [string]$Path = "HKLM:\Software\MME Consulting Inc\Install-SecurityFixes",
       [string]$Name
   )
-
-  # Check if the path exists
-  if (Test-Path -Path $Path) {
-      # If the path exists, check if the property exists
-      if ((Get-ItemProperty -Path $Path).PSObject.Properties.Name -contains $Name) {
-          # If the property exists, return its value
-          return (Get-ItemProperty -Path $Path).$Name
-      }
+  $Reg = (Get-ItemProperty -Path $Path -ErrorAction SilentlyContinue)
+  if (Test-Path -Path $Path -ErrorAction SilentlyContinue) {  # If the path exists, check if the property exists
+    if (($Reg).PSObject.Properties.Name -contains $Name) {
+      Write-Verbose "Get-RegistryEntry: !! The property exists, return its value : $Path / $Name"
+      return ($Reg).$Name
+    } else {
+      Write-Verbose "Get-RegistryEntry: !! (Get-ItemProperty -Path $Path).PSObject.Properties.Name -contains $Name)"
+    }
+  } else {
+    Write-Verbose "Get-RegistryEntry: !! (Test-Path -Path $Path) - Creating"
+    if (-Not(Test-Path -Path $Path)) {
+      New-Item -Path $Path -Force | Out-Null
+    }
   }
-
-  # If the path or the property do not exist, return 0
   return 0
 }
 
@@ -378,7 +379,7 @@ Function Get-OSType {  # 1=Workstation, 2=DC, 3=Server
 Function Install-DellBiosProvider {
   # install the DellBIOSProvider powershell module if set in the config
   if ($InstallDellBIOSProvider) {
-    if (Get-RegistryEntry "DellProviderModule" -eq "0") {
+    if (Get-RegistryEntry -Name "DellProviderModule" -eq "0") {
       if ([int](Get-OSType) -lt 2) {   # 1=Ws, 2=DC, 3=Server
         if (!(Get-InstalledModule -Name DellBIOSProvider -ErrorAction SilentlyContinue)) {
           Write-Host "[.] Trying to install the NuGet package provider.. [this may take a minute..]" 
@@ -443,7 +444,7 @@ Function Set-DellBiosProviderDefaults {
             Write-Host "[+] Found WakeonLAN=Enabled already"
           }
           Write-Host "[+] Done w/ Dell SMBios settings." -ForegroundColor Green
-          Set-RegistryEntry "DellProviderModule" -Value 1 # Set this so we only try it once!
+          Set-RegistryEntry -Name "DellProviderModule" -Value 1 # Set this so we only try it once!
         } else {
           Write-Host "[-] Dell SMBios issue running 'Import-Module DellBiosProvider' - can't set WakeOnLan etc." -ForegroundColor Red
         }
@@ -1003,6 +1004,31 @@ function Find-Delimiter {
   return ($line -split "Account Name")[1][0]
 } 
 
+function Get-VersionResults {
+  param([string]$Results)
+  $vers = @()
+  $appname = "??"
+  $SplitResults = (($Results) -split "Version")
+  # Examples:
+  #   single: Vulnerable version of Microsoft 3D Builder detected  Version     '18.0.1931.0'#
+  #   single: Microsoft vulnerable Microsoft.Microsoft3DViewer detected  Version     '7.2105.4012.0'#    
+  #   multiple: Vulnerable Microsoft Paint 3D detected  Version     '6.2105.4017.0'  Version     '6.2203.1037.0'#
+  Write-Verbose "Get-VersionResults - SplitResults : "
+  Write-Verbose $splitresults
+  Foreach ($result in $SplitResults) {
+    if ($result -like "*detected*") {
+      $appname = ($result).replace("Vulnerable version of","").replace("Microsoft vulnerable","").replace("Vulnerable","").replace("detected","").trim()
+      Write-Verbose "Get-VersionResults - Appname found : $appname"
+    } else { 
+      $newvers = $result.replace("'","").replace("#","").trim()
+      Write-Verbose "Get-VersionResults - Vers of $appname found: $newvers"
+      $vers += $newvers #add to array, this should be short
+    }
+  }
+  Write-Verbose "Get-VersionResults - Returning: $vers"
+  return $vers
+}
+
 function Remove-SpecificAppXPackage {
   param([string]$Name,
         [string]$Version,
@@ -1017,9 +1043,10 @@ function Remove-SpecificAppXPackage {
 #   Microsoft vulnerable Microsoft.Microsoft3DViewer detected  Version     '7.2105.4012.0'#
 # Answer: split at ' and remove extra chars..
 
-  $VersionResults = ($Results -split "'")[1].replace("'","").replace("#","") # I know, I am doing this twice. All of this code should be refactored a bit
+  $VersionResults = Get-VersionResults -Results $Results   # I know, I am doing this twice, once in the main loop, once here. All of this code should be refactored a bit.. I think it should be moved to here.
   Write-Verbose "Results: $Results"
   Write-Verbose "VersionResults: $VersionResults"
+
   Write-Verbose "Grabbing AppXPackage list with : (Get-AppXPackage ""*$($Name)*"" -AllUsers)"
   $AllResults = (Get-AppXPackage "*$($Name)*" -AllUsers)
   Write-Host "[.] Checking if $Name store app is installed"
@@ -1030,7 +1057,10 @@ function Remove-SpecificAppXPackage {
       $AppName = ($Result).PackageFullName
       Write-Verbose "AppName: $AppName"
       Write-Verbose "AppVersion: $AppVersion"
-      if ([System.Version]$AppVersion -le [System.Version]$Version) {
+      if ($null -eq $Version -and ($VersionResults).count -lt 1) {
+        $Version = $VersionResults
+      }
+      if ([System.Version]$AppVersion -le [System.Version]$Version) {    # VERSION CHECK
         Write-Host "[!] $($i): Vulnerable version of store app found : $AppName - [$($AppVersion)] <= [$($Version)]"  -ForegroundColor Red
         if (Get-YesNo "$AppName - $AppVersion <= $Version .  Remove? ") {  # Final check, in case there are issues getting $Version or $VersionResults ..
           Write-Host "[.] Removing $AppName :" -ForegroundColor Yellow
@@ -1210,7 +1240,11 @@ if ($ServerName) {
     $ServerName = Read-Host "[!] Couldn't ping SERVER or '$($ServerName)' .. please enter the server name where we can find the .CSV file, or press enter to read it out of the current folder: "
     if (!($ServerName)) { 
       $ServerName = "$($env:computername)"
-      $SecAudPath = "\\$($ServerName)\c$\temp\secaud"  # Change this?
+      #$SecAudPath = "\\$($ServerName)\c$\temp\secaud"  # Change this?
+      $SecAudPath = "c:\temp\secaud"  # for now..
+      if (!(Test-Path $SecAudPath)) {
+        New-Item -ItemType Directory -Path $SecAudPath
+      }
     }
   } else { 
     Write-Host "[!] ERROR: Can't find a CSV to use, or the servername to check, and -Automated was specified.." -ForegroundColor Red
@@ -1682,10 +1716,10 @@ foreach ($QID in $QIDs) {
         ####################################################### Installers #######################################
         # Install newest apps via Ninite
 
-      { $QIDsGhostScript -contains $_ } {
-        if (Get-YesNo "$_ Install GhostScript 10.01.1 64bit? " -Results $Results) {
-          # 32bit link AGPL: https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10011/gs10011w32.exe
-          Invoke-WebRequest "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10011/gs10011w64.exe" -OutFile "$($tmp)\ghostscript.exe"
+      { $QIDsGhostScript -contains $_ ) -or ($VulnName -like "*GhostScript*") } {
+        if (Get-YesNo "$_ Install GhostScript 10.01.2 64bit? " -Results $Results) {
+          $ghostscripturl = "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10012/gs10012w64.exe"
+          Invoke-WebRequest $ghostscripturl -OutFile "$($tmp)\ghostscript.exe"
           cmd.exe /c "$($tmp)\ghostscript.exe /S"
           #Delete results file, i.e        "C:\Program Files (x86)\GPLGS\gsdll32.dll found#" as lots of times the installer does not clean this up.. may install the new one in a new location etc
           #$FileToDelete=$results.split(' found')[0]
@@ -2097,33 +2131,7 @@ foreach ($QID in $QIDs) {
           $SQLVersion = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\$p\Setup").Version
           $SQLEdition = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\$p\Setup").Edition
         }  # Version lists: https://sqlserverbuilds.blogspot.com/
-        <#
-        SQL Server 2016	13.0.1601.5				
-        Support end date: 2021-07-13	+ CU9				
-        Ext. end date: 2026-07-14					
-        
-        SQL Server 2014	12.0.2000.8				
-        Support end date: 2019-07-09	+ CU14				
-        Ext. end date: 2024-07-09					
-        
-        Obsolete versions – out of support					
-        SQL Server 2012	11.0.2100.60				
-        codename Denali	+ CU11				
-        Support end date: 2017-07-11					
-        Ext. end date: 2022-07-12					
-        
-        SQL Server 2008 R2	10.50.1600.1				
-        SQL Server 10.5					
-        codename Kilimanjaro					
-        Support end date: 2014-07-08					
-        Ext. end date: 2019-07-09					
-        
-        SQL Server 2008	10.0.1600.22				
-        SQL Server 10					
-        codename Katmai					
-        Support end date: 2014-07-08					
-        Ext. end date: 2019-07-09					
-#>
+
         if (Get-YesNo "$_ Install SQL Server $SQLVersion $SQLEdition update? " -Results $Results) { 
           if ("$SQLVersion $SQLEdition" -eq "12.2.5000.0 Express Edition") { # SQL Server 2014 Express
             Invoke-WebRequest "https://www.microsoft.com/en-us/download/confirmation.aspx?id=54190&6B49FDFB-8E5B-4B07-BC31-15695C5A2143=1" -OutFile "$($tmp)\sqlupdate.exe"
@@ -2317,6 +2325,17 @@ foreach ($QID in $QIDs) {
       91866 { 
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft Windows Codecs Library HEVC Video and VP9 Extensions Remote Code Execution (RCE) Vulnerability for February 2022" -Results $Results) {
+
+          # $Results = Microsoft vulnerable Microsoft.VP9VideoExtensions detected  Version     '1.0.41182.0'#
+
+          #  91866 Remove Microsoft Windows Codecs Library HEVC Video and VP9 Extensions Remote Code Execution (RCE) Vulnerability for February 2022 ..                                                                                                                                                  
+          #  You cannot call a method on a null-valued expression.                                                                                                         
+          #  At \\dc-server\data\SecAud\Install-SecurityFixes.ps1:1020 char:3                                                                                              
+          #  +   $VersionResults = ($Results -split "'")[1].replace("'","").replace( ...                                                                                   
+          #  +   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                                                                                           
+          #  + CategoryInfo          : InvalidOperation: (:) [], RuntimeException                                                                                          
+          #  + FullyQualifiedErrorId : InvokeMethodOnNull        
+
           Remove-SpecificAppXPackage -Name "HEIFImageExtension" -Version "1.0.42352.0"
           Remove-SpecificAppXPackage -Name "Microsoft.VP9VideoExtensions" -Version $AppxVersion -Results $Results # "1.0.41182.0" 
         }
