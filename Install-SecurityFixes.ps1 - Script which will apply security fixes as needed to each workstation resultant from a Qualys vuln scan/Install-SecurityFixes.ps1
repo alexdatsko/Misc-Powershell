@@ -2299,17 +2299,20 @@ foreach ($QID in $QIDs) {
       }
       92053 {
         if (Get-YesNo "$_ Delete Microsoft Windows Defender Elevation of Privilege Vulnerability for August 2023? " -Results $Results) { 
+          Write-Host "Active antivirus: $((Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntivirusProduct).DisplayName -join(" & "))"
           Remove-File "C:\WINDOWS\System32\MpSigStub.exe" -Results $Results
         }
       }      
       91621 {
         if (Get-YesNo "$_ Delete Microsoft Defender Elevation of Privilege Vulnerability April 2020? " -Results $Results) { 
           # This will ask twice due to Remove-File, but I want to offer results first. Could technically add -Results to Remove-File..
+          Write-Host "Active antivirus: $((Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntivirusProduct).DisplayName -join(" & "))"
           Remove-File "C:\WINDOWS\System32\MpSigStub.exe" -Results $Results
         }
       }
       91649 {
         if (Get-YesNo "$_ Delete Microsoft Defender Elevation of Privilege Vulnerability June 2020? " -Results $Results) { 
+          Write-Host "Active antivirus: $((Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntivirusProduct).DisplayName -join(" & "))"
           Remove-File "$($env:ProgramFiles)\Windows Defender\MpCmdRun.exe" -Results $Results
         }
       }
