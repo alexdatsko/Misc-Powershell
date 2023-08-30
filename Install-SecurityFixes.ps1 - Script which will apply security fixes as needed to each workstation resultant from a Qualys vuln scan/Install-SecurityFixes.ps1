@@ -2,6 +2,7 @@
 param (
   [switch] $Automated = $false,    # this allows us to run without supervision and apply all changes (could be dangerous!)
   [string] $CSVFile,               # Allow us to pick a CSV file on the commandline
+  [string] $QID,                   # Allow us to pick a certain QID to remediate
   [switch] $Help                   # Allow -Help to display help for parameters
 )
 
@@ -68,9 +69,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.13"
-     # New in this version:  Update for QID 378699: Also removal for Ghostscript versions < 10.01.2 
-$VersionInfo = "v$($Version) - Last modified: 08/21/23"
+$Version = "0.37.15"
+     # New in this version:  92053 - Defender PrivEsc 2023-08
+$VersionInfo = "v$($Version) - Last modified: 08/30/23"
 
 #### VERSION ###################################################
 
@@ -658,6 +659,43 @@ function Search-Software {
     }
   }
 }
+
+function Remove-SoftwareByName {
+  param (
+      [string]$SoftwareName
+  )
+
+  # Attempt to uninstall using Win32_Product
+  $wmiSoftware = (Get-WmiObject Win32_Product) | Where-Object { $_.Name -like "*$SoftwareName*" }
+  if ($wmiSoftware) {
+      foreach ($software in $wmiSoftware) {
+          Write-Host "[-] Uninstalling $($software.Name)..." -ForegroundColor Yellow
+          $software.Uninstall()
+      }
+  }
+  else {
+      Write-Host "[.] Software '$SoftwareName' not found using Win32_Product."
+      
+      # Attempt to uninstall using registry
+      $registrySoftware = Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* |
+                          Where-Object { $_.DisplayName -like "*$SoftwareName*" }
+      if ($registrySoftware) {
+          foreach ($software in $registrySoftware) {
+              Write-Host "[-] Uninstalling $($software.DisplayName)..." -ForegroundColor Yellow
+              if ($software.UninstallString) {
+                  Start-Process -FilePath $software.UninstallString -Wait
+              }
+              else {
+                  Write-Host "[.] Uninstall string not found for $($software.DisplayName)."
+              }
+          }
+      }
+      else {
+          Write-Host "[.] Software '$SoftwareName' not found in registry either."
+      }
+  }
+}
+
 
 function Remove-Software {
   param ($Products,
@@ -1863,24 +1901,43 @@ foreach ($QID in $QIDs) {
           $ChromeEXE = (($Results -split "file version")[0]).trim().replace("%ProgramFiles%",(Resolve-Path -Path "$env:ProgramFiles").Path).replace("%ProgramFiles(x86)%",(Resolve-Path -Path "${env:ProgramFiles(x86)}").Path)
           if (Test-Path $ChromeEXE) {
             $ChromeEXEVersion = Get-FileVersion $ChromeEXE
-            Write-Verbose "Chrome version found : $ChromeEXE - $ChromeEXEVersion - checking against $VulnDescChromeWinVersion"
-            if ([version]$ChromeEXEVersion -le [version]$VulnDescChromeWinVersion) {
-              Write-Host "[!] Vulnerable version $ChromeEXE found : $ChromeEXEVersion <= $VulnDescChromeWinVersion - Opening.."
-  <#
-              Invoke-WebRequest "https://ninite.com/chrome/ninite.exe" -OutFile "$($tmp)\ninite.exe"
-              cmd /c "$($tmp)\ninite.exe"  # Will wait for you to hit done, not automation friendly
-  #>
-              & $ChromeEXE  # This is not automation friendly either..
+            if ($ChromeEXEVersion) {
+              Write-Verbose "Chrome version found : $ChromeEXE - $ChromeEXEVersion - checking against $VulnDescChromeWinVersion"
+              if ([version]$ChromeEXEVersion -le [version]$VulnDescChromeWinVersion) {
+                Write-Host "[!] Vulnerable version $ChromeEXE found : $ChromeEXEVersion <= $VulnDescChromeWinVersion - Opening.."
+    <#
+                Invoke-WebRequest "https://ninite.com/chrome/ninite.exe" -OutFile "$($tmp)\ninite.exe"
+                cmd /c "$($tmp)\ninite.exe"  # Will wait for you to hit done, not automation friendly
+    #>
+                & $ChromeEXE  # This is not automation friendly either..
+              } else {
+                Write-Host "[+] Chrome patched version found : $ChromeEXEVersion > $VulnDescChromeWinVersion - already patched!" -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..
+              }
             } else {
-              Write-Host "[+] Chrome Version found : $ChromeEXEVersion > $VulnDescChromeWinVersion - already patched!" -ForegroundColor Green
+              Write-Host "[-] Chrome Version not found, for $ChromeEXE .." -ForegroundColor Yellow
             }
           } else {
-            Write-Host "[!] Chrome EXE no longer found: $ChromeEXE - likely its already been updated."
+            Write-Host "[!] Chrome EXE no longer found: $ChromeEXE - likely its already been updated. Let's check.."
+            $ChromeFolder = Split-Path $ChromeEXE -Parent
+            $ChromeFolderItems = GCI $ChromeFolder
+            Write-Verbose "[.] Found items in $ChromeFolder : $ChromeFolderItems"
+            $NewChromeEXE = "$($ChromeFolder)\$($ChromeFolderItems)\chrome.exe"
+            if (Test-Path $NewChromeEXE) {
+              $ChromeEXEVersion = Get-FileVersion $NewChromeEXE
+              if ($ChromeEXEVersion) {
+                Write-Verbose "Chrome version found : $NewChromeEXE - $ChromeEXEVersion - checking against $VulnDescChromeWinVersion"
+                if ([version]$ChromeEXEVersion -le [version]$VulnDescChromeWinVersion) {
+                  Write-Host "[!] Vulnerable version $ChromeEXE found : $ChromeEXEVersion <= $VulnDescChromeWinVersion - Opening.."
+                } else {
+                  Write-Host "[+] Chrome patched version $ChromeEXE found : $ChromeEXEVersion > $VulnDescChromeWinVersion - Opening.."
+                }
+              }
+            }
           }
           $QIDsChrome = 1 # All done, remove variable to prevent this from running twice
         } else { $QIDsChrome = 1 }
       }
-      { ($QIDsEdge -contains $_) -or ($VulnName -like "*Microsoft Edge*")} {
+      { ($QIDsEdge -contains $_) -or ($VulnName -like "*Microsoft Edge*") } {
         if (Get-YesNo "$_ Check if Microsoft Edge is up to date? " -Results $Results) { 
           # Microsoft Edge Based on Chromium Prior to 114.0.1823.37 Multiple Vulnerabilities
           Write-Verbose "VulnDesc: $VulnDesc"
@@ -2240,6 +2297,11 @@ foreach ($QID in $QIDs) {
           New-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\SecurityProviders\WDigest" -Name "UseLogonCredential" -Value 0
         }
       }
+      92053 {
+        if (Get-YesNo "$_ Delete Microsoft Windows Defender Elevation of Privilege Vulnerability for August 2023? " -Results $Results) { 
+          Remove-File "C:\WINDOWS\System32\MpSigStub.exe" -Results $Results
+        }
+      }      
       91621 {
         if (Get-YesNo "$_ Delete Microsoft Defender Elevation of Privilege Vulnerability April 2020? " -Results $Results) { 
           # This will ask twice due to Remove-File, but I want to offer results first. Could technically add -Results to Remove-File..
