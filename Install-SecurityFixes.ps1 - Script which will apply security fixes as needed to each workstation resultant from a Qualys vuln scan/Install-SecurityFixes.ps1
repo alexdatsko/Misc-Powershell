@@ -69,9 +69,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.15"
-     # New in this version:  92053 - Defender PrivEsc 2023-08
-$VersionInfo = "v$($Version) - Last modified: 08/30/23"
+$Version = "0.37.16"
+     # New in this version:  Chrome new version check fix, DCU exe check fix
+$VersionInfo = "v$($Version) - Last modified: 08/31/23"
 
 #### VERSION ###################################################
 
@@ -1918,8 +1918,8 @@ foreach ($QID in $QIDs) {
             }
           } else {
             Write-Host "[!] Chrome EXE no longer found: $ChromeEXE - likely its already been updated. Let's check.."
-            $ChromeFolder = Split-Path $ChromeEXE -Parent
-            $ChromeFolderItems = GCI $ChromeFolder
+            $ChromeFolder = (Split-Path $(Split-Path $ChromeEXE -Parent) -Parent) # Back 2 folders, as the parent is already missing if upgraded, lets see what other versions are in the parent
+            $ChromeFolderItems = GCI $ChromeFolder | ? { $_ -notlike "." -and $_ -notlike ".." }
             Write-Verbose "[.] Found items in $ChromeFolder : $ChromeFolderItems"
             $NewChromeEXE = "$($ChromeFolder)\$($ChromeFolderItems)\chrome.exe"
             if (Test-Path $NewChromeEXE) {
@@ -2040,7 +2040,7 @@ foreach ($QID in $QIDs) {
           }              
           #wget "https://dl.dell.com/FOLDER08334704M/2/Dell-Command-Update-Windows-Universal-Application_601KT_WIN_4.5.0_A00_01.EXE" -OutFile "$($tmp)\dellcommand.exe"  # OLD AND VULN NOW..
           $DCUExe = (Get-ChildItem "$SecAudPath" | Where-Object {$_.Name -like "Dell-Command-Update-*"} | Sort CreationTime -Descending | Select -First 1).FullName
-          if ($DCUExe -like $DCUFilename) {              
+          if ($DCUFilename -like "$($DCUEXE)*") {              
             Write-Host "[+] Found, DCU has already been downloaded: $DCUExe" -ForegroundColor Green
           } else {
             Write-Host "[.] Installing newest Dell command update 5.0.0 .." -ForegroundColor Yellow
