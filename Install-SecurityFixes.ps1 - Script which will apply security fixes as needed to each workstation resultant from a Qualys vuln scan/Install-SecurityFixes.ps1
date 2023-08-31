@@ -69,8 +69,8 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.16"
-     # New in this version:  Chrome new version check fix, DCU exe check fix
+$Version = "0.37.17"
+     # New in this version:  Chrome new version check fix, DCU exe check fix, Ghostscript removal fix/Remove-SoftwareByName
 $VersionInfo = "v$($Version) - Last modified: 08/31/23"
 
 #### VERSION ###################################################
@@ -667,13 +667,12 @@ function Remove-SoftwareByName {
 
   # Attempt to uninstall using Win32_Product
   $wmiSoftware = (Get-WmiObject Win32_Product) | Where-Object { $_.Name -like "*$SoftwareName*" }
-  if ($wmiSoftware) {
-      foreach ($software in $wmiSoftware) {
-          Write-Host "[-] Uninstalling $($software.Name)..." -ForegroundColor Yellow
-          $software.Uninstall()
-      }
-  }
-  else {
+  foreach ($software in $wmiSoftware) {
+    if ($software.IdentifyingNumber.length -eq 38) {  # if it looks like it has a real GUID, probably real..
+      Write-Host "[-] Uninstalling $($software.Name)..." -ForegroundColor Yellow
+      $software.Uninstall()
+    }
+  } else {
       Write-Host "[.] Software '$SoftwareName' not found using Win32_Product."
       
       # Attempt to uninstall using registry
@@ -681,6 +680,7 @@ function Remove-SoftwareByName {
                           Where-Object { $_.DisplayName -like "*$SoftwareName*" }
       if ($registrySoftware) {
           foreach ($software in $registrySoftware) {
+            if ($software.PSChildName.length -eq 36) {  # if it looks like it has a real GUID, probably real..
               Write-Host "[-] Uninstalling $($software.DisplayName)..." -ForegroundColor Yellow
               if ($software.UninstallString) {
                   Start-Process -FilePath $software.UninstallString -Wait
@@ -688,6 +688,7 @@ function Remove-SoftwareByName {
               else {
                   Write-Host "[.] Uninstall string not found for $($software.DisplayName)."
               }
+            }
           }
       }
       else {
@@ -1775,7 +1776,7 @@ foreach ($QID in $QIDs) {
       { ($QIDsGhostScript -contains $_) -or ($VulnName -like "*GhostScript*") } {
         if (Get-YesNo "$_ Install GhostScript 10.01.2 64bit? " -Results $Results) {
           Write-Host "[.] Searching for old versions of GPL Ghostscript .."
-          $Products = Search-Software "GPL Ghostscript" 
+          $Products = Search-Software "*Ghostscript" 
           if ($Products) {
             Remove-Software -Products $Products -Results $Results
           } else {
