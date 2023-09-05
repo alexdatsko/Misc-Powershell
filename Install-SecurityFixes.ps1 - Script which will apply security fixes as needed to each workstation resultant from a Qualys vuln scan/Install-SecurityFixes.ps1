@@ -69,17 +69,15 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.17"
-     # New in this version:  Chrome new version check fix, DCU exe check fix, Ghostscript removal fix/Remove-SoftwareByName
-$VersionInfo = "v$($Version) - Last modified: 08/31/23"
+$Version = "0.37.19"
+     # New in this version:  Fix for CSV file picking .. 
+$VersionInfo = "v$($Version) - Last modified: 09/05/23"
 
 #### VERSION ###################################################
 
 # Common URL Variables for updates:
-
 $DellCommandURL = "https://dl.dell.com/FOLDER10408469M/1/Dell-Command-Update-Application_HYR95_WIN_5.0.0_A00.EXE"
 $DCUFilename = ($DellCommandURL -split "/")[-1]
-
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -141,8 +139,6 @@ function Get-YesNo {
     return $true
   }
 }
-
-# skip to # MAIN # 
 
 ################################################# SCRIPT FUNCTIONS ###############################################
 
@@ -458,7 +454,6 @@ Function Set-DellBiosProviderDefaults {
 
 ################################################# CONFIG FUNCTIONS ###############################################
 
-
 function Find-ConfigFileLine {  # CONTEXT Search, a match needs to be found but NOT need to be exact line, i.e '$QIDsFlash = 1,2,3,4' returns true if '#$QIDsFlash = 1,2,3,4,9999,12345' is found
   param ([string]$ConfigLine)
 
@@ -539,12 +534,21 @@ function Pick-File {    # Show a list of files with a number to the left of each
   } else { # either automated or only 1 file
     if ($Automated) {  # If theres 1 result only, or -Automated is used, pick the first (newest) file and pray!
       $Sel=0
-      Write-Host "[+] AUTOMATED: Using $sel - $($filenames)" -ForegroundColor White
+      if ($filenames.length -gt 1) {
+        $filename = $filenames[$Sel]
+      } 
+      Write-Host "[+] AUTOMATED: Using $sel - $($filenames)" -ForegroundColor White # not working.. picking $filenames instead, and use 1 file only!!! 
       return "$($Location)\$($Filenames)"
     } else {
-      # if only 1 file, return 1st file.
-      Write-Host "[+] Using $sel - $($filenames)" -ForegroundColor White
-      return "$($Location)\$($Filenames)"
+      if ($filenames.length -gt 1) {
+        $filename = $filenames[$Sel]
+        Write-Host "[+] Using $sel - $($filename)" -ForegroundColor White
+        return "$($Location)\$($Filename)"  
+      } else {
+        # if only 1 file, return 1st file.
+        Write-Host "[+] Using $sel - $($filenames)" -ForegroundColor White
+        return "$($Location)\$($Filenames)"  
+      }
     }
     if ($i -eq 0) {
       Write-Host "[!] No files found! Error in Pick-File" -ForegroundColor Red
@@ -638,9 +642,7 @@ Function Add-VulnToQIDList {
   }
 }
 
-
 ################################################# VULN REMED FUNCTIONS ###############################################
-
 
 function Search-Software {
   param(
@@ -732,7 +734,6 @@ function Remove-Software {
     }
   }
 }
-
 
 function Remove-RegistryItem {
   param ([string]$Path)
@@ -1058,7 +1059,7 @@ function Get-FileVersion {
 function Find-Delimiter {
   param ([string]$CSVFilename)
 
-  $line = Get-Content $CSVFilename | Select-Object -First 1
+  $line = Get-Content -Path $CSVFilename | Select-Object -First 1
   return ($line -split "Account Name")[1][0]
 } 
 
@@ -1236,8 +1237,6 @@ function Set-RegKey {
 
 # All the microsoft office products with their corresponding dword value
 $RemediationValues = @{ "Excel" = "Excel.exe"; "Graph" = "Graph.exe"; "Access" = "MSAccess.exe"; "Publisher" = "MsPub.exe"; "PowerPoint" = "PowerPnt.exe"; "OldPowerPoint" = "PowerPoint.exe" ; "Visio" = "Visio.exe"; "Project" = "WinProj.exe"; "Word" = "WinWord.exe"; "Wordpad" = "Wordpad.exe" }
-###
-
 
 ################################################################################################################## MAIN ############################################################################################################
 ################################################################################################################## MAIN ############################################################################################################
@@ -1475,16 +1474,6 @@ $CSVData | ForEach-Object {
         $QIDsAdded+=[int]$QID
       }
     }
-
-  # Search by title:
-#    if ($_.Results -like "Microsoft vulnerable Microsoft.*") {
-#      if (!($QIDsUpdateMicrosoftStoreApps -contains $QID)) {
-#        Add-VulnToQIDList $QID $_.Title  'QIDsUpdateMicrosoftStoreApps' $QIDsAdded
-#        . $($QIDsListFile)
-#        $QIDsAdded+=[int]$QID
-#      }
-#    }
-
   }
 }
 Write-Output "[.] Done checking for new vulns.`n"
@@ -1565,7 +1554,7 @@ foreach ($QID in $QIDs) {
           $guid = (Get-Package | Where-Object{$_.Name -like "*SupportAssist*"})
           if ($guid) {  ($guid | Select-Object -expand FastPackageReference).replace("}","").replace("{","")  }
           msiexec /x $guid /qn /L*V "$($tmp)\SupportAssist.log" REBOOT=R
-          
+
           # This might require interaction, in which case run this:
           msiexec /x $guid /L*V "$($tmp)\SupportAssist.log"
 
@@ -2040,11 +2029,19 @@ foreach ($QID in $QIDs) {
             Write-Host "[!] Dell Command products not found under '*Dell Command | Update*' : `n    Products: [ $Products ]`n" -ForegroundColor Red
           }              
           #wget "https://dl.dell.com/FOLDER08334704M/2/Dell-Command-Update-Windows-Universal-Application_601KT_WIN_4.5.0_A00_01.EXE" -OutFile "$($tmp)\dellcommand.exe"  # OLD AND VULN NOW..
-          $DCUExe = (Get-ChildItem "$SecAudPath" | Where-Object {$_.Name -like "Dell-Command-Update-*"} | Sort CreationTime -Descending | Select -First 1).FullName
-          if ($DCUFilename -like "$($DCUEXE)*") {              
+          $DCUExe = ((Get-ChildItem "$SecAudPath" | Where-Object {$_.Name -like "Dell-Command-Update-*"} | Sort CreationTime -Descending | Select -First 1).FullName)
+          if ($null -ne $DCUEXE -and $DCUFilename -like "$($DCUEXE)*") {  #ugh, this matches <blank>*              
             Write-Host "[+] Found, DCU has already been downloaded: $DCUExe" -ForegroundColor Green
           } else {
             Write-Host "[.] Installing newest Dell command update 5.0.0 .." -ForegroundColor Yellow
+            if ($null -eq $SecAudPath) {
+              Write-Verbose "SecAudPath is blank, setting to C:\Temp\SecAud for now.."
+              $SecAudPath = "C:\Temp\SecAud"
+              if (!(Test-Path $SecAudPath)) {
+                Write-Verbose "Creating $($SecAudPath) as it doesn't exist.."
+                New-Item -ItemType Directory $SecAudPath -Force
+              }
+            }
             Write-Verbose "Downloading $DellCommandURL to $($SecAudPath)\$($DCUFilename).."
             Invoke-WebRequest $DellCommandURL -UserAgent "I'm using edge, I swear.." -OutFile "$($SecAudPath)\$($DCUFilename)"  # Dell doesn't want powershell downloads!
             Write-Verbose "Saved to $($SecAudPath)\$($DCUFilename)"
