@@ -2,7 +2,7 @@
 param (
   [switch] $Automated = $false,    # this allows us to run without supervision and apply all changes (could be dangerous!)
   [string] $CSVFile,               # Allow us to pick a CSV file on the commandline
-  [string] $QID,                   # Allow us to pick a certain QID to remediate
+  [int[]] $OnlyQIDs,               # Allow us to pick (a) certain QID(s) to remediate
   [switch] $Help                   # Allow -Help to display help for parameters
 )
 
@@ -21,8 +21,8 @@ $AllHelp = "########################################################
     Specifies the path to the CSV file to use.
 .PARAMETER Automated
     Indicates whether the script is running in automated mode. Fixes will be applied automatically.
-.PARAMETER QID
-    Pick a smaller list of QIDs to remediate.
+.PARAMETER OnlyQIDs
+    Pick a smaller list of QIDs to remediate, i.e 1,2,5
 .PARAMETER Verbose
     Enables verbose output for detailed information.
 #>
@@ -47,10 +47,9 @@ $OSVersion = ([environment]::OSVersion.Version).Major
 $SoftwareInstalling=[System.Collections.ArrayList]@()
 $QIDsAdded = @()
 $QIDSpecific=@()
-if ($QID) {
-  $QIDSpecific=[System.Collections.Generic.List[int]]$QID
-} else {
-  $QIDSpecific=@()
+if ($OnlyQIDs) {
+  $QIDSpecific=[System.Collections.Generic.List[int]]$OnlyQIDs
+  Write-Verbose "-OnlyQIDs parameter found: $QIDSpecific"
 }
 
 # Start a transscript of what happens while the script is running
@@ -63,7 +62,7 @@ if (!(Test-Path $tmp)) { New-Item -ItemType Directory $tmp }
 
 $dateshort= Get-Date -Format "yyyy-MM-dd"
 try {
-  Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log" -ErrorAction SilentlyContinue
+  Start-Transcript "$($env:temp)\Install-SecurityFixes_$($dateshort).log" -ErrorAction SilentlyContinue
 } catch {
   if ($Error[0].Exception.Message -match 'Transcript is already in progress') {
     Write-Warning '[!] Start-Triptionranscript: Already running.'
@@ -1374,10 +1373,11 @@ if ($null -eq $CSVFilename) {
 
 $Rows = @()
 $QIDsAdded = @()
+$QID = ""
 $CSVData | ForEach-Object {
 # Search by title:
   $QID=($_.QID).Replace('.0','') 
-  if ($QIDsAdded -notcontains [int]$QID) {
+  if ($QIDsAdded -notcontains $QID) {
     if ($_.Title -like "Apple iCloud for Windows*") {
       if (!($QIDsAppleiCloud -contains $QID)) {
         Add-VulnToQIDList $QID $_.Title  'QIDsAddedQIDsAppleiTunes' 
@@ -1550,15 +1550,16 @@ Write-Host "`n"
 # APPLY FIXES FOR QIDs
 
 if ($QIDSpecific) {
-  Write-Host "[!] Applying fixes for specific QIDs only: $QIDSpecific" -ForegroundColor Yellow
+  Write-Host "[!] Applying fixes for specific QIDs only: $QIDSpecific `n" -ForegroundColor Yellow
   $QIDs = $QIDSpecific
 }
 foreach ($QID in $QIDs) {
-    $ThisQID = $QID
+    $ThisQID = [int]$QID
+    Write-Verbose "-- This QID: $QID -- Type: $($QID.GetType())"
     $ThisTitle = (($Rows | Where-Object { $_.QID -eq $ThisQID }) | Select-Object -First 1)."Vulnerability Description"
     $VulnName = $ThisTitle  # Referenced differently below..
     $Results = (($Rows | Where-Object { $_.QID -eq $ThisQID }) | Select-Object -First 1)."Results"
-    If ($Automated) {
+    If ($Automated -eq $true) {
       Write-Verbose "[Running in Automated mode]"
     }
     switch ([int]$QID)
