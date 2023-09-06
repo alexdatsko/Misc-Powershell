@@ -69,9 +69,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.19"
-     # New in this version:  Fix for CSV file picking .. 
-$VersionInfo = "v$($Version) - Last modified: 09/05/23"
+$Version = "0.37.20"
+     # New in this version:  Fix for CSV file picking .. part2
+$VersionInfo = "v$($Version) - Last modified: 09/06/23"
 
 #### VERSION ###################################################
 
@@ -518,47 +518,46 @@ function Is-Array {
 }
 
 function Pick-File {    # Show a list of files with a number to the left of each one, pick by number
-  param ([array]$Filenames)
+  param (
+    [array]$Filenames
+  )
+  
   $i=0
-  $Filenames | Foreach-Object {
+  $Filenames | ForEach-Object {
     Write-Host "[$i] $_" -ForegroundColor Blue
     $i += 1
   }
-  if (!($Automated) -and ($i -gt 1)) {   # Don't bother picking if there is just one file..
+
+  if (!$Automated -and ($i -gt 1)) {
     Write-Host "[$i] EXIT" -ForegroundColor Blue
     $Selection = Read-Host "Select file to import, [Enter=0] ?"
-    if ($Selection -eq $i) { Write-Host "[-] Exiting!" -ForegroundColor Gray ; exit }
-    if ($Selection -eq "") { $Selection="0" }
-    $Sel = [int]$Selection
-    return "$($Location)\$($Filenames[$Sel])"
-  } else { # either automated or only 1 file
-    if ($Automated) {  # If theres 1 result only, or -Automated is used, pick the first (newest) file and pray!
-      $Sel=0
-      if ($filenames.length -gt 1) {
-        $filename = $filenames[$Sel]
-      } 
-      Write-Host "[+] AUTOMATED: Using $sel - $($filenames)" -ForegroundColor White # not working.. picking $filenames instead, and use 1 file only!!! 
-      return "$($Location)\$($Filenames)"
-    } else {
-      if ($filenames.length -gt 1) {
-        $filename = $filenames[$Sel]
-        Write-Host "[+] Using $sel - $($filename)" -ForegroundColor White
-        return "$($Location)\$($Filename)"  
-      } else {
-        # if only 1 file, return 1st file.
-        Write-Host "[+] Using $sel - $($filenames)" -ForegroundColor White
-        return "$($Location)\$($Filenames)"  
-      }
+    if ($Selection -eq $i) { Write-Host "[-] Exiting!" -ForegroundColor Gray; exit }
+    if ([string]::IsNullOrEmpty($Selection)) { $Selection = "0" } else {
+      $Sel = [int]$Selection
     }
-    if ($i -eq 0) {
-      Write-Host "[!] No files found! Error in Pick-File" -ForegroundColor Red
-      exit
+    return "$($Location)\$($Filenames[$Sel])"
+  } else {
+    $Sel = 0
+    if ($Filenames.Length -gt 1) {
+      $filename = $Filenames[$Sel]
+      Write-Host "[+] Using $Sel - $filename" -ForegroundColor White
+      return "$($Location)\$filename"
+    } else {
+      # if only 1 file, return 1st file.
+      Write-Host "[+] Using $Sel - $($Filenames[0])" -ForegroundColor White
+      return "$($Location)\$($Filenames[0])"  
     }
   }
-  # if we got here, something is wrong..
+  
+  if ($i -eq 0) {
+    Write-Host "[!] No files found! Error in Pick-File" -ForegroundColor Red
+    exit
+  }
+
   Write-Host "[!] Error in Pick-File" -ForegroundColor Red
   exit
 }
+
 
 function Find-LocalCSVFile {
   param ([string]$Location,
@@ -1489,7 +1488,9 @@ $CSVData | ForEach-Object {
 
 Write-Host "[i] CSV Rows applicable to $Hostname : $($Rows.Count)" -ForegroundColor Cyan
 if ($Rows.Count -lt 1) {
-  Write-Host "[X] There are no rows applicable to $hostname !! Exiting.." -ForegroundColor Red
+  Write-Host "[!] There are no rows applicable to $hostname !! Exiting.." -ForegroundColor Red
+  Write-Host "[?] Maybe you meant to pick from a different file? "
+  Write-Host $Filenames
   Exit
 }
 # $Rows
