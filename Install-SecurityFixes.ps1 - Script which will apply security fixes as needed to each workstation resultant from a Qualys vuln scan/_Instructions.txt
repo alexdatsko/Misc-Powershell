@@ -4,7 +4,7 @@
 #
 
 Install this on a server by dropping it into  \\server\data\secaud (or equivalent)
-Also copy the _config.ps1 file as well.  Edit it on the server, to make sure that all of the information is relevant to this environment.
+Also copy the _config.ps1, and QIDLists.ps1 files as well.  Edit it on the server, to make sure that all of the information is relevant to this environment.
 Also put the Qualys scan (in CSV format, directly off of BTS EAGLEi) directly in the same folder with it
 Run the script by right click- 'Run with powershell'. NOTE: You may need to enable the running of scripts on the system first:
 
@@ -12,7 +12,7 @@ Run the script by right click- 'Run with powershell'. NOTE: You may need to enab
 set-executionpolicy remotesigned
 
 It will re-launch as admin (click yes in UAC)
-The vulnerabilities that can be fixed with the script will ask a yes/no before each one.  Type Y to update.
+The vulnerabilities that can be fixed with the script will ask a yes/no before each one.  Type Y to update. You can hit A to go 'fully automated' as well
 To run the script and automatically fix everything, add the parameter:
 
 <Run Powershell as Admin>
@@ -20,4 +20,10 @@ set-executionpolicy remotesigned
 sl \\server\data\secaud     # or use the correct machine and share location
 .\Install-SecurityFixes.ps1 -Automated
 
+This will automatically fix every problem it encounters.
 
+If the script is erroring out and you want to find out why, you may use the -Verbose option:
+
+.\Install-SecurityFixes.ps1 -Verbose
+
+This should hopefully give you a bit more information on what is causing the issue.

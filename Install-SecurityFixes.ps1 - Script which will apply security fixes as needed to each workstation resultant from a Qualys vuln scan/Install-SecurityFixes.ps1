@@ -21,6 +21,8 @@ $AllHelp = "########################################################
     Specifies the path to the CSV file to use.
 .PARAMETER Automated
     Indicates whether the script is running in automated mode. Fixes will be applied automatically.
+.PARAMETER QID
+    Pick a smaller list of QIDs to remediate.
 .PARAMETER Verbose
     Enables verbose output for detailed information.
 #>
@@ -40,18 +42,25 @@ if ($Help) {
 $oldPwd = $pwd                               # Grab location script was run from
 $ConfigFile = "$oldpwd\_config.ps1"          # Configuration file 
 $QIDsListFile = "$oldpwd\QIDLists.ps1"       # QID List file 
+$tmp = "$($env:temp)\SecAud"                 # "temp" Temporary folder to save downloaded files to, this will be overwritten when checking config ..
 $OSVersion = ([environment]::OSVersion.Version).Major
 $SoftwareInstalling=[System.Collections.ArrayList]@()
 $QIDsAdded = @()
+$QIDSpecific=@()
+if ($QID) {
+  $QIDSpecific=[System.Collections.Generic.List[int]]$QID
+} else {
+  $QIDSpecific=@()
+}
 
-$tmp = "$($env:temp)\SecAud"                 # "temp" Temporary folder to save downloaded files to, this will be overwritten when checking config ..
-
+# Start a transscript of what happens while the script is running
 try {
   Stop-Transcript -ErrorAction SilentlyContinue | Out-Null
 }
 catch [System.InvalidOperationException]{}
-#Start a transscript of what happens while the script is running
+
 if (!(Test-Path $tmp)) { New-Item -ItemType Directory $tmp }
+
 $dateshort= Get-Date -Format "yyyy-MM-dd"
 try {
   Start-Transcript "$($tmp)\Install-SecurityFixes_$($dateshort).log" -ErrorAction SilentlyContinue
@@ -69,8 +78,8 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.20"
-     # New in this version:  Fix for CSV file picking .. part2
+$Version = "0.37.21"
+     # New in this version:  378332 WinTrust didn't exist on some PCs, also testing for -QID single
 $VersionInfo = "v$($Version) - Last modified: 09/06/23"
 
 #### VERSION ###################################################
@@ -1540,6 +1549,10 @@ Write-Host "`n"
 ############################################################################################################################################################################################
 # APPLY FIXES FOR QIDs
 
+if ($QIDSpecific) {
+  Write-Host "[!] Applying fixes for specific QIDs only: $QIDSpecific" -ForegroundColor Yellow
+  $QIDs = $QIDSpecific
+}
 foreach ($QID in $QIDs) {
     $ThisQID = $QID
     $ThisTitle = (($Rows | Where-Object { $_.QID -eq $ThisQID }) | Select-Object -First 1)."Vulnerability Description"
@@ -2338,10 +2351,12 @@ foreach ($QID in $QIDs) {
       378332 {
         if (Get-YesNo "$_ Fix WinVerifyTrust Signature Validation Vulnerability? " -Results $Results) { 
           Write-Output "[.] Creating registry item: HKLM:\Software\Microsoft\Cryptography\Wintrust\Config\EnableCertPaddingCheck=1"
+          New-Item -Path "HKLM:\Software\Microsoft\Cryptography\Wintrust" -Force | Out-Null
           New-Item -Path "HKLM:\Software\Microsoft\Cryptography\Wintrust\Config" -Force | Out-Null
           New-ItemProperty -Path "HKLM:\Software\Microsoft\Cryptography\Wintrust\Config" -Name "EnableCertPaddingCheck" -Value "1" -PropertyType "String" -Force | Out-Null
           
           Write-Output "[.] Creating registry item: HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config\EnableCertPaddingCheck=1"
+          New-Item -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust" -Force | Out-Null
           New-Item -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config" -Force | Out-Null
           New-ItemProperty -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config" -Name "EnableCertPaddingCheck" -Value "1" -PropertyType "String" -Force | Out-Null    
           Write-Output "[!] Done!"
