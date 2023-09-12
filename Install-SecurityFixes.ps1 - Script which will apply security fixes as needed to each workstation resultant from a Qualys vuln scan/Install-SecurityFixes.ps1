@@ -77,9 +77,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.21"
-     # New in this version:  378332 WinTrust didn't exist on some PCs, also testing for -QID single
-$VersionInfo = "v$($Version) - Last modified: 09/06/23"
+$Version = "0.37.22"
+     # New in this version:  378839 7-zip CVE added
+$VersionInfo = "v$($Version) - Last modified: 09/12/23"
 
 #### VERSION ###################################################
 
@@ -1810,7 +1810,7 @@ foreach ($QID in $QIDs) {
         }
       }
       372348 {
-        if (Get-YesNo "$_ - Intel Chipset INF util ? " -Results $Results) {
+        if (Get-YesNo "$_ - Install Intel Chipset INF util ? " -Results $Results) {
             Invoke-WebRequest "https://downloadmirror.intel.com/774764/SetupChipset.exe" -OutFile "$($tmp)\setupchipset.exe"
             # https://downloadmirror.intel.com/774764/SetupChipset.exe
             cmd /c "$($tmp)\setupchipset.exe -s -accepteula  -norestart -log $($tmp)\intelchipsetinf.log"
@@ -1820,7 +1820,7 @@ foreach ($QID in $QIDs) {
         }
       }
       372300 {
-        if (Get-YesNo "$_ - Intel RST ? " -Results $Results) {
+        if (Get-YesNo "$_ - Install latest Intel RST ? " -Results $Results) {
             #Invoke-WebRequest "https://downloadmirror.intel.com/655256/SetupRST.exe" -OutFile "$($tmp)\setuprst.exe"
             Invoke-WebRequest "https://downloadmirror.intel.com/773229/SetupRST.exe" -OutFile "$($tmp)\setuprst.exe"
             
@@ -1880,7 +1880,7 @@ foreach ($QID in $QIDs) {
         explorer "https://apps.microsoft.com/store/detail/icloud/9PKTQ5699M62?hl=en-us&gl=us"
       }
       { ($QIDsAppleiTunes -contains $_ ) -or ($VulnName -like "*Apple iTunes*")} {
-        if (Get-YesNo "$_ Install newest Apple iTunes? " -Results $Results) { 
+        if (Get-YesNo "$_ Install newest Apple iTunes from Ninite? " -Results $Results) { 
             Invoke-WebRequest "https://ninite.com/itunes/ninite.exe" -OutFile "$($tmp)\itunes.exe"
             cmd /c "$($tmp)\itunes.exe"
             $QIDsAppleiTunes = 1 # All done, remove variable to prevent this from running twice
@@ -1964,7 +1964,7 @@ foreach ($QID in $QIDs) {
         } else { $QIDsEdge = 1 }
       }
       { ($QIDsFirefox -contains $_) -or ($VulnName -like "*Mozilla Firefox*") } {
-        if (Get-YesNo "$_ Install newest Firefox? " -Results $Results) { 
+        if (Get-YesNo "$_ Install newest Firefox from Ninite? " -Results $Results) { 
             #  Firefox - https://ninite.com/firefox/ninite.exe
             Invoke-WebRequest "https://ninite.com/firefox/ninite.exe" -OutFile "$($tmp)\ninite.exe"
             cmd /c "$($tmp)\ninite.exe"
@@ -1976,7 +1976,7 @@ foreach ($QID in $QIDs) {
         } else { $QIDsFirefox = 1 }
       }      
       { ($QIDsZoom -contains $_) -or ($VulnName -like "*Zoom*") } {
-        if (Get-YesNo "$_ Install newest Zoom Client? " -Results $Results) { 
+        if (Get-YesNo "$_ Install newest Zoom Client from Ninite? " -Results $Results) { 
             #  Zoom client - https://ninite.com/zoom/ninite.exe
             Invoke-WebRequest "https://ninite.com/zoom/ninite.exe" -OutFile "$($tmp)\ninite.exe"
             cmd /c "$($tmp)\ninite.exe"
@@ -1992,7 +1992,7 @@ foreach ($QID in $QIDs) {
         } else { $QIDsZoom = 1 }
       }
       { ($QIDsTeamViewer -contains $_) -or ($VulnName -like "*TeamViewer*") } {
-        if (Get-YesNo "$_ Install newest Teamviewer? " -Results $Results) { 
+        if (Get-YesNo "$_ Install newest Teamviewer from Ninite? " -Results $Results) { 
             #  Teamviewer - https://ninite.com/teamviewer15/ninite.exe
             Invoke-WebRequest "https://ninite.com/teamviewer15/ninite.exe" -OutFile "$($tmp)\ninite.exe"
             cmd /c "$($tmp)\ninite.exe"
@@ -2000,12 +2000,19 @@ foreach ($QID in $QIDs) {
         } else { $QIDsTeamViewer = 1 }
       }
       { ($QIDsDropbox -contains $_) -or ($VulnName -like "*Dropbox*") } {
-        if (Get-YesNo "$_ Install newest Dropbox? " -Results $Results) { 
+        if (Get-YesNo "$_ Install newest Dropbox from Ninite? " -Results $Results) { 
             #  Dropbox - https://ninite.com/dropbox/ninite.exe
-            Invoke-WebRequest "https://ninite.com/dropbox/ninite.exe" -OutFile "$($tmp)\ninite.exe"
-            cmd /c "$($tmp)\ninite.exe"
+            Invoke-WebRequest "https://ninite.com/dropbox/ninite.exe" -OutFile "$($tmp)\dropboxninite.exe"
+            cmd /c "$($tmp)\dropboxninite.exe"
             $QIDsDropbox = 1
         } else { $QIDsDropbox = 1 }
+      }
+      378839 {
+        if (Get-YesNo "$_ Install newest 7-Zip from Ninite? " -Results $Results) { 
+          Invoke-WebRequest "https://ninite.com/7-zip/ninite.exe" -OutFile "$($tmp)\7zninite.exe"
+          cmd /c "$($tmp)\7zninite.exe"
+          $QIDs7zip = 1
+        } else { $QIDs7zip = 1 }
       }
   
         ############################
