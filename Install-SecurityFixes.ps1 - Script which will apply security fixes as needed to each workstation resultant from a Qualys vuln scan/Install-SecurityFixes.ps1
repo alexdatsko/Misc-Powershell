@@ -65,7 +65,7 @@ try {
   Start-Transcript "$($env:temp)\Install-SecurityFixes_$($dateshort).log" -ErrorAction SilentlyContinue
 } catch {
   if ($Error[0].Exception.Message -match 'Transcript is already in progress') {
-    Write-Warning '[!] Start-Triptionranscript: Already running.'
+    Write-Warning '[!] Start-Transcript: Already running.'
   } else {
     # re-throw the error if it's not the expected error
     throw $_
@@ -77,9 +77,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.22"
-     # New in this version:  378839 7-zip CVE added
-$VersionInfo = "v$($Version) - Last modified: 09/12/23"
+$Version = "0.37.24"
+     # New in this version:  Fixes for .NET runtime 5 removal issue and Guest account missing error
+$VersionInfo = "v$($Version) - Last modified: 09/22/23"
 
 #### VERSION ###################################################
 
@@ -911,7 +911,7 @@ function Remove-Folder {
     Write-Host "`n[-] NOT FIXED. $FolderToDelete still found."
     return $false
   } else {
-    Write-Host "`n[+] FIXED. $FolderToDelete has been removed."
+    Write-Host "`n[+] FIXED. $FolderToDelete has been removed." -ForegroundColor Green
     return $true
   }
 }
@@ -948,9 +948,9 @@ function Remove-File {
     return $true
   }
   if (Test-Path $FileToDelete -PathType Leaf) {
-    Write-Output "[-] NOT FIXED. $FileToDelete still found."
+    Write-Output "[-] NOT FIXED. $FileToDelete still found." 
   } else {
-    Write-Output "[+] FIXED. $FileToDelete has been removed."
+    Write-Output "[+] FIXED. $FileToDelete has been removed." 
   }
 }
 
@@ -1579,18 +1579,27 @@ foreach ($QID in $QIDs) {
       }
       105228 { 
         if (Get-YesNo "$_ Disable guest account and rename to NoVisitors ? " -Results $Results) {
-            if ($OSVersion -ge 7) {
-              Disable-LocalUser -Name "Guest"
+          if ($OSVersion -ge 7) {
+            if (Get-LocalUser "Guest") {
+              try {
+                Disable-LocalUser -Name "Guest" -ErrorAction SilentlyContinue
+              } catch { 
+                Write-Host "[!] Couldn't run: 'Disable-LocalUser -Name ""Guest"" -ErrorAction SilentlyContinue' even though there is a Guest account found.." 
+                break
+              }
               Write-Host "[.] Guest account disabled with: 'Disable-LocalUser -Name ""Guest""'"
               Rename-LocalUser -Name "Guest" -NewName "NoVisitors" | Disable-LocalUser
-              Write-Host "[.] Guest account renamed with: Rename-LocalUser -Name ""Guest"" -NewName ""NoVisitors"" | Disable-LocalUser"
+              Write-Host "[.] Guest account renamed with: 'Rename-LocalUser -Name ""Guest"" -NewName ""NoVisitors"" | Disable-LocalUser'"
             } else {
-              cmd /c 'net user Guest /active:no'
-              Write-Host "[.] Guest account disabled with: 'net user Guest /active:no'"
-              cmd /c 'wmic useraccount where name="Guest" rename NoVisitors'
-              Write-Host "[.] Guest account renamed with: 'wmic useraccount where name=""Guest"" rename NoVisitors'"
+              Write-Host "[!] Skipping: No account named ""Guest"" found."
             }
-        }
+          } else {
+            cmd /c 'net user Guest /active:no'
+            Write-Host "[.] Guest account disabled with: 'net user Guest /active:no'"
+            cmd /c 'wmic useraccount where name="Guest" rename NoVisitors'
+            Write-Host "[.] Guest account renamed with: 'wmic useraccount where name=""Guest"" rename NoVisitors'"
+          }
+        }  
       }
       { $QIDsSpectreMeltdown -contains $_ } {
         if (Get-YesNo "$_ Fix spectre4/meltdown ? " -Results $Results) {
@@ -2217,7 +2226,13 @@ foreach ($QID in $QIDs) {
             For now, will remove just the Runtime which I believe is the only vulnerability..  Maybe we remove all 3 though, will find out.
             #>
             Write-Host "[.] Checking for product: '{5A66E598-37BD-4C8A-A7CB-A71C32ABCD78}' (.NET Core 5) .." -ForegroundColor Yellow
-            $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{5A66E598-37BD-4C8A-A7CB-A71C32ABCD78}'})
+            try {
+              $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{5A66E598-37BD-4C8A-A7CB-A71C32ABCD78}'})
+            } catch {
+              Write-Host "[!] Error running command: '(get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{5A66E598-37BD-4C8A-A7CB-A71C32ABCD78}'})'" -ForegroundColor Red
+              Write-Host "[!] Please remove or update .NET 5 manually." -ForegroundColor Red
+              break
+            }
             if ($Products) {
                 Remove-Software -Products $Products -Results $Results
                 $QIDsMicrosoftNETCoreV5 = 1

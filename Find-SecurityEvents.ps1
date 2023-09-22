@@ -4,7 +4,7 @@ param ()
 $banner="
 ############################################################
 # Find-SecurityEvents.ps1
-# v 0.02 - Alex Datsko 1-18-23
+# v 0.03 - Alex Datsko 1-18-23
 # Finds relevant security events and logs to a full (and quick) text file
 # This is to be run on the Domain Controller and/or Termserver
 #
@@ -12,6 +12,7 @@ $banner="
 #"
 # Changelog: 
 #  v0.02 - added Windows firewall disable event 4950
+#  v0.03 - 9/19/23 - Added 4771 Kerberos pre-auth event
 
 $DaysToSearch = 1                                           # How many days to go back
 $OutputFolder = "C:\Temp"                                   # Folder where output is stored
@@ -32,7 +33,7 @@ Write-Output "#`n"
 $Events=@()
 if (Get-WmiObject -Namespace "root\CIMV2\TerminalServices" -Class "Win32_TerminalServiceSetting" | select -ExpandProperty TerminalServerMode) {
   Write-Host "[.] This computer is a terminal server."
-  $IIDs = (21,22,23,24,25,39,40,98,131,140,226,301,1024,1025,1026,1027,1028,1029,1102,1103,1105,1143,1149,1158,1401,1403,4624,4625,4634,4647,4648,4656,4658,4663,4688,4689,4778,4779,5058,5059,5061,5156,5158,9009)
+  $IIDs = (21,22,23,24,25,39,40,98,131,140,226,301,1024,1025,1026,1027,1028,1029,1102,1103,1105,1143,1149,1158,1401,1403,4624,4625,4634,4647,4648,4656,4658,4663,4688,4689,4778,4771,4779,5058,5059,5061,5156,5158,9009)
   $Lognames = ('Security','Microsoft-Windows-TerminalServices-RDPClient/Operational','Microsoft-Windows-TerminalServices-RemoteConnectionManager/Operational','Microsoft-Windows-TerminalServices-RDPClient/Operational','Microsoft-Windows-TerminalServices-Gateway/Operational')
 } else {
   if (Get-WmiObject -Query "select * from Win32_OperatingSystem where ProductType='2'") { 
