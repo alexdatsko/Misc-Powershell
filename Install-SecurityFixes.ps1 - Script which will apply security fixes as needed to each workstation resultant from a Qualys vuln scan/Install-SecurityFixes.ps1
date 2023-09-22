@@ -1748,45 +1748,11 @@ foreach ($QID in $QIDs) {
             Remove-RegistryItem $Path
         }
       }
-<#      { $QIDsUpdateMicrosoftStoreApps -contains $_ } {
-        if (Get-YesNo "$_ Update all store apps? " -Results $Results) {
-          <#
-          $namespaceName = "root\cimv2\mdm\dmmap"
-          $className = "MDM_EnterpriseModernAppManagement_AppManagement01"
-          $wmiObj = Get-WmiObject -Namespace $namespaceName -Class $className
-          $result = $wmiObj.UpdateScanMethod()
-          Write-Verbose $result
 
-          Write-Output "[+] Trying to update Apps via WinGet .." 
-          $result2 = winget upgrade --all --accept-source-agreements --accept-package-agreements --silent
-          Write-Verbose $result2
-          
-          # Get the list of installed apps
-          Write-Host "[+] Getting list of Store apps.." 
-          $appList = Get-AppxPackage -AllUsers # | Where-Object {$_.PackageFamilyName -like "Microsoft.WindowsStore*"}
-          
-          # Loop through each app and update it
-          foreach ($app in $appList) {
-              Write-Host "Updating $($app.Name)..."
-              $appPackageLoc = $app.InstallLocation
-              Add-AppxPackage -register "$appPackageLoc\AppxManifest.xml" -DisableDevelopmentMode -ForceApplicationShutdown
-          }
-          # Show message when all updates are complete
-          Write-Host "[!] All app updates are complete.`n"    
-          
-          # Just open the store for now so we can manually update. ugh.
-          Write-Host "[.] Trying to update Store apps with command: 'echo Y | winget upgrade -h --all' - Note - there may be a few UAC prompts for this!"
-          . "cmd.exe" "/c echo Y | winget upgrade -h --all"
-          Write-Host "[.] Opening ms-windows-store: so we can check by hand.."
-          & explorer "ms-windows-store:"
-        }
-        $QIDsUpdateMicrosoftStoreApps = 1
-      }
-#>      
         ####################################################### Installers #######################################
         # Install newest apps via Ninite
 
-      { ($QIDsGhostScript -contains $_) -or ($VulnName -like "*GhostScript*") } {
+      { ($QIDsGhostScript -contains $_) -or ($VulnName -like "*GhostScript*" -and ($QIDsGhostScript -ne 1)) } {
         if (Get-YesNo "$_ Install GhostScript 10.01.2 64bit? " -Results $Results) {
           Write-Host "[.] Searching for old versions of GPL Ghostscript .."
           $Products = Search-Software "*Ghostscript" 
@@ -1838,7 +1804,7 @@ foreach ($QID in $QIDs) {
             # msiexec.exe /q ALLUSERS=2 /m MSIDTJBS /i “RST_x64.msi” REBOOT=ReallySuppress
         }   
       }
-      { ($QIDsIntelGraphicsDriver  -contains $_) -or ($VulnName -like "*Intel Graphics*") } {
+      { ($QIDsIntelGraphicsDriver  -contains $_) -or ($VulnName -like "*Intel Graphics*" -and ($QIDsIntelGraphicsDriver -ne 1)) } {
         if (Get-YesNo "$_ Install newest Intel Graphics Driver? " -Results $Results) { 
           Write-Output "[!] THIS WILL NEED TO BE RUN MANUALLY... OPENING BROWSER TO INTEL SUPPORT ASSISTANT PAGE!"
           explorer "https://www.intel.com/content/www/us/en/support/intel-driver-support-assistant.html"
@@ -1876,7 +1842,7 @@ foreach ($QID in $QIDs) {
         } else { $QIDsIntelGraphicsDriver=1 }
       }
       
-      { ($QIDsAppleiCloud -contains $_) -or ($VulnName -like "*Apple iCloud*") } {
+      { ($QIDsAppleiCloud -contains $_) -or ($VulnName -like "*Apple iCloud*" -and ($QIDsAppleiCloud -ne 1)) } {
         <#
         if (Get-YesNo "$_ Install newest Apple iCloud? ") { 
             Invoke-WebRequest "" -OutFile "$($tmp)\icloud.exe"
@@ -1888,14 +1854,14 @@ foreach ($QID in $QIDs) {
         "$_ Can't deploy Apple iCloud via script yet!!! Please install manually! Opening Browser to iCloud page: "
         explorer "https://apps.microsoft.com/store/detail/icloud/9PKTQ5699M62?hl=en-us&gl=us"
       }
-      { ($QIDsAppleiTunes -contains $_ ) -or ($VulnName -like "*Apple iTunes*")} {
+      { ($QIDsAppleiTunes -contains $_ ) -or ($VulnName -like "*Apple iTunes*" -and ($QIDsAppleiTunes -ne 1))} {
         if (Get-YesNo "$_ Install newest Apple iTunes from Ninite? " -Results $Results) { 
             Invoke-WebRequest "https://ninite.com/itunes/ninite.exe" -OutFile "$($tmp)\itunes.exe"
             cmd /c "$($tmp)\itunes.exe"
             $QIDsAppleiTunes = 1 # All done, remove variable to prevent this from running twice
         } else { $QIDsAppleiTunes = 1 } # Do not ask again
       }
-      { ($QIDsChrome -contains $_) -or ($VulnName -like "*Google Chrome*")} {
+      { ($QIDsChrome -contains $_) -or ($VulnName -like "*Google Chrome*" -and ($QIDsChrome -ne 1))} {
         if (Get-YesNo "$_ Check if Google Chrome is up to date? " -Results $Results) { 
           # Type 1 = Google Chrome Prior to 110.0.5481.177/110.0.5481.178 Multiple Vulnerabilities
           # Type 2 = Google Chrome Prior to 113.0.5672.63 Multiple Vulnerabilities
@@ -1951,7 +1917,7 @@ foreach ($QID in $QIDs) {
           $QIDsChrome = 1 # All done, remove variable to prevent this from running twice
         } else { $QIDsChrome = 1 }
       }
-      { ($QIDsEdge -contains $_) -or ($VulnName -like "*Microsoft Edge*") } {
+      { ($QIDsEdge -contains $_) -or ($VulnName -like "*Microsoft Edge*" -and ($QIDsEdge -ne 1)) } {
         if (Get-YesNo "$_ Check if Microsoft Edge is up to date? " -Results $Results) { 
           # Microsoft Edge Based on Chromium Prior to 114.0.1823.37 Multiple Vulnerabilities
           Write-Verbose "VulnDesc: $VulnDesc"
@@ -1972,7 +1938,7 @@ foreach ($QID in $QIDs) {
           $QIDsEdge = 1
         } else { $QIDsEdge = 1 }
       }
-      { ($QIDsFirefox -contains $_) -or ($VulnName -like "*Mozilla Firefox*") } {
+      { ($QIDsFirefox -contains $_) -or ($VulnName -like "*Mozilla Firefox*" -and ($QIDsFirefox -ne 1)) } {
         if (Get-YesNo "$_ Install newest Firefox from Ninite? " -Results $Results) { 
             #  Firefox - https://ninite.com/firefox/ninite.exe
             Invoke-WebRequest "https://ninite.com/firefox/ninite.exe" -OutFile "$($tmp)\ninite.exe"
@@ -1984,7 +1950,7 @@ foreach ($QID in $QIDs) {
             $QIDsFirefox = 1
         } else { $QIDsFirefox = 1 }
       }      
-      { ($QIDsZoom -contains $_) -or ($VulnName -like "*Zoom*") } {
+      { ($QIDsZoom -contains $_) -or ($VulnName -like "*Zoom*" -and ($QIDsZoom -ne 1)) } {
         if (Get-YesNo "$_ Install newest Zoom Client from Ninite? " -Results $Results) { 
             #  Zoom client - https://ninite.com/zoom/ninite.exe
             Invoke-WebRequest "https://ninite.com/zoom/ninite.exe" -OutFile "$($tmp)\ninite.exe"
@@ -2000,7 +1966,7 @@ foreach ($QID in $QIDs) {
             $QIDsZoom = 1
         } else { $QIDsZoom = 1 }
       }
-      { ($QIDsTeamViewer -contains $_) -or ($VulnName -like "*TeamViewer*") } {
+      { ($QIDsTeamViewer -contains $_) -or ($VulnName -like "*TeamViewer*" -and ($QIDsTeamViewer -ne 1)) } {
         if (Get-YesNo "$_ Install newest Teamviewer from Ninite? " -Results $Results) { 
             #  Teamviewer - https://ninite.com/teamviewer15/ninite.exe
             Invoke-WebRequest "https://ninite.com/teamviewer15/ninite.exe" -OutFile "$($tmp)\ninite.exe"
@@ -2008,7 +1974,7 @@ foreach ($QID in $QIDs) {
             $QIDsTeamViewer = 1
         } else { $QIDsTeamViewer = 1 }
       }
-      { ($QIDsDropbox -contains $_) -or ($VulnName -like "*Dropbox*") } {
+      { ($QIDsDropbox -contains $_) -or ($VulnName -like "*Dropbox*" -and ($QIDsDropbox -ne 1)) } {
         if (Get-YesNo "$_ Install newest Dropbox from Ninite? " -Results $Results) { 
             #  Dropbox - https://ninite.com/dropbox/ninite.exe
             Invoke-WebRequest "https://ninite.com/dropbox/ninite.exe" -OutFile "$($tmp)\dropboxninite.exe"
@@ -2027,7 +1993,7 @@ foreach ($QID in $QIDs) {
         ############################
         # Others: (non-ninite)
   
-      { ($QIDsOracleJava -contains $_) -or ($VulnName -like "*Oracle Java*")} {
+      { ($QIDsOracleJava -contains $_) -or ($VulnName -like "*Oracle Java*" -and ($QIDsOracleJava -ne 1))} {
         if (Get-YesNo "$_ Check Oracle Java for updates? " -Results $Results) { 
             #  Oracle Java 17 - https://download.oracle.com/java/17/latest/jdk-17_windows-x64_bin.msi
             #wget "https://download.oracle.com/java/18/latest/jdk-18_windows-x64_bin.msi" -OutFile "$($tmp)\java17.msi"
@@ -2044,14 +2010,14 @@ foreach ($QID in $QIDs) {
             $QIDsAdoptOpenJDK = 1
         } else { $QIDsAdoptOpenJDK = 1 }
       }
-      { ($QIDsVirtualBox -contains $_) -or ($VulnName -like "*VirtualBox*") } {
+      { ($QIDsVirtualBox -contains $_) -or ($VulnName -like "*VirtualBox*" -and ($QIDsVirtualBox -ne 1)) } {
         if (Get-YesNo "$_ Install newest VirtualBox 6.1.36? " -Results $Results) { 
             Invoke-WebRequest "https://download.virtualbox.org/virtualbox/6.1.36/VirtualBox-6.1.36-152435-Win.exe" -OutFile "$($tmp)\virtualbox.exe"
             cmd /c "$($tmp)\virtualbox.exe"
             $QIDsVirtualBox = 1
         } else { $QIDsVirtualBox = 1 } 
       }
-      { ($QIDsDellCommandUpdate -contains $_) -or ($VulnName -like "*Dell Command Update*")} {
+      { ($QIDsDellCommandUpdate -contains $_) -or ($VulnName -like "*Dell Command Update*" -and ($QIDsDellCommandUpdate -ne 1))} {
         if (Get-YesNo "$_ Install newest Dell Command Update? " -Results $Results) { 
           $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like '*Dell Command | Update*'})
           if ($Products) {
@@ -2112,7 +2078,7 @@ foreach ($QID in $QIDs) {
           }  
         }
       }
-      { ($QIDsAdobeReader -contains $_) -or ($VulnName -like "*Adobe Reader*") } {
+      { ($QIDsAdobeReader -contains $_) -or ($VulnName -like "*Adobe Reader*" -and ($QIDsAdobeReader -ne 1)) } {
         if (Get-YesNo "$_ Install newest Adobe Reader DC ? ") {
           Download-NewestAdobeReader
           #cmd /c "$($tmp)\readerdc.exe"
@@ -2123,7 +2089,7 @@ foreach ($QID in $QIDs) {
           $QIDsAdobeReader = 1
         } else { $QIDsAdobeReader = 1 }
       }
-      { $QIDsMicrosoftSilverlight -contains $_ } {
+      { $QIDsMicrosoftSilverlight -contains $_ -or ($VulnName -like "*Silverlight*" -and ($QIDsMicrosoftSilverlight -ne 1))} {
         if (Get-YesNo "$_ Remove Microsoft Silverlight ? ") {
           Write-Host "[.] Checking for product: '{89F4137D-6C26-4A84-BDB8-2E5A4BB71E00}' (Microsoft Silverlight) .." -ForegroundColor Yellow
           $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{89F4137D-6C26-4A84-BDB8-2E5A4BB71E00}'})
@@ -2261,7 +2227,7 @@ foreach ($QID in $QIDs) {
           }
         }
       }
-      { ($QIDsNVIDIA -contains $_) -or ($VulnName -like "*NVIDIA*") } {
+      { ($QIDsNVIDIA -contains $_) -or ($VulnName -like "*NVIDIA*" -and ($QIDsNVidia -ne 1)) } {
         if (Get-YesNo "$_ Install newest NVidia drivers ? " -Results $Results) { 
             $NvidiacardFound = $false
             Write-Host "[.] Video Cards found:"
