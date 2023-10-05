@@ -77,9 +77,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.24"
-     # New in this version:  Fixes for .NET runtime 5 removal issue and Guest account missing error
-$VersionInfo = "v$($Version) - Last modified: 09/22/23"
+$Version = "0.37.25"
+     # New in this version:  Fix Get-NewestAdobeReader 
+$VersionInfo = "v$($Version) - Last modified: 09/25/23"
 
 #### VERSION ###################################################
 
@@ -1899,7 +1899,7 @@ foreach ($QID in $QIDs) {
           } else {
             Write-Host "[!] Chrome EXE no longer found: $ChromeEXE - likely its already been updated. Let's check.."
             $ChromeFolder = (Split-Path $(Split-Path $ChromeEXE -Parent) -Parent) # Back 2 folders, as the parent is already missing if upgraded, lets see what other versions are in the parent
-            $ChromeFolderItems = GCI $ChromeFolder | ? { $_ -notlike "." -and $_ -notlike ".." }
+            $ChromeFolderItems = Get-ChildItem $ChromeFolder | Where-Object { $_ -notlike "." -and $_ -notlike ".." }
             Write-Verbose "[.] Found items in $ChromeFolder : $ChromeFolderItems"
             $NewChromeEXE = "$($ChromeFolder)\$($ChromeFolderItems)\chrome.exe"
             if (Test-Path $NewChromeEXE) {
@@ -2026,7 +2026,7 @@ foreach ($QID in $QIDs) {
             Write-Host "[!] Dell Command products not found under '*Dell Command | Update*' : `n    Products: [ $Products ]`n" -ForegroundColor Red
           }              
           #wget "https://dl.dell.com/FOLDER08334704M/2/Dell-Command-Update-Windows-Universal-Application_601KT_WIN_4.5.0_A00_01.EXE" -OutFile "$($tmp)\dellcommand.exe"  # OLD AND VULN NOW..
-          $DCUExe = ((Get-ChildItem "$SecAudPath" | Where-Object {$_.Name -like "Dell-Command-Update-*"} | Sort CreationTime -Descending | Select -First 1).FullName)
+          $DCUExe = ((Get-ChildItem "$SecAudPath" | Where-Object {$_.Name -like "Dell-Command-Update-*"} | Sort-Object CreationTime -Descending | Select-Object -First 1).FullName)
           if ($null -ne $DCUEXE -and $DCUFilename -like "$($DCUEXE)*") {  #ugh, this matches <blank>*              
             Write-Host "[+] Found, DCU has already been downloaded: $DCUExe" -ForegroundColor Green
           } else {
@@ -2043,7 +2043,7 @@ foreach ($QID in $QIDs) {
             Invoke-WebRequest $DellCommandURL -UserAgent "I'm using edge, I swear.." -OutFile "$($SecAudPath)\$($DCUFilename)"  # Dell doesn't want powershell downloads!
             Write-Verbose "Saved to $($SecAudPath)\$($DCUFilename)"
             Write-Verbose "DCUExe $DCUExe"
-            $DCUExe = (Get-ChildItem "$SecAudPath" | Where-Object {$_.Name -like "Dell-Command-Update-*"} | Sort CreationTime -Descending | Select -First 1).FullName
+            $DCUExe = (Get-ChildItem "$SecAudPath" | Where-Object {$_.Name -like "Dell-Command-Update-*"} | Sort-Object CreationTime -Descending | Select-Object -First 1).FullName
           }
           if ($DCUExe) {
             Write-Host "[.] Launching .. $($DCUExe)" -ForegroundColor Yellow
@@ -2055,7 +2055,7 @@ foreach ($QID in $QIDs) {
             }
             Write-Host "[.] Sleeping for 5 seconds.."
             Start-Sleep 5
-            $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like '*Dell Command | Update*'}) | Select -First 1
+            $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like '*Dell Command | Update*'}) | Select-Object -First 1
             if ($Products) {
               Write-Host "[+] Found, DCU has already been downloaded: $(($Products).Version) found" -ForegroundColor Green
             } else {
@@ -2080,12 +2080,11 @@ foreach ($QID in $QIDs) {
       }
       { ($QIDsAdobeReader -contains $_) -or ($VulnName -like "*Adobe Reader*" -and ($QIDsAdobeReader -ne 1)) } {
         if (Get-YesNo "$_ Install newest Adobe Reader DC ? ") {
-          Download-NewestAdobeReader
+          Get-NewestAdobeReader
           #cmd /c "$($tmp)\readerdc.exe"
           $Outfile = "$($tmp)\readerdc.exe"
           # silent install
           Start-Process -FilePath $Outfile -ArgumentList "/sAll /rs /rps /msi /norestart /quiet EULA_ACCEPT=YES" -WorkingDirectory $env:TEMP -Wait -LoadUserProfile
-
           $QIDsAdobeReader = 1
         } else { $QIDsAdobeReader = 1 }
       }
