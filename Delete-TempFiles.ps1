@@ -12,7 +12,7 @@ $Users = (GCI C:\Users -Directory).BaseName
 foreach ($User in $Users) {
   Write-Output "[.] Processing user $User .." | tee -append $LogFile
   if (Test-Path "C:\Users\$($User)\AppData\Local\Temp" -ErrorAction Continue) {
-    Write-Output "[.] Removing $User AppData\Local\Temp folder.. suppressing any errors for files in use..." | tee -append $LogFile
+    Write-Output "[.] Removing $($User)\AppData\Local\Temp folder.. suppressing any errors for files in use..." | tee -append $LogFile
     Remove-Item "C:\Users\$($User)\AppData\Local\Temp\*.*" -Force -Recurse -ErrorAction SilentlyContinue | tee -append $Logfile
   } else {
     "No user profile for $($User)\Appdata\Local\Temp folder found for $User or Access Denied.." | tee -append $LogFile

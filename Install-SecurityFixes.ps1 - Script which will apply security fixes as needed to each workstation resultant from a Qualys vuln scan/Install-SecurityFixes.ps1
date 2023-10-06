@@ -77,9 +77,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.25"
-     # New in this version:  Fix Get-NewestAdobeReader 
-$VersionInfo = "v$($Version) - Last modified: 09/25/23"
+$Version = "0.37.26"
+     # New in this version:  Add QID 106069, updated Zoom to show file version after. Added Parse-ResultsVersion, fixed Parse-ResultsFile, Show-FileVersionComparison
+$VersionInfo = "v$($Version) - Last modified: 10/06/23"
 
 #### VERSION ###################################################
 
@@ -959,6 +959,11 @@ function Get-PathRaw {
   return Split-Path ($ThisPath.replace("%appdata%","$env:appdata").replace("%computername%","$env:computername").replace("%home%","$env:home").replace("%systemroot%","$env:systemroot").replace("%systemdrive%","$env:systemdrive").replace("%programdata%","$env:programdata").replace("%programfiles%","$env:programfiles").replace("%programfiles(x86)%","$env:programfiles(x86)").replace("%programw6432%","$env:programw6432"))
 }
 
+function Get-FileRaw {
+  param ([string]$ThisFile)
+  return ($ThisFile.replace("%appdata%","$env:appdata").replace("%computername%","$env:computername").replace("%home%","$env:home").replace("%systemroot%","$env:systemroot").replace("%systemdrive%","$env:systemdrive").replace("%programdata%","$env:programdata").replace("%programfiles%","$env:programfiles").replace("%programfiles(x86)%","$env:programfiles(x86)").replace("%programw6432%","$env:programw6432"))
+}
+
 function Parse-ResultsFolder {  
   param ($Results)
  
@@ -1007,7 +1012,7 @@ function Parse-ResultsFile {
       $PathResults = (($Results -split('Version is'))[0]).trim()
       Write-Verbose "PathResults : $PathResults"
       if ($null -ne $PathResults) {
-        $PathRaw = Get-PathRaw $PathResults
+        $PathRaw = Get-FileRaw $PathResults   # Just return a file instead of Split-Path
         Write-Verbose "PathRaw : $PathRaw"
         if ($count -gt 1) {
           if (!($Paths -contains $PathRaw)) {
@@ -1025,6 +1030,52 @@ function Parse-ResultsFile {
     return $false
   }
   return $Paths  
+}
+
+function Parse-ResultsVersion {  
+  [CmdletBinding()]
+  param ($Results)
+
+  $Versions = New-Object System.Collections.Generic.List[string]
+  $x = 0
+  Write-Verbose "Results: $Results"
+  $count = [regex]::Matches($Results, "Version is").Count
+  Write-Verbose "Count of 'Version is': $count"
+  if ($count -gt 0) {
+    while ($x -le $count) {
+      $VersionResults = (($Results -split('Version is'))[1]).replace("#","").replace(",",".").trim()   # Some versions are 5,14,23,121 instead of 5.14.23.121 
+      Write-Verbose "VersionResults : $VersionResults"
+      if ($count -eq 1) { return $VersionResults } # If its just one, return it now
+      if ($null -ne $VersionResults) {
+        $Versions.Add([version]$VersionResults)
+      }
+      $x += 1
+    }
+  } else {
+    return $false
+  }
+  return $Versions 
+}
+
+function Show-FileVersionComparison {
+  [CmdletBinding()]
+  param ([string]$Name,
+                 $Results)
+
+  if ($Results -like "* Version is *") {
+    $EXEFile = Parse-ResultsFile $Results
+    $EXEFileVersion = Parse-ResultsVersion $Results
+    if (Test-Path -Path "$EXEFile") {
+      $CurrentEXEFileVersion = "$(((gci $EXEFile -File).VersionInfo.FileVersion).Replace(",","."))"
+      $color = "Red"
+      if ($CurrentEXEFileVersion -gt $EXEFileVersion) {        $operator = ">";   $color = "Green"     }   # Current version is higher
+      if ($CurrentEXEFileVersion -eq $EXEFileVersion) {        $operator = "="                         }   # Current version is equal
+      if ($CurrentEXEFileVersion -lt $EXEFileVersion) {        $operator = "<"                         }   # Current version still lower
+      Write-Host "[.] $Name - Comparing new version: Filename: $EXEFile" -ForegroundColor Yellow
+      Write-Host "    [ Current Version: $CurrentEXEFileVersion ] $operator [ Results Version: $EXEFileVersion ]" -ForegroundColor $color
+    }
+  }
+  
 }
 
 function Backup-BitlockerKeys {
@@ -1963,6 +2014,7 @@ foreach ($QID in $QIDs) {
               }
             }
             if ($FolderFound) { Remove-Folder (Parse-ResultsFolder -Results $Results) }
+            Show-FileVersionComparison -Name "Zoom" -Results $Results
             $QIDsZoom = 1
         } else { $QIDsZoom = 1 }
       }
@@ -2067,6 +2119,26 @@ foreach ($QID in $QIDs) {
           }
           $QIDsDellCommandUpdate  = 1
         } else { $QIDsDellCommandUpdate  = 1 }
+      }
+      { 106069 -eq $_ } {
+        if (Get-YesNo "$_ Remove EOL/Obsolete Software: Microsoft Access Database Engine 2010 Service Pack 2 ? " -Results $Results) { 
+          $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Microsoft Access Database Engine 2010*'})
+          if ($Products) {
+            Remove-Software -Products $Products -Results $Results
+          } else {
+            Write-Host "[!] Access Database Engine 2010 not found under 'Microsoft Access Database Engine 2010*' : `n    $Products !!`n" -ForegroundColor Red
+          } 
+          $pfx86 = [Environment]::GetEnvironmentVariable("ProgramFiles(x86)") # Powershell is being super clunky about the parenthesis for some reason?? had to resort to this..
+          $TestFile = "$($pfx86)\Common Files\Microsoft Shared\Office14\acecore.dll"
+          if (Test-Path -Path "$TestFile") {
+            Write-Host "[!] File still found: ""$TestFile"" - Removing!"  # I'm a cheater, I know, I'm terrible. Not a good remediation, but its unlikely to be used as a PE, no exploit, just EOL, etc.
+            Remove-Item $TestFile -Force
+          }
+          if (Test-Path -Path "$TestFile") {
+            Write-Host "[!] File still found: ""$TestFile"" - NOT FIXED!" -ForegroundColor Red
+            Remove-Item $TestFile -Force
+          }
+        }
       }
       { 105734 -eq $_ } {
         if (Get-YesNo "$_ Remove older versions of Adobe Reader ? " -Results $Results) { 
