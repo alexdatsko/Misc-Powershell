@@ -3,6 +3,7 @@ This should fix the Dolphin services crashing / going dead after maintenance or 
 History:
 0.01 - 10/2022 - first version
 0.03 - 10/2023 - fixed a bug in the Ocean script that causes it to not restart every day.  Updated for better logging, cleanup reports over 365 days old, etc.
+               - also set up scheduled task to run 15m after startup, and re-exported task xmls
 
 Dougherty, Harry - DolphinOceanService
 Luff ServerVM - DolphinScheduledJobService

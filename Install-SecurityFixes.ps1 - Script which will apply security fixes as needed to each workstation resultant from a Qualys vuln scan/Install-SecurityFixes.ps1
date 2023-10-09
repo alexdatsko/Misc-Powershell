@@ -40,6 +40,7 @@ if ($Help) {
 #Clear
 
 $oldPwd = $pwd                               # Grab location script was run from
+$UpdateChromeWait = 60                       # Default to 60 seconds for updating Chrome or Firefox with -Automated. Can be overwritten in Config, for slower systems.. 
 $ConfigFile = "$oldpwd\_config.ps1"          # Configuration file 
 $QIDsListFile = "$oldpwd\QIDLists.ps1"       # QID List file 
 $tmp = "$($env:temp)\SecAud"                 # "temp" Temporary folder to save downloaded files to, this will be overwritten when checking config ..
@@ -77,9 +78,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.26"
-     # New in this version:  Add QID 106069, updated Zoom to show file version after. Added Parse-ResultsVersion, fixed Parse-ResultsFile, Show-FileVersionComparison
-$VersionInfo = "v$($Version) - Last modified: 10/06/23"
+$Version = "0.37.27"
+     # New in this version:  Fixed bug in Chrome version check, also automated Chrome updating via Ninite..
+$VersionInfo = "v$($Version) - Last modified: 10/09/23"
 
 #### VERSION ###################################################
 
@@ -1246,6 +1247,48 @@ function Remove-SpecificAppXPackage {
   }
 }
 
+Function Update-Chrome {
+  Write-Host "[.] Downloading newest Chrome update from Ninite.com .."
+  Invoke-WebRequest "https://ninite.com/chrome/ninite.exe" -OutFile "$($tmp)\ninitechrome.exe"
+  Write-Host "[.] Killing all chrome browser windows .."
+  taskkill.exe /f /im chrome.exe
+  Write-Host "[.] Waiting 5 seconds .."
+  Start-Sleep 5 # Wait 5 seconds to make sure this is completed
+  if ($Automated) {
+    Write-Host "[.] Running the Ninite chrome updater, this window will automatically be closed within $UpdateChromeWait seconds"
+    Start-Process -FilePath "$($tmp)\ninitechrome.exe" -NoNewWindow
+    Write-Host "[.] Waiting $UpdateChromeWait seconds .."
+    Start-Sleep $UpdateChromeWait # Wait X seconds to make sure the app has updated, usually 30-45s or so at least!! Longer for slower machines!
+    Write-Host "[.] Killing the Ninite Chrome updater window!"
+    taskkill.exe /f /im ninite.exe
+    taskkill.exe /f /im ninitechrome.exe
+  } else {
+    Write-Host "[.] Running the Ninite Chrome updater, please close this window by hitting DONE when complete!"
+    Start-Process -FilePath "$($tmp)\ninitechrome.exe" -NoNewWindow -Wait
+  }
+}
+
+Function Update-Firefox {
+  Write-Host "[.] Downloading newest Firefox update from Ninite.com .."
+  Invoke-WebRequest "https://ninite.com/firefox/ninite.exe" -OutFile "$($tmp)\ninitefirefox.exe"
+  Write-Host "[.] Killing all firefox browser windows .."
+  taskkill.exe /f /im firefox.exe
+  Write-Host "[.] Waiting 5 seconds .."
+  Start-Sleep 5 # Wait 5 seconds to make sure this is completed
+  if ($Automated) {
+    Write-Host "[.] Running the Ninite firefox updater, this window will automatically be closed within $UpdateChromeWait seconds"
+    Start-Process -FilePath "$($tmp)\ninitefirefox.exe" -NoNewWindow
+    Write-Host "[.] Waiting $UpdateChromeWait seconds .."
+    Start-Sleep $UpdateChromeWait # Wait X seconds to make sure the app has updated
+    Write-Host "[.] Killing the Ninite firefox updater window!"
+    taskkill.exe /f /im ninite.exe
+    taskkill.exe /f /im ninitefirefox.exe
+  } else {
+    Write-Host "[.] Running the Ninite firefox updater, please close this window by hitting DONE when complete!"
+    Start-Process -FilePath "$($tmp)\ninitefirefox.exe" -NoNewWindow -Wait
+  }
+}
+
 # Test's if the script is running in an elevated fashion (required for HKLM edits)
 function Test-IsElevated {
     $id = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -1563,8 +1606,8 @@ $Rows | ForEach-Object {
   if ($QIDsIgnored -notcontains $ThisQID) {  # FIND QIDS TO IGNORE
     $QIDs += $ThisQID
     $QIDsVerbose += "[QID$($ThisQID) - [$($_.Title)]"
-    $Results=($_.Results)
-    $VulnDesc=($_."Vulnerability Description")
+    $Results = ($_.Results)
+    $VulnDesc = ($_."Vulnerability Description")
     if ($Results -like "*vulnerable*") {  # lets try this..
       $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim() 
     }
@@ -1607,8 +1650,7 @@ if ($QIDSpecific) {
 foreach ($QID in $QIDs) {
     $ThisQID = [int]$QID
     Write-Verbose "-- This QID: $QID -- Type: $($QID.GetType())"
-    $ThisTitle = (($Rows | Where-Object { $_.QID -eq $ThisQID }) | Select-Object -First 1)."Vulnerability Description"
-    $VulnName = $ThisTitle  # Referenced differently below..
+    $VulnDesc = (($Rows | Where-Object { $_.QID -eq $ThisQID }) | Select-Object -First 1)."Vulnerability Description"
     $Results = (($Rows | Where-Object { $_.QID -eq $ThisQID }) | Select-Object -First 1)."Results"
     If ($Automated -eq $true) {
       Write-Verbose "[Running in Automated mode]"
@@ -1803,7 +1845,7 @@ foreach ($QID in $QIDs) {
         ####################################################### Installers #######################################
         # Install newest apps via Ninite
 
-      { ($QIDsGhostScript -contains $_) -or ($VulnName -like "*GhostScript*" -and ($QIDsGhostScript -ne 1)) } {
+      { ($QIDsGhostScript -contains $_) -or ($VulnDesc -like "*GhostScript*" -and ($QIDsGhostScript -ne 1)) } {
         if (Get-YesNo "$_ Install GhostScript 10.01.2 64bit? " -Results $Results) {
           Write-Host "[.] Searching for old versions of GPL Ghostscript .."
           $Products = Search-Software "*Ghostscript" 
@@ -1855,7 +1897,7 @@ foreach ($QID in $QIDs) {
             # msiexec.exe /q ALLUSERS=2 /m MSIDTJBS /i “RST_x64.msi” REBOOT=ReallySuppress
         }   
       }
-      { ($QIDsIntelGraphicsDriver  -contains $_) -or ($VulnName -like "*Intel Graphics*" -and ($QIDsIntelGraphicsDriver -ne 1)) } {
+      { ($QIDsIntelGraphicsDriver  -contains $_) -or ($VulnDesc -like "*Intel Graphics*" -and ($QIDsIntelGraphicsDriver -ne 1)) } {
         if (Get-YesNo "$_ Install newest Intel Graphics Driver? " -Results $Results) { 
           Write-Output "[!] THIS WILL NEED TO BE RUN MANUALLY... OPENING BROWSER TO INTEL SUPPORT ASSISTANT PAGE!"
           explorer "https://www.intel.com/content/www/us/en/support/intel-driver-support-assistant.html"
@@ -1893,7 +1935,7 @@ foreach ($QID in $QIDs) {
         } else { $QIDsIntelGraphicsDriver=1 }
       }
       
-      { ($QIDsAppleiCloud -contains $_) -or ($VulnName -like "*Apple iCloud*" -and ($QIDsAppleiCloud -ne 1)) } {
+      { ($QIDsAppleiCloud -contains $_) -or ($VulnDesc -like "*Apple iCloud*" -and ($QIDsAppleiCloud -ne 1)) } {
         <#
         if (Get-YesNo "$_ Install newest Apple iCloud? ") { 
             Invoke-WebRequest "" -OutFile "$($tmp)\icloud.exe"
@@ -1905,14 +1947,14 @@ foreach ($QID in $QIDs) {
         "$_ Can't deploy Apple iCloud via script yet!!! Please install manually! Opening Browser to iCloud page: "
         explorer "https://apps.microsoft.com/store/detail/icloud/9PKTQ5699M62?hl=en-us&gl=us"
       }
-      { ($QIDsAppleiTunes -contains $_ ) -or ($VulnName -like "*Apple iTunes*" -and ($QIDsAppleiTunes -ne 1))} {
+      { ($QIDsAppleiTunes -contains $_ ) -or ($VulnDesc -like "*Apple iTunes*" -and ($QIDsAppleiTunes -ne 1))} {
         if (Get-YesNo "$_ Install newest Apple iTunes from Ninite? " -Results $Results) { 
             Invoke-WebRequest "https://ninite.com/itunes/ninite.exe" -OutFile "$($tmp)\itunes.exe"
             cmd /c "$($tmp)\itunes.exe"
             $QIDsAppleiTunes = 1 # All done, remove variable to prevent this from running twice
         } else { $QIDsAppleiTunes = 1 } # Do not ask again
       }
-      { ($QIDsChrome -contains $_) -or ($VulnName -like "*Google Chrome*" -and ($QIDsChrome -ne 1))} {
+      { ($QIDsChrome -contains $_) -or ($VulnDesc -like "*Google Chrome*" -and ($QIDsChrome -ne 1))} {
         if (Get-YesNo "$_ Check if Google Chrome is up to date? " -Results $Results) { 
           # Type 1 = Google Chrome Prior to 110.0.5481.177/110.0.5481.178 Multiple Vulnerabilities
           # Type 2 = Google Chrome Prior to 113.0.5672.63 Multiple Vulnerabilities
@@ -1924,23 +1966,21 @@ foreach ($QID in $QIDs) {
             if ($VulnDesc -like "*Linux and Mac*") { # Type 3
               $VulnDescChromeWinVersion = (((($VulnDesc -split "Prior to") -split "for Windows")[1] -split "Linux and Mac and")[1]).trim()  
             } else { # Type 2
-              $VulnDescChromeWinVersion = (((($VulnDesc -split "Prior to") -split "/")[1] -split "Multiple Vulnerabilities")[0]).trim()
+              $VulnDescChromeWinVersion = ((($VulnDesc -split "Prior to")[1] -split "Multiple Vulnerabilities")[0]).trim()
             }
           }
+          Write-Verbose "VulnDescChromeWinVersion: $VulnDescChromeWinVersion"
+          
           # $Results = %ProgramFiles%\Google\Chrome\Application\114.0.5735.91\chrome.dll file version is 114.0.5735.91#
           # %ProgramFiles(x86)%\Google\Chrome\Application\114.0.5735.91\chrome.dll file version is 114.0.5735.91#
           $ChromeEXE = (($Results -split "file version")[0]).trim().replace("%ProgramFiles%",(Resolve-Path -Path "$env:ProgramFiles").Path).replace("%ProgramFiles(x86)%",(Resolve-Path -Path "${env:ProgramFiles(x86)}").Path)
           if (Test-Path $ChromeEXE) {
             $ChromeEXEVersion = Get-FileVersion $ChromeEXE
             if ($ChromeEXEVersion) {
-              Write-Verbose "Chrome version found : $ChromeEXE - $ChromeEXEVersion - checking against $VulnDescChromeWinVersion"
+              Write-Verbose "Chrome version found : $ChromeEXE - $ChromeEXEVersion .. checking against $VulnDescChromeWinVersion"
               if ([version]$ChromeEXEVersion -le [version]$VulnDescChromeWinVersion) {
-                Write-Host "[!] Vulnerable version $ChromeEXE found : $ChromeEXEVersion <= $VulnDescChromeWinVersion - Opening.."
-    <#
-                Invoke-WebRequest "https://ninite.com/chrome/ninite.exe" -OutFile "$($tmp)\ninite.exe"
-                cmd /c "$($tmp)\ninite.exe"  # Will wait for you to hit done, not automation friendly
-    #>
-                & $ChromeEXE  # This is not automation friendly either..
+                Write-Host "[!] Vulnerable version $ChromeEXE found : $ChromeEXEVersion <= $VulnDescChromeWinVersion - Updating.."
+                Update-Chrome
               } else {
                 Write-Host "[+] Chrome patched version found : $ChromeEXEVersion > $VulnDescChromeWinVersion - already patched!" -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..
               }
@@ -1950,25 +1990,34 @@ foreach ($QID in $QIDs) {
           } else {
             Write-Host "[!] Chrome EXE no longer found: $ChromeEXE - likely its already been updated. Let's check.."
             $ChromeFolder = (Split-Path $(Split-Path $ChromeEXE -Parent) -Parent) # Back 2 folders, as the parent is already missing if upgraded, lets see what other versions are in the parent
-            $ChromeFolderItems = Get-ChildItem $ChromeFolder | Where-Object { $_ -notlike "." -and $_ -notlike ".." }
+            
+            $ChromeFolderItems = Get-ChildItem $ChromeFolder | Where-Object { $_ -like "1*" -or $_ -like "2*" }  # In the future versions will be >114, >200 etc.. This is temporary
             Write-Verbose "[.] Found items in $ChromeFolder : $ChromeFolderItems"
-            $NewChromeEXE = "$($ChromeFolder)\$($ChromeFolderItems)\chrome.exe"
+            Foreach ($ChromeFolderItem in $ChromeFolderItems) {
+              if (Test-Path "$($ChromeFolder)\$($ChromeFolderItem)\chrome.exe") { $ChromeFolderVersion = $ChromeFolderItem }
+              # This should find the current chrome version folder.. i.e C:\Program Files\Google\Chrome\Application\114.0.5735.91
+            }
+
+            $NewChromeEXE = "$($ChromeFolder)\$($ChromeFolderVersion)\chrome.exe"
             if (Test-Path $NewChromeEXE) {
               $ChromeEXEVersion = Get-FileVersion $NewChromeEXE
               if ($ChromeEXEVersion) {
                 Write-Verbose "Chrome version found : $NewChromeEXE - $ChromeEXEVersion - checking against $VulnDescChromeWinVersion"
                 if ([version]$ChromeEXEVersion -le [version]$VulnDescChromeWinVersion) {
-                  Write-Host "[!] Vulnerable version $ChromeEXE found : $ChromeEXEVersion <= $VulnDescChromeWinVersion - Opening.."
+                  Write-Host "[!] Vulnerable version $ChromeEXE found : $ChromeEXEVersion <= $VulnDescChromeWinVersion - Updating.."
+                  Update-Chrome
                 } else {
-                  Write-Host "[+] Chrome patched version $ChromeEXE found : $ChromeEXEVersion > $VulnDescChromeWinVersion - Opening.."
+                  Write-Host "[+] Chrome patched version $ChromeEXE found : $ChromeEXEVersion > $VulnDescChromeWinVersion"
                 }
               }
+            } else {
+              Write-Host "[!] Error: Couldn't find chrome.exe in any of the folders in $($ChromeFolder) .." -ForegroundColor Red
             }
           }
           $QIDsChrome = 1 # All done, remove variable to prevent this from running twice
         } else { $QIDsChrome = 1 }
       }
-      { ($QIDsEdge -contains $_) -or ($VulnName -like "*Microsoft Edge*" -and ($QIDsEdge -ne 1)) } {
+      { ($QIDsEdge -contains $_) -or ($VulnDesc -like "*Microsoft Edge*" -and ($QIDsEdge -ne 1)) } {
         if (Get-YesNo "$_ Check if Microsoft Edge is up to date? " -Results $Results) { 
           # Microsoft Edge Based on Chromium Prior to 114.0.1823.37 Multiple Vulnerabilities
           Write-Verbose "VulnDesc: $VulnDesc"
@@ -1989,11 +2038,10 @@ foreach ($QID in $QIDs) {
           $QIDsEdge = 1
         } else { $QIDsEdge = 1 }
       }
-      { ($QIDsFirefox -contains $_) -or ($VulnName -like "*Mozilla Firefox*" -and ($QIDsFirefox -ne 1)) } {
+      { ($QIDsFirefox -contains $_) -or ($VulnDesc -like "*Mozilla Firefox*" -and ($QIDsFirefox -ne 1)) } {
         if (Get-YesNo "$_ Install newest Firefox from Ninite? " -Results $Results) { 
             #  Firefox - https://ninite.com/firefox/ninite.exe
-            Invoke-WebRequest "https://ninite.com/firefox/ninite.exe" -OutFile "$($tmp)\ninite.exe"
-            cmd /c "$($tmp)\ninite.exe"
+            Update-Firefox
             $ResultsFolder = Parse-ResultsFolder $Results
             if ($ResultsFolder -like "*AppData*") {
               Remove-Folder $ResultsFolder
@@ -2001,7 +2049,7 @@ foreach ($QID in $QIDs) {
             $QIDsFirefox = 1
         } else { $QIDsFirefox = 1 }
       }      
-      { ($QIDsZoom -contains $_) -or ($VulnName -like "*Zoom*" -and ($QIDsZoom -ne 1)) } {
+      { ($QIDsZoom -contains $_) -or ($VulnDesc -like "*Zoom*" -and ($QIDsZoom -ne 1)) } {
         if (Get-YesNo "$_ Install newest Zoom Client from Ninite? " -Results $Results) { 
             #  Zoom client - https://ninite.com/zoom/ninite.exe
             Invoke-WebRequest "https://ninite.com/zoom/ninite.exe" -OutFile "$($tmp)\ninite.exe"
@@ -2018,7 +2066,7 @@ foreach ($QID in $QIDs) {
             $QIDsZoom = 1
         } else { $QIDsZoom = 1 }
       }
-      { ($QIDsTeamViewer -contains $_) -or ($VulnName -like "*TeamViewer*" -and ($QIDsTeamViewer -ne 1)) } {
+      { ($QIDsTeamViewer -contains $_) -or ($VulnDesc -like "*TeamViewer*" -and ($QIDsTeamViewer -ne 1)) } {
         if (Get-YesNo "$_ Install newest Teamviewer from Ninite? " -Results $Results) { 
             #  Teamviewer - https://ninite.com/teamviewer15/ninite.exe
             Invoke-WebRequest "https://ninite.com/teamviewer15/ninite.exe" -OutFile "$($tmp)\ninite.exe"
@@ -2026,7 +2074,7 @@ foreach ($QID in $QIDs) {
             $QIDsTeamViewer = 1
         } else { $QIDsTeamViewer = 1 }
       }
-      { ($QIDsDropbox -contains $_) -or ($VulnName -like "*Dropbox*" -and ($QIDsDropbox -ne 1)) } {
+      { ($QIDsDropbox -contains $_) -or ($VulnDesc -like "*Dropbox*" -and ($QIDsDropbox -ne 1)) } {
         if (Get-YesNo "$_ Install newest Dropbox from Ninite? " -Results $Results) { 
             #  Dropbox - https://ninite.com/dropbox/ninite.exe
             Invoke-WebRequest "https://ninite.com/dropbox/ninite.exe" -OutFile "$($tmp)\dropboxninite.exe"
@@ -2045,7 +2093,7 @@ foreach ($QID in $QIDs) {
         ############################
         # Others: (non-ninite)
   
-      { ($QIDsOracleJava -contains $_) -or ($VulnName -like "*Oracle Java*" -and ($QIDsOracleJava -ne 1))} {
+      { ($QIDsOracleJava -contains $_) -or ($VulnDesc -like "*Oracle Java*" -and ($QIDsOracleJava -ne 1))} {
         if (Get-YesNo "$_ Check Oracle Java for updates? " -Results $Results) { 
             #  Oracle Java 17 - https://download.oracle.com/java/17/latest/jdk-17_windows-x64_bin.msi
             #wget "https://download.oracle.com/java/18/latest/jdk-18_windows-x64_bin.msi" -OutFile "$($tmp)\java17.msi"
@@ -2055,21 +2103,21 @@ foreach ($QID in $QIDs) {
             $QIDsOracleJava = 1
         } else { $QIDsOracleJava = 1 }
       }
-      { ($QIDsAdoptOpenJDK -contains $_) -or ($VulnName -like "*Adopt OpenJDK*") } {
+      { ($QIDsAdoptOpenJDK -contains $_) -or ($VulnDesc -like "*Adopt OpenJDK*") } {
         if (Get-YesNo "$_ Install newest Adopt Java JDK? " -Results $Results) { 
             Invoke-WebRequest "https://ninite.com/adoptjavax8/ninite.exe" -OutFile "$($tmp)\ninitejava8x64.exe"
             cmd /c "$($tmp)\ninitejava8x64.exe"
             $QIDsAdoptOpenJDK = 1
         } else { $QIDsAdoptOpenJDK = 1 }
       }
-      { ($QIDsVirtualBox -contains $_) -or ($VulnName -like "*VirtualBox*" -and ($QIDsVirtualBox -ne 1)) } {
+      { ($QIDsVirtualBox -contains $_) -or ($VulnDesc -like "*VirtualBox*" -and ($QIDsVirtualBox -ne 1)) } {
         if (Get-YesNo "$_ Install newest VirtualBox 6.1.36? " -Results $Results) { 
             Invoke-WebRequest "https://download.virtualbox.org/virtualbox/6.1.36/VirtualBox-6.1.36-152435-Win.exe" -OutFile "$($tmp)\virtualbox.exe"
             cmd /c "$($tmp)\virtualbox.exe"
             $QIDsVirtualBox = 1
         } else { $QIDsVirtualBox = 1 } 
       }
-      { ($QIDsDellCommandUpdate -contains $_) -or ($VulnName -like "*Dell Command Update*" -and ($QIDsDellCommandUpdate -ne 1))} {
+      { ($QIDsDellCommandUpdate -contains $_) -or ($VulnDesc -like "*Dell Command Update*" -and ($QIDsDellCommandUpdate -ne 1))} {
         if (Get-YesNo "$_ Install newest Dell Command Update? " -Results $Results) { 
           $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like '*Dell Command | Update*'})
           if ($Products) {
@@ -2150,7 +2198,7 @@ foreach ($QID in $QIDs) {
           }  
         }
       }
-      { ($QIDsAdobeReader -contains $_) -or ($VulnName -like "*Adobe Reader*" -and ($QIDsAdobeReader -ne 1)) } {
+      { ($QIDsAdobeReader -contains $_) -or ($VulnDesc -like "*Adobe Reader*" -and ($QIDsAdobeReader -ne 1)) } {
         if (Get-YesNo "$_ Install newest Adobe Reader DC ? ") {
           Get-NewestAdobeReader
           #cmd /c "$($tmp)\readerdc.exe"
@@ -2160,7 +2208,7 @@ foreach ($QID in $QIDs) {
           $QIDsAdobeReader = 1
         } else { $QIDsAdobeReader = 1 }
       }
-      { $QIDsMicrosoftSilverlight -contains $_ -or ($VulnName -like "*Silverlight*" -and ($QIDsMicrosoftSilverlight -ne 1))} {
+      { $QIDsMicrosoftSilverlight -contains $_ -or ($VulnDesc -like "*Silverlight*" -and ($QIDsMicrosoftSilverlight -ne 1))} {
         if (Get-YesNo "$_ Remove Microsoft Silverlight ? ") {
           Write-Host "[.] Checking for product: '{89F4137D-6C26-4A84-BDB8-2E5A4BB71E00}' (Microsoft Silverlight) .." -ForegroundColor Yellow
           $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{89F4137D-6C26-4A84-BDB8-2E5A4BB71E00}'})
@@ -2298,7 +2346,7 @@ foreach ($QID in $QIDs) {
           }
         }
       }
-      { ($QIDsNVIDIA -contains $_) -or ($VulnName -like "*NVIDIA*" -and ($QIDsNVidia -ne 1)) } {
+      { ($QIDsNVIDIA -contains $_) -or ($VulnDesc -like "*NVIDIA*" -and ($QIDsNVidia -ne 1)) } {
         if (Get-YesNo "$_ Install newest NVidia drivers ? " -Results $Results) { 
             $NvidiacardFound = $false
             Write-Host "[.] Video Cards found:"
@@ -2890,7 +2938,7 @@ foreach ($QID in $QIDs) {
         }
       }
       Default {
-        Write-Host "[X] Skipping QID $_ - $ThisTitle" -ForegroundColor Red
+        Write-Host "[X] Skipping QID $_ - $VulnDesc" -ForegroundColor Red
       }
     }
 }
