@@ -78,9 +78,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.27"
-     # New in this version:  Fixed bug in Chrome version check, also automated Chrome updating via Ninite..
-$VersionInfo = "v$($Version) - Last modified: 10/09/23"
+$Version = "0.37.28"
+     # New in this version:  Added QID 92061 - Sept 2023 Microsoft 3dViewer Store app vuln
+$VersionInfo = "v$($Version) - Last modified: 10/10/23"
 
 #### VERSION ###################################################
 
@@ -1409,12 +1409,13 @@ if ($ServerName) {
   }
 }
 
-if (Get-OSType -eq 1) {
-  Install-DellBiosProvider  # Will only run if value is set in Config
-  Set-DellBiosProviderDefaults # Will only run if value is set in Config  
+if (!$OnlyQIDs) {   # If we are not just trying a fix for one CSV, we will also see if we can install the Dell BIOS provider and set WOL to on, and backup Bitlocker keys to AD if possible
+  if (Get-OSType -eq 1) {
+    Install-DellBiosProvider  # Will only run if value is set in Config
+    Set-DellBiosProviderDefaults # Will only run if value is set in Config  
+  }
+  Backup-BitlockerKeys # Try to Backup Bitlocker recovery keys to AD
 }
-Backup-BitlockerKeys # Try to Backup Bitlocker recovery keys to AD
-
 ################# ( READ IN CSV AND PROCESS ) #####################
 
 if (!(Test-Path $($tmp))) {
@@ -2690,6 +2691,14 @@ foreach ($QID in $QIDs) {
         if (Get-YesNo "$_ Microsoft Paint 3D Remote Code Execution (RCE) Vulnerability for July 2023" -Results $Results) {
           Remove-SpecificAppXPackage -Name "MSPaint" -Version "6.2105.4017.0" -Results $Results # "6.2105.4017.0"
           Remove-SpecificAppXPackage -Name "MSPaint" -Version "6.2203.1037.0" -Results $Results # "6.2203.1037.0"
+        }
+      }
+      92061 {  # Microsoft vulnerable Microsoft.Microsoft3DViewer detected  Version     '7.2105.4012.0'  Version     '7.2211.24012.0'  Version     '7.2107.7012.0'#
+        $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
+        if (Get-YesNo "$_ Microsoft 3D Viewer Remote Code Execution (RCE) Vulnerability - September 2023" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "Microsoft3DViewer" -Version "7.2105.4012.0" -Results $Results 
+          Remove-SpecificAppXPackage -Name "Microsoft3DViewer" -Version "7.2211.24012.0" -Results $Results 
+          Remove-SpecificAppXPackage -Name "Microsoft3DViewer" -Version "7.2107.7012.0" -Results $Results 
         }
       }
 
