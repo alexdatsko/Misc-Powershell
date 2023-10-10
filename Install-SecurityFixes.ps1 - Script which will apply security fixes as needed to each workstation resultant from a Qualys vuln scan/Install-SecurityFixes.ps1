@@ -78,8 +78,8 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.28"
-     # New in this version:  Added QID 92061 - Sept 2023 Microsoft 3dViewer Store app vuln
+$Version = "0.37.29"
+     # New in this version:  Fix for Ghostscript / Remove-Software .. Added Check-Products to make sure a valid GUID is returned etc
 $VersionInfo = "v$($Version) - Last modified: 10/10/23"
 
 #### VERSION ###################################################
@@ -741,6 +741,19 @@ function Remove-Software {
         }
     }
   }
+}
+
+Function Check-Products {
+  param ($Products)
+
+  $ProductsArray = @($Products)  # Ensure $Products is treated as an array
+
+  if ($ProductsArray.Count -gt 0) {
+    if ($ProductsArray[0].IdentifyingNumber[0] -eq '{') {
+      return $true
+    }
+  }
+  return $false
 }
 
 function Remove-RegistryItem {
@@ -1850,7 +1863,7 @@ foreach ($QID in $QIDs) {
         if (Get-YesNo "$_ Install GhostScript 10.01.2 64bit? " -Results $Results) {
           Write-Host "[.] Searching for old versions of GPL Ghostscript .."
           $Products = Search-Software "*Ghostscript" 
-          if ($Products) {
+          if (Check-Products $Products) {
             Remove-Software -Products $Products -Results $Results
           } else {
             Write-Host "[!] Ghostscript product not found under 'GPL Ghostscript*' : `n    Products: [ $Products ]`n" -ForegroundColor Red
