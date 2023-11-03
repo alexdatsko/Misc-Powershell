@@ -1,10 +1,24 @@
 
 ##################################################################
-# Get-LocalSessionMaanger-Code5.ps1
+# Get-Gateway-Code300.ps1
 # Alex Datsko @ MME Consulting Inc.
-# This script will look through the event log and corellate Code 5's (session takeover) with Usernames and IPs that are taking the session over
-# Updated - 9-14-22 to add DNS lookup of hostnames
+# This script will look through the event log and corellate Event 300's in the Gateway log to related TS events
+# Created new on 10/23/23 - to work with the other TS scripts I've created
 
+
+$logfile = "c:\Temp\Gateway-disconnections.log"
+
+# Retrieve Event ID 300,302,303 messages from TerminalServices-Gateway log
+$events = Get-WinEvent -LogName "Microsoft-Windows-TerminalServices-Gateway/Operational" | Where-Object { $_.Id -eq 300 -or $_.Id -eq 302 -or $_.Id -eq 303 } | Sort TimeCreated -Descending
+
+# Display the messages
+foreach ($event in $events) {
+    "Event ID: $($event.Id) | $($event.TimeCreated) - $($event.Message)" | tee $logfile -append 
+    "-----------------------------------" | tee $logfile -append
+}
+notepad $logfile
+
+<#
 $Events = Get-WinEvent -logname "Microsoft-Windows-TerminalServices-LocalSessionManager/Operational" | where {($_.Id  -eq "40") -or ($_.Id -eq "25")}
 Foreach ($Event in $Events) {
   $Result = "" | Select Message,User,TimeCreated
@@ -85,3 +99,4 @@ $Results = Foreach ($Event in $Events) {
 } 
 
 #| Export-Csv C:\temp\RDS.csv -NoType
+#>

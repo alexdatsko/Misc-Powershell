@@ -1,0 +1,2 @@
+If MME hosted standard RD Gateway is used, we will have a hard time figuring out what hostname the RD Gateway connections are coming from to kick off a user, because they don't seem to capture the hostname of the device connecting in, just the WAN IP, which will be the same for the whole office
+However, we may in the future be able to capture the timing of this request to figure out which machine on the network is connecting.

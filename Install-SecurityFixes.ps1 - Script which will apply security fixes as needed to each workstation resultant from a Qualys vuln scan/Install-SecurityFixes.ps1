@@ -78,9 +78,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.29"
-     # New in this version:  Fix for Ghostscript / Remove-Software .. Added Check-Products to make sure a valid GUID is returned etc
-$VersionInfo = "v$($Version) - Last modified: 10/10/23"
+$Version = "0.37.30"
+     # New in this version:  Removed DellBIOSProvider stuff, this never worked out because of missing libs and it doesn't really belong here, was just QoL for offline machines..
+$VersionInfo = "v$($Version) - Last modified: 10/31/23"
 
 #### VERSION ###################################################
 
@@ -1110,7 +1110,8 @@ function Backup-BitlockerKeys {
             return $true
           } catch { 
             Write-Output "[!] ERROR: Could not access BitlockerKeyProtector. Is drive $BLV encrypted? "
-            Get-BitLockerVolume
+            $BLVol = Get-BitLockerVolume
+            $BLVol | select MountPoint,CapacityGB,VolumeStatus
             return $false
           }
         }
@@ -1424,8 +1425,8 @@ if ($ServerName) {
 
 if (!$OnlyQIDs) {   # If we are not just trying a fix for one CSV, we will also see if we can install the Dell BIOS provider and set WOL to on, and backup Bitlocker keys to AD if possible
   if (Get-OSType -eq 1) {
-    Install-DellBiosProvider  # Will only run if value is set in Config
-    Set-DellBiosProviderDefaults # Will only run if value is set in Config  
+    #Install-DellBiosProvider  # Will only run if value is set in Config
+    #Set-DellBiosProviderDefaults # Will only run if value is set in Config  
   }
   Backup-BitlockerKeys # Try to Backup Bitlocker recovery keys to AD
 }
