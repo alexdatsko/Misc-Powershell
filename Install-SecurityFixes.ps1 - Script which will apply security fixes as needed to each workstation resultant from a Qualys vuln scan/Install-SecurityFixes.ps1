@@ -78,15 +78,17 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.30"
-     # New in this version:  Removed DellBIOSProvider stuff, this never worked out because of missing libs and it doesn't really belong here, was just QoL for offline machines..
-$VersionInfo = "v$($Version) - Last modified: 10/31/23"
+$Version = "0.37.31"
+     # New in this version:  Updated Dell Command Update to 5.0.1 version, keeping this in the SecAud folder.. slight update to download procedure with $AgentString
+$VersionInfo = "v$($Version) - Last modified: 11/14/23"
 
 #### VERSION ###################################################
 
 # Common URL Variables for updates:
-$DellCommandURL = "https://dl.dell.com/FOLDER10408469M/1/Dell-Command-Update-Application_HYR95_WIN_5.0.0_A00.EXE"
-$DCUFilename = ($DellCommandURL -split "/")[-1]
+$AgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.67 Safari/537.36"
+$DCUUrl = "https://dl.dell.com/FOLDER10791703M/1/Dell-Command-Update-Application_44TH5_WIN_5.1.0_A00.EXE"
+$DCUFilename = ($DCUUrl -split "/")[-1]
+
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -2141,6 +2143,10 @@ foreach ($QID in $QIDs) {
             Write-Host "[!] Dell Command products not found under '*Dell Command | Update*' : `n    Products: [ $Products ]`n" -ForegroundColor Red
           }              
           #wget "https://dl.dell.com/FOLDER08334704M/2/Dell-Command-Update-Windows-Universal-Application_601KT_WIN_4.5.0_A00_01.EXE" -OutFile "$($tmp)\dellcommand.exe"  # OLD AND VULN NOW..
+          if (!(Test-Path $DCUFilename)) {
+            Write-Host "[.] Downloading latest Dell Command Update as $DCUFilename .."
+            Invoke-WebRequest -Uri $DCUUrl -OutFile $DCUFilename -UserAgent $AgentString -OutFile $DCUFilename
+          }
           $DCUExe = ((Get-ChildItem "$SecAudPath" | Where-Object {$_.Name -like "Dell-Command-Update-*"} | Sort-Object CreationTime -Descending | Select-Object -First 1).FullName)
           if ($null -ne $DCUEXE -and $DCUFilename -like "$($DCUEXE)*") {  #ugh, this matches <blank>*              
             Write-Host "[+] Found, DCU has already been downloaded: $DCUExe" -ForegroundColor Green
