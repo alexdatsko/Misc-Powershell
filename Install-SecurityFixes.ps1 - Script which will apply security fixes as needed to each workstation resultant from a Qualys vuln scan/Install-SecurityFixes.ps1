@@ -78,8 +78,8 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.31"
-     # New in this version:  Updated Dell Command Update to 5.0.1 version, keeping this in the SecAud folder.. slight update to download procedure with $AgentString
+$Version = "0.37.32"
+     # New in this version:  Slight fix to Invoke-WebRequest -Uri -UserAgent calls
 $VersionInfo = "v$($Version) - Last modified: 11/14/23"
 
 #### VERSION ###################################################
@@ -265,7 +265,7 @@ function Update-File {  # Not even used currently, but maybe eventually?
         [string]$FilenamePerm, 
         [string]$VersionStr,
         [string]$VersionToCheck)
-  if ((Invoke-WebRequest $url).StatusCode -eq 200) { 
+  if ((Invoke-WebRequest -UserAgent $AgentString -Uri $url).StatusCode -eq 200) { 
     $client = new-object System.Net.WebClient
     $client.Encoding = [System.Text.Encoding]::ascii
     $client.DownloadFile("$url","$($FilenameTmp)")
@@ -294,7 +294,7 @@ function Update-ScriptFile {   # Need a copy of this, to re-run main script
   
   Write-Verbose "Checking for $($VersionStr) >= $($VersionToCheck) in $($FilenamePerm) .. Downloading $($url)"
   
-  if ((Invoke-WebRequest $url).StatusCode -eq 200) { 
+  if ((Invoke-WebRequest -UserAgent $AgentString -Uri $url).StatusCode -eq 200) { 
     $client = new-object System.Net.WebClient
     $client.Encoding = [System.Text.Encoding]::ascii
     $client.DownloadFile("$url","$($FilenameTmp)")
@@ -398,7 +398,7 @@ Function Install-DellBiosProvider {
             $vcredistUrl = "https://www.microsoft.com/en-us/download/confirmation.aspx?id=30679&6B49FDFB-8E5B-4B07-BC31-15695C5A2143=1"
             Write-Host "[.] Trying to install VC 2012 U4 package, but it may require a reboot after. Downloading from: $vcredistUrl"
             try { 
-              Invoke-WebRequest $vcredistUrl -outfile "$env:temp\SecAud\vc2012redist_x64.exe" 
+              Invoke-WebRequest -UserAgent $AgentString -Uri $vcredistUrl -outfile "$env:temp\SecAud\vc2012redist_x64.exe" 
             } catch { 
               Write-Host "[!] Failed to download $vcredistUrl !!" -ForegroundColor Red
             }
@@ -821,7 +821,7 @@ function Get-NewestAdobeReader {
     #$OutFile = Join-Path $tmp "AcroRdrDCx64$($version)_MUI.exe"
     $OutFile = "$($tmp)\readerdc.exe"
     Write-Host "[.] Downloading version $version from $URI to $OutFile"
-    Invoke-WebRequest -Uri $URI -OutFile $OutFile -Verbose
+    Invoke-WebRequest -UserAgent $AgentString -Uri $URI -OutFile $OutFile -Verbose
 
     Write-Output "[!] Download complete."
     return $OutFile
@@ -1265,7 +1265,7 @@ function Remove-SpecificAppXPackage {
 
 Function Update-Chrome {
   Write-Host "[.] Downloading newest Chrome update from Ninite.com .."
-  Invoke-WebRequest "https://ninite.com/chrome/ninite.exe" -OutFile "$($tmp)\ninitechrome.exe"
+  Invoke-WebRequest -UserAgent $AgentString -Uri "https://ninite.com/chrome/ninite.exe" -OutFile "$($tmp)\ninitechrome.exe"
   Write-Host "[.] Killing all chrome browser windows .."
   taskkill.exe /f /im chrome.exe
   Write-Host "[.] Waiting 5 seconds .."
@@ -1286,7 +1286,7 @@ Function Update-Chrome {
 
 Function Update-Firefox {
   Write-Host "[.] Downloading newest Firefox update from Ninite.com .."
-  Invoke-WebRequest "https://ninite.com/firefox/ninite.exe" -OutFile "$($tmp)\ninitefirefox.exe"
+  Invoke-WebRequest -UserAgent $AgentString -Uri "https://ninite.com/firefox/ninite.exe" -OutFile "$($tmp)\ninitefirefox.exe"
   Write-Host "[.] Killing all firefox browser windows .."
   taskkill.exe /f /im firefox.exe
   Write-Host "[.] Waiting 5 seconds .."
@@ -1722,7 +1722,7 @@ foreach ($QID in $QIDs) {
       }
       110414 {
         if (Get-YesNo "$_ Fix Microsoft Outlook Denial of Service (DoS) Vulnerability Security Update August 2022 ? " -Results $Results) { 
-          Invoke-WebRequest "https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/outlook-x-none_1763a730d8058df2248775ddd907e32694c80f52.cab" -outfile "$($tmp)\outlook-x-none.cab"
+          Invoke-WebRequest -UserAgent $AgentString -Uri "https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/outlook-x-none_1763a730d8058df2248775ddd907e32694c80f52.cab" -outfile "$($tmp)\outlook-x-none.cab"
           cmd /c "C:\Windows\System32\expand.exe -F:* $($tmp)\outlook-x-none.cab $($tmp)"
           cmd /c "msiexec /p $($tmp)\outlook-x-none.msp /qn"
         }
@@ -1730,14 +1730,14 @@ foreach ($QID in $QIDs) {
       110413 {
         if (Get-YesNo "$_ Fix Microsoft Office Security Update for August 2022? " -Results $Results) { 
           Write-Host "[.] Downloading CAB: https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/msohevi-x-none_a317be1090606cd424132687bc627baffec45292.cab .."
-          Invoke-WebRequest "https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/msohevi-x-none_a317be1090606cd424132687bc627baffec45292.cab" -outfile "$($tmp)\msohevi-x-none.msp"
+          Invoke-WebRequest -UserAgent $AgentString -Uri "https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/msohevi-x-none_a317be1090606cd424132687bc627baffec45292.cab" -outfile "$($tmp)\msohevi-x-none.msp"
           Write-Host "[.] Extracting cab: C:\Windows\System32\expand.exe -F: $($tmp)\msohevi-x-none.msp $($tmp)"
           cmd /c "C:\Windows\System32\expand.exe -F:* $($tmp)\msohevi-x-none.msp $($tmp)"
           Write-Host "[.] Installing patch: $($tmp)\msohevi-x-none.msp"
           cmd /c "msiexec /p $($tmp)\msohevi-x-none.msp /qn"
 
           Write-Host "[.] Downloading CAB: https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/excel-x-none_355a1faf5d9fb095c7be862eb16105cfb2f24ca2.cab .."
-          Invoke-WebRequest "https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/excel-x-none_355a1faf5d9fb095c7be862eb16105cfb2f24ca2.cab" -outfile "$($tmp)\excel-x-none.cab"
+          Invoke-WebRequest -UserAgent $AgentString -Uri "https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/excel-x-none_355a1faf5d9fb095c7be862eb16105cfb2f24ca2.cab" -outfile "$($tmp)\excel-x-none.cab"
           Write-Host "[.] Extracting cab: C:\Windows\System32\expand.exe -F: $($tmp)\excel-x-none.msp $($tmp)"
           cmd /c "C:\Windows\System32\expand.exe -F:* $($tmp)\excel-x-none.msp $($tmp)"
           Write-Host "[.] Installing patch: $($tmp)\excel-x-none.msp"
@@ -1748,7 +1748,7 @@ foreach ($QID in $QIDs) {
       110412 {
         if (Get-YesNo "$_ Fix Microsoft Office Security Update for July 2022? " -Results $Results) { 
           Write-Host "[.] Downloading CAB: https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/excel-x-none_355a1faf5d9fb095c7be862eb16105cfb2f24ca2.cab .."
-          Invoke-WebRequest "http://catalog.s.download.windowsupdate.com/d/msdownload/update/software/secu/2022/06/vbe7-x-none_1b914b1d60119d31176614c2414c0e372756076e.cab" -outfile "$($tmp)\vbe7-x-none.cab"
+          Invoke-WebRequest -UserAgent $AgentString -Uri "http://catalog.s.download.windowsupdate.com/d/msdownload/update/software/secu/2022/06/vbe7-x-none_1b914b1d60119d31176614c2414c0e372756076e.cab" -outfile "$($tmp)\vbe7-x-none.cab"
           Write-Host "[.] Extracting cab: C:\Windows\System32\expand.exe -F: $($tmp)\vbe7-x-none.msp $($tmp)"
           cmd /c "C:\Windows\System32\expand.exe -F:* $($tmp)\excel-x-none.msp $($tmp)"
           Write-Host "[.] Installing patch: $($tmp)\vbe7-x-none.msp"
@@ -1873,7 +1873,7 @@ foreach ($QID in $QIDs) {
           }              
 
           $ghostscripturl = "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10012/gs10012w64.exe"
-          Invoke-WebRequest $ghostscripturl -OutFile "$($tmp)\ghostscript.exe"
+          Invoke-WebRequest -UserAgent $AgentString -Uri   $ghostscripturl -OutFile "$($tmp)\ghostscript.exe"
           cmd.exe /c "$($tmp)\ghostscript.exe /S"
           #Delete results file, i.e        "C:\Program Files (x86)\GPLGS\gsdll32.dll found#" as lots of times the installer does not clean this up.. may install the new one in a new location etc
           #$FileToDelete=$results.split(' found')[0]
@@ -1890,13 +1890,13 @@ foreach ($QID in $QIDs) {
       }
       110330 {  
         if (Get-YesNo "$_ - Install Microsoft Office KB4092465? " -Results $Results) {
-            Invoke-WebRequest "https://download.microsoft.com/download/3/6/E/36EF356E-85E4-474B-AA62-80389072081C/mso2007-kb4092465-fullfile-x86-glb.exe" -outfile "$($tmp)\kb4092465.exe"
+            Invoke-WebRequest -UserAgent $AgentString -Uri "https://download.microsoft.com/download/3/6/E/36EF356E-85E4-474B-AA62-80389072081C/mso2007-kb4092465-fullfile-x86-glb.exe" -outfile "$($tmp)\kb4092465.exe"
             cmd.exe /c "$($tmp)\kb4092465.exe /quiet /passive /norestart"
         }
       }
       372348 {
         if (Get-YesNo "$_ - Install Intel Chipset INF util ? " -Results $Results) {
-            Invoke-WebRequest "https://downloadmirror.intel.com/774764/SetupChipset.exe" -OutFile "$($tmp)\setupchipset.exe"
+            Invoke-WebRequest -UserAgent $AgentString -Uri "https://downloadmirror.intel.com/774764/SetupChipset.exe" -OutFile "$($tmp)\setupchipset.exe"
             # https://downloadmirror.intel.com/774764/SetupChipset.exe
             cmd /c "$($tmp)\setupchipset.exe -s -accepteula  -norestart -log $($tmp)\intelchipsetinf.log"
             # This doesn't seem to be working, lets just download it and run it for now..
@@ -1906,8 +1906,8 @@ foreach ($QID in $QIDs) {
       }
       372300 {
         if (Get-YesNo "$_ - Install latest Intel RST ? " -Results $Results) {
-            #Invoke-WebRequest "https://downloadmirror.intel.com/655256/SetupRST.exe" -OutFile "$($tmp)\setuprst.exe"
-            Invoke-WebRequest "https://downloadmirror.intel.com/773229/SetupRST.exe" -OutFile "$($tmp)\setuprst.exe"
+            #Invoke-WebRequest -UserAgent $AgentString -Uri "https://downloadmirror.intel.com/655256/SetupRST.exe" -OutFile "$($tmp)\setuprst.exe"
+            Invoke-WebRequest -UserAgent $AgentString -Uri "https://downloadmirror.intel.com/773229/SetupRST.exe" -OutFile "$($tmp)\setuprst.exe"
             
             cmd /c "$($tmp)\setuprst.exe -s -accepteula -norestart -log $($tmp)\intelrstinf.log"
             # OR, extract MSI from this exe and run: 
@@ -1955,7 +1955,7 @@ foreach ($QID in $QIDs) {
       { ($QIDsAppleiCloud -contains $_) -or ($VulnDesc -like "*Apple iCloud*" -and ($QIDsAppleiCloud -ne 1)) } {
         <#
         if (Get-YesNo "$_ Install newest Apple iCloud? ") { 
-            Invoke-WebRequest "" -OutFile "$($tmp)\icloud.exe"
+            Invoke-WebRequest -UserAgent $AgentString -Uri "" -OutFile "$($tmp)\icloud.exe"
             cmd /c "$($tmp)\icloud.exe"
             $QIDsAppleiCloud = 1 # All done, remove variable to prevent this from running twice
         } else { $QIDsAppleiCloud = 1 } # Do not ask again
@@ -1966,7 +1966,7 @@ foreach ($QID in $QIDs) {
       }
       { ($QIDsAppleiTunes -contains $_ ) -or ($VulnDesc -like "*Apple iTunes*" -and ($QIDsAppleiTunes -ne 1))} {
         if (Get-YesNo "$_ Install newest Apple iTunes from Ninite? " -Results $Results) { 
-            Invoke-WebRequest "https://ninite.com/itunes/ninite.exe" -OutFile "$($tmp)\itunes.exe"
+            Invoke-WebRequest -UserAgent $AgentString -Uri "https://ninite.com/itunes/ninite.exe" -OutFile "$($tmp)\itunes.exe"
             cmd /c "$($tmp)\itunes.exe"
             $QIDsAppleiTunes = 1 # All done, remove variable to prevent this from running twice
         } else { $QIDsAppleiTunes = 1 } # Do not ask again
@@ -2069,7 +2069,7 @@ foreach ($QID in $QIDs) {
       { ($QIDsZoom -contains $_) -or ($VulnDesc -like "*Zoom*" -and ($QIDsZoom -ne 1)) } {
         if (Get-YesNo "$_ Install newest Zoom Client from Ninite? " -Results $Results) { 
             #  Zoom client - https://ninite.com/zoom/ninite.exe
-            Invoke-WebRequest "https://ninite.com/zoom/ninite.exe" -OutFile "$($tmp)\ninite.exe"
+            Invoke-WebRequest -UserAgent $AgentString -Uri "https://ninite.com/zoom/ninite.exe" -OutFile "$($tmp)\ninite.exe"
             cmd /c "$($tmp)\ninite.exe"
             #If Zoom folder is in another users AppData\Local folder, this will not work
             $FolderFound = $false
@@ -2086,7 +2086,7 @@ foreach ($QID in $QIDs) {
       { ($QIDsTeamViewer -contains $_) -or ($VulnDesc -like "*TeamViewer*" -and ($QIDsTeamViewer -ne 1)) } {
         if (Get-YesNo "$_ Install newest Teamviewer from Ninite? " -Results $Results) { 
             #  Teamviewer - https://ninite.com/teamviewer15/ninite.exe
-            Invoke-WebRequest "https://ninite.com/teamviewer15/ninite.exe" -OutFile "$($tmp)\ninite.exe"
+            Invoke-WebRequest -UserAgent $AgentString -Uri "https://ninite.com/teamviewer15/ninite.exe" -OutFile "$($tmp)\ninite.exe"
             cmd /c "$($tmp)\ninite.exe"
             $QIDsTeamViewer = 1
         } else { $QIDsTeamViewer = 1 }
@@ -2094,14 +2094,14 @@ foreach ($QID in $QIDs) {
       { ($QIDsDropbox -contains $_) -or ($VulnDesc -like "*Dropbox*" -and ($QIDsDropbox -ne 1)) } {
         if (Get-YesNo "$_ Install newest Dropbox from Ninite? " -Results $Results) { 
             #  Dropbox - https://ninite.com/dropbox/ninite.exe
-            Invoke-WebRequest "https://ninite.com/dropbox/ninite.exe" -OutFile "$($tmp)\dropboxninite.exe"
+            Invoke-WebRequest -UserAgent $AgentString -Uri "https://ninite.com/dropbox/ninite.exe" -OutFile "$($tmp)\dropboxninite.exe"
             cmd /c "$($tmp)\dropboxninite.exe"
             $QIDsDropbox = 1
         } else { $QIDsDropbox = 1 }
       }
       378839 {
         if (Get-YesNo "$_ Install newest 7-Zip from Ninite? " -Results $Results) { 
-          Invoke-WebRequest "https://ninite.com/7-zip/ninite.exe" -OutFile "$($tmp)\7zninite.exe"
+          Invoke-WebRequest -UserAgent $AgentString -Uri "https://ninite.com/7-zip/ninite.exe" -OutFile "$($tmp)\7zninite.exe"
           cmd /c "$($tmp)\7zninite.exe"
           $QIDs7zip = 1
         } else { $QIDs7zip = 1 }
@@ -2122,14 +2122,14 @@ foreach ($QID in $QIDs) {
       }
       { ($QIDsAdoptOpenJDK -contains $_) -or ($VulnDesc -like "*Adopt OpenJDK*") } {
         if (Get-YesNo "$_ Install newest Adopt Java JDK? " -Results $Results) { 
-            Invoke-WebRequest "https://ninite.com/adoptjavax8/ninite.exe" -OutFile "$($tmp)\ninitejava8x64.exe"
+            Invoke-WebRequest -UserAgent $AgentString -Uri "https://ninite.com/adoptjavax8/ninite.exe" -OutFile "$($tmp)\ninitejava8x64.exe"
             cmd /c "$($tmp)\ninitejava8x64.exe"
             $QIDsAdoptOpenJDK = 1
         } else { $QIDsAdoptOpenJDK = 1 }
       }
       { ($QIDsVirtualBox -contains $_) -or ($VulnDesc -like "*VirtualBox*" -and ($QIDsVirtualBox -ne 1)) } {
         if (Get-YesNo "$_ Install newest VirtualBox 6.1.36? " -Results $Results) { 
-            Invoke-WebRequest "https://download.virtualbox.org/virtualbox/6.1.36/VirtualBox-6.1.36-152435-Win.exe" -OutFile "$($tmp)\virtualbox.exe"
+            Invoke-WebRequest -UserAgent $AgentString -Uri "https://download.virtualbox.org/virtualbox/6.1.36/VirtualBox-6.1.36-152435-Win.exe" -OutFile "$($tmp)\virtualbox.exe"
             cmd /c "$($tmp)\virtualbox.exe"
             $QIDsVirtualBox = 1
         } else { $QIDsVirtualBox = 1 } 
@@ -2145,7 +2145,7 @@ foreach ($QID in $QIDs) {
           #wget "https://dl.dell.com/FOLDER08334704M/2/Dell-Command-Update-Windows-Universal-Application_601KT_WIN_4.5.0_A00_01.EXE" -OutFile "$($tmp)\dellcommand.exe"  # OLD AND VULN NOW..
           if (!(Test-Path $DCUFilename)) {
             Write-Host "[.] Downloading latest Dell Command Update as $DCUFilename .."
-            Invoke-WebRequest -Uri $DCUUrl -OutFile $DCUFilename -UserAgent $AgentString -OutFile $DCUFilename
+            Invoke-WebRequest -UserAgent $AgentString -Uri $DCUUrl -OutFile $DCUFilename
           }
           $DCUExe = ((Get-ChildItem "$SecAudPath" | Where-Object {$_.Name -like "Dell-Command-Update-*"} | Sort-Object CreationTime -Descending | Select-Object -First 1).FullName)
           if ($null -ne $DCUEXE -and $DCUFilename -like "$($DCUEXE)*") {  #ugh, this matches <blank>*              
@@ -2160,8 +2160,8 @@ foreach ($QID in $QIDs) {
                 New-Item -ItemType Directory $SecAudPath -Force
               }
             }
-            Write-Verbose "Downloading $DellCommandURL to $($SecAudPath)\$($DCUFilename).."
-            Invoke-WebRequest $DellCommandURL -UserAgent "I'm using edge, I swear.." -OutFile "$($SecAudPath)\$($DCUFilename)"  # Dell doesn't want powershell downloads!
+            Write-Verbose "Downloading $DCUUrl to $($SecAudPath)\$($DCUFilename).."
+            Invoke-WebRequest -UserAgent $AgentString -Uri $DCUUrl -OutFile "$($SecAudPath)\$($DCUFilename)"  # Dell doesn't want powershell downloads!    # -UserAgent "I'm using edge, I swear.." <--- used to use this..
             Write-Verbose "Saved to $($SecAudPath)\$($DCUFilename)"
             Write-Verbose "DCUExe $DCUExe"
             $DCUExe = (Get-ChildItem "$SecAudPath" | Where-Object {$_.Name -like "Dell-Command-Update-*"} | Sort-Object CreationTime -Descending | Select-Object -First 1).FullName
@@ -2276,28 +2276,28 @@ foreach ($QID in $QIDs) {
           if ($Installed | Where-Object {$_.IdentifyingNumber -like '{9A25302D-30C0-39D9-BD6F-21E6EC160475}'}) { 
               Write-Host "[!] Found Microsoft Visual C++ 2008 Redistributable - x86 "
               $notfound = $false
-              Invoke-WebRequest "https://download.microsoft.com/download/5/D/8/5D8C65CB-C849-4025-8E95-C3966CAFD8AE/vcredist_x86.exe" -OutFile "$($tmp)\vcredist2008x86.exe"
+              Invoke-WebRequest -UserAgent $AgentString -Uri "https://download.microsoft.com/download/5/D/8/5D8C65CB-C849-4025-8E95-C3966CAFD8AE/vcredist_x86.exe" -OutFile "$($tmp)\vcredist2008x86.exe"
               cmd /c "$($tmp)\vcredist2008x86.exe /q"
               $QIDsMicrosoftVisualStudioActiveTemplate = 1
           }
           if ($Installed | Where-Object { $_.IdentifyingNumber -like '{837b34e3-7c30-493c-8f6a-2b0f04e2912c}'}) {
             Write-Host "[!] Found Microsoft Visual C++ 2005 Redistributable"
             $notfound = $false
-            Invoke-WebRequest "https://download.microsoft.com/download/8/B/4/8B42259F-5D70-43F4-AC2E-4B208FD8D66A/vcredist_x86.EXE" -OutFile "$($tmp)\vcredist2005.exe"
+            Invoke-WebRequest -UserAgent $AgentString -Uri "https://download.microsoft.com/download/8/B/4/8B42259F-5D70-43F4-AC2E-4B208FD8D66A/vcredist_x86.EXE" -OutFile "$($tmp)\vcredist2005.exe"
             cmd /c "$($tmp)\vcredist2005.exe /q"
             $QIDsMicrosoftVisualStudioActiveTemplate = 1
           }
           if ($Installed | Where-Object { $_.IdentifyingNumber -like '{710f4c1c-cc18-4c49-8cbf-51240c89a1a2}'}) {
             Write-Host "[!] Found Microsoft Visual C++ 2005 Redistributable - x86"
             $notfound = $false
-            Invoke-WebRequest "https://download.microsoft.com/download/8/B/4/8B42259F-5D70-43F4-AC2E-4B208FD8D66A/vcredist_x86.EXE" -OutFile "$($tmp)\vcredist2005x86.exe"
+            Invoke-WebRequest -UserAgent $AgentString -Uri "https://download.microsoft.com/download/8/B/4/8B42259F-5D70-43F4-AC2E-4B208FD8D66A/vcredist_x86.EXE" -OutFile "$($tmp)\vcredist2005x86.exe"
             cmd /c "$($tmp)\vcredist2005x86.exe /q"
             $QIDsMicrosoftVisualStudioActiveTemplate = 1
           }
           if ($Installed | Where-Object { $_.IdentifyingNumber -like '{6E8E85E8-CE4B-4FF5-91F7-04999C9FAE6A}'}) { #x64
             Write-Host "[!] Found Microsoft Visual C++ 2005 Redistributable - x64 "
             $notfound = $false
-            Invoke-WebRequest "https://download.microsoft.com/download/8/B/4/8B42259F-5D70-43F4-AC2E-4B208FD8D66A/vcredist_x64.EXE" -OutFile "$($tmp)\vcredist2005x64.exe"
+            Invoke-WebRequest -UserAgent $AgentString -Uri "https://download.microsoft.com/download/8/B/4/8B42259F-5D70-43F4-AC2E-4B208FD8D66A/vcredist_x64.EXE" -OutFile "$($tmp)\vcredist2005x64.exe"
             cmd /c "$($tmp)\vcredist2005x64.exe /q"
             $QIDsMicrosoftVisualStudioActiveTemplate = 1
           } 
@@ -2358,11 +2358,11 @@ foreach ($QID in $QIDs) {
 
         if (Get-YesNo "$_ Install SQL Server $SQLVersion $SQLEdition update? " -Results $Results) { 
           if ("$SQLVersion $SQLEdition" -eq "12.2.5000.0 Express Edition") { # SQL Server 2014 Express
-            Invoke-WebRequest "https://www.microsoft.com/en-us/download/confirmation.aspx?id=54190&6B49FDFB-8E5B-4B07-BC31-15695C5A2143=1" -OutFile "$($tmp)\sqlupdate.exe"
+            Invoke-WebRequest -UserAgent $AgentString -Uri "https://www.microsoft.com/en-us/download/confirmation.aspx?id=54190&6B49FDFB-8E5B-4B07-BC31-15695C5A2143=1" -OutFile "$($tmp)\sqlupdate.exe"
             cmd /c "$($tmp)\sqlupdate.exe /q"
           }
           if ("$SQLVersion $SQLEdition" -eq "12.2.5000.0 Standard Edition") { # SQL Server 2014
-            Invoke-WebRequest "https://www.microsoft.com/en-us/download/confirmation.aspx?id=57474&6B49FDFB-8E5B-4B07-BC31-15695C5A2143=1" -OutFile "$($tmp)\sqlupdate.exe"
+            Invoke-WebRequest -UserAgent $AgentString -Uri "https://www.microsoft.com/en-us/download/confirmation.aspx?id=57474&6B49FDFB-8E5B-4B07-BC31-15695C5A2143=1" -OutFile "$($tmp)\sqlupdate.exe"
             cmd /c "$($tmp)\sqlupdate.exe /q"
           }
         }
@@ -2905,7 +2905,7 @@ foreach ($QID in $QIDs) {
       $QIDsMSXMLParser4 {
         if (Get-YesNo "$_ Install MSXML Parser 4.0 SP3 update? " -Results $Results) { 
           Write-Host "[.] Downloading installer to $($tmp)\msxml.exe .."
-          Invoke-WebRequest "https://download.microsoft.com/download/A/7/6/A7611FFC-4F68-4FB1-A931-95882EC013FC/msxml4-KB2758694-enu.exe" -OutFile "$($tmp)\msxml.exe"
+          Invoke-WebRequest -UserAgent $AgentString -Uri "https://download.microsoft.com/download/A/7/6/A7611FFC-4F68-4FB1-A931-95882EC013FC/msxml4-KB2758694-enu.exe" -OutFile "$($tmp)\msxml.exe"
           Write-Host "[.] Running installer: $($tmp)\msxml.exe .."
           cmd /c "$($tmp)\msxml.exe /quiet /qn /norestart /log $($tmp)\msxml.log"
         }
@@ -2926,7 +2926,7 @@ foreach ($QID in $QIDs) {
                   OutFile = $zip
                 }
                 try {
-                  Invoke-WebRequest @HT
+                  Invoke-WebRequest -UserAgent $AgentString -Uri @HT
                 } catch {
                   Write-Warning -Message "Failed to download zip because $($_.Exception.Message)"
                 }
