@@ -88,7 +88,7 @@ $VersionInfo = "v$($Version) - Last modified: 11/14/23"
 $AgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.67 Safari/537.36"
 $DCUUrl = "https://dl.dell.com/FOLDER10791703M/1/Dell-Command-Update-Application_44TH5_WIN_5.1.0_A00.EXE"
 $DCUFilename = ($DCUUrl -split "/")[-1]
-
+$DCUVersion = (($DCUUrl -split "_WIN_")[1] -split "_A0")[0]
 
 # Self-elevate the script if required
 if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -2151,7 +2151,7 @@ foreach ($QID in $QIDs) {
           if ($null -ne $DCUEXE -and $DCUFilename -like "$($DCUEXE)*") {  #ugh, this matches <blank>*              
             Write-Host "[+] Found, DCU has already been downloaded: $DCUExe" -ForegroundColor Green
           } else {
-            Write-Host "[.] Installing newest Dell command update 5.0.0 .." -ForegroundColor Yellow
+            Write-Host "[.] Installing newest Dell command update $DCUversion .." -ForegroundColor Yellow
             if ($null -eq $SecAudPath) {
               Write-Verbose "SecAudPath is blank, setting to C:\Temp\SecAud for now.."
               $SecAudPath = "C:\Temp\SecAud"
@@ -2165,6 +2165,7 @@ foreach ($QID in $QIDs) {
             Write-Verbose "Saved to $($SecAudPath)\$($DCUFilename)"
             Write-Verbose "DCUExe $DCUExe"
             $DCUExe = (Get-ChildItem "$SecAudPath" | Where-Object {$_.Name -like "Dell-Command-Update-*"} | Sort-Object CreationTime -Descending | Select-Object -First 1).FullName
+            $DCUVersion = (($DCUExe -split "_WIN_")[1] -split "_A0")[0]
           }
           if ($DCUExe) {
             Write-Host "[.] Launching .. $($DCUExe)" -ForegroundColor Yellow
