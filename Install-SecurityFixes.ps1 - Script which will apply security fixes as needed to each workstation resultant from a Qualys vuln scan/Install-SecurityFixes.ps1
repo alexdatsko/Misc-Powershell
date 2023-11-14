@@ -78,8 +78,8 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.32"
-     # New in this version:  Slight fix to Invoke-WebRequest -Uri -UserAgent calls
+$Version = "0.37.33"
+     # New in this version:  Dell Command Update - target version checking vs installed version
 $VersionInfo = "v$($Version) - Last modified: 11/14/23"
 
 #### VERSION ###################################################
@@ -2138,10 +2138,15 @@ foreach ($QID in $QIDs) {
         if (Get-YesNo "$_ Install newest Dell Command Update? " -Results $Results) { 
           $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like '*Dell Command | Update*'})
           if ($Products) {
-            Remove-Software -Products $Products -Results $Results
+            if ([version]$Products.Version -lt [version]$DCUVersion) {
+              Remove-Software -Products $Products -Results $Results
+            } else {
+              Write-Host "[!] Dell Command target version $DCUVersion <= installed version $($Products.Version) ]`n" -ForegroundColor Green
+              Break
+            }
           } else {
             Write-Host "[!] Dell Command products not found under '*Dell Command | Update*' : `n    Products: [ $Products ]`n" -ForegroundColor Red
-          }              
+          }    
           #wget "https://dl.dell.com/FOLDER08334704M/2/Dell-Command-Update-Windows-Universal-Application_601KT_WIN_4.5.0_A00_01.EXE" -OutFile "$($tmp)\dellcommand.exe"  # OLD AND VULN NOW..
           if (!(Test-Path $DCUFilename)) {
             Write-Host "[.] Downloading latest Dell Command Update as $DCUFilename .."
@@ -2157,7 +2162,7 @@ foreach ($QID in $QIDs) {
               $SecAudPath = "C:\Temp\SecAud"
               if (!(Test-Path $SecAudPath)) {
                 Write-Verbose "Creating $($SecAudPath) as it doesn't exist.."
-                New-Item -ItemType Directory $SecAudPath -Force
+                $null = New-Item -ItemType Directory $SecAudPath -Force
               }
             }
             Write-Verbose "Downloading $DCUUrl to $($SecAudPath)\$($DCUFilename).."
@@ -2175,13 +2180,24 @@ foreach ($QID in $QIDs) {
             } catch {
               Write-Host "[!] ERROR - $DCUExe could not be launched `n    With Start-Process -FilepPath ""$($DCUExe)"" -ArgumentList ""/s""" -ForegroundColor Red
             }
-            Write-Host "[.] Sleeping for 5 seconds.."
-            Start-Sleep 5
-            $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like '*Dell Command | Update*'}) | Select-Object -First 1
+            Write-Host "[.] Sleeping for a max of 30 seconds.." -NoNewLine
+            $InstalledYet = $false
+            $InstalledCounter = 0
+            while ($InstalledYet -eq $false) {
+              Write-Host "." -NoNewLine
+              $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like '*Dell Command | Update*'}) | Select-Object -First 1
+              if ($Products) {
+                $InstalledYet = $true
+              }
+              $InstalledCounter += 1
+              if ($InstalledCounter -gt 4) { # If we check 5 times and its not installed, move on.. It may show up soon, or it may have failed.
+                $InstalledYet = $true
+              }
+            }
             if ($Products) {
-              Write-Host "[+] Found, DCU has already been downloaded: $(($Products).Version) found" -ForegroundColor Green
+              Write-Host "[+] Found, DCU was installed: $(($Products).Version) found" -ForegroundColor Green
             } else {
-              Write-Host "[-] DCU couldn't be installed, or isn't done yet after 5 seconds. Check manually!!! " -ForegroundColor Red
+              Write-Host "[-] DCU couldn't be installed, or isn't done yet after checking 5 times. Check manually!!! " -ForegroundColor Red
               . appwiz.cpl
             }
           } else {
