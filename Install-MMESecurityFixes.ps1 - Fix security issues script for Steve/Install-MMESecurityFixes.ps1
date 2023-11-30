@@ -1,5 +1,7 @@
 [CmdletBinding()]
-param ()
+param (
+    [switch]$CheckOnly
+)
 
 $banner="
 <#
@@ -14,6 +16,12 @@ $banner="
 -	Null Sessions
 -	Autoplay (2 items)
 -	Cached credentials 
+
+v0.04 (Rev E) - 11-29-2023
+- Changed my Run-Cmd 'cmd.exe /c ..' registry fixes to use native powershell instead.
+- Added WinVerifyTrust check and fix
+- SMB signing [checked for issues, looks clean]
+
 
  # Usage:
  #   ./Install-SecurityFixes.ps1 [-CheckOnly] [-Verbose]
@@ -54,21 +62,38 @@ function Check-Reg {
   return $checkvar
 }
 
-function Run-Cmd {
-  param (
-        $cmd
-  )
-  Write-Verbose "Running [$($cmd)]"
-  cmd /c $cmd
+
+####
+
+function Check-WinVerifyTrust {
+  $check = @()
+  $check += Check-Reg -RegKey "HKLM:\Software\Microsoft\Cryptography\Wintrust\Config" -RegName "EnableCertPaddingCheck" -RegValue "1" -SettingName "WinVerifyTrust"
+  $check += Check-Reg -RegKey "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config" -RegName "EnableCertPaddingCheck" -RegValue "1" -SettingName "WinVerifyTrust - Wow6432Node"
+  if ($check -contains 1) { return $True } else { return $False }
 }
+
+function Set-WinVerifyTrust {
+  Write-Output "[+] QID 37833 - WinVerifyTrust Signature Validation fix"
+  Write-Output "[.] Creating registry items: HKLM:\Software\Microsoft\Cryptography\Wintrust\Config\EnableCertPaddingCheck=1 (and more)"
+  New-Item -Path "HKLM:\Software\Microsoft\Cryptography\Wintrust" -Force | Out-Null
+  New-Item -Path "HKLM:\Software\Microsoft\Cryptography\Wintrust\Config" -Force | Out-Null
+  New-ItemProperty -Path "HKLM:\Software\Microsoft\Cryptography\Wintrust\Config" -Name "EnableCertPaddingCheck" -Value "1" -PropertyType "String" -Force | Out-Null
+
+  Write-Output "[.] Creating registry item: HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config\EnableCertPaddingCheck=1"
+  New-Item -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust" -Force | Out-Null
+  New-Item -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config" -Force | Out-Null
+  New-ItemProperty -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config" -Name "EnableCertPaddingCheck" -Value "1" -PropertyType "String" -Force | Out-Null    
+  Write-Output "[!] Done!"
+}
+
+####
 
 function Set-RequireSMBSigning {
   Write-Host "[!] Making registry changes for [SMB Signing - Require] for both LanManServer and LanManWorkstation" -ForegroundColor Yellow
-  # HKLM\System\CurrentControlSet\Services\LanManWorkstation\Parameters requiresecuritysignature = 0#
-  Run-Cmd 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManWorkstation\Parameters"  /v EnableSecuritySignature /t REG_DWORD /d 1 /f'
-  Run-Cmd 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManWorkstation\Parameters"  /v RequireSecuritySignature /t REG_DWORD /d 1 /f'
-  Run-Cmd 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters"  /v EnableSecuritySignature /t REG_DWORD /d 1 /f'
-  Run-Cmd 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters"  /v RequireSecuritySignature /t REG_DWORD /d 1 /f'
+  Set-ItemProperty -Path "HKLM:System\CurrentControlSet\Services\LanManWorkstation\Parameters" -Name "EnableSecuritySignature" -Value 1 -Type DWord -Force
+  Set-ItemProperty -Path "HKLM:System\CurrentControlSet\Services\LanManWorkstation\Parameters" -Name "RequireSecuritySignature" -Value 1 -Type DWord -Force
+  Set-ItemProperty -Path "HKLM:System\CurrentControlSet\Services\LanManServer\Parameters" -Name "EnableSecuritySignature" -Value 1 -Type DWord -Force
+  Set-ItemProperty -Path "HKLM:System\CurrentControlSet\Services\LanManServer\Parameters" -Name "RequireSecuritySignature" -Value 1 -Type DWord -Force
 }
 
 function Check-RequireSMBSigning {
@@ -82,15 +107,15 @@ function Check-RequireSMBSigning {
 
 function Set-Spectre4Meltdown {
   Write-Host "[!] Making registry changes for [Spectre4/Meltdown]" -ForegroundColor Yellow
-  Run-Cmd 'reg add "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v FeatureSettingsOverride /t REG_DWORD /d 72 /f'
-  Run-Cmd 'reg add "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v FeatureSettingsOverrideMask /t REG_DWORD /d 3 /f'
+  Set-ItemProperty -Path "HKLM:SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" -Name "FeatureSettingsOverride" -Value 72 -Type DWord -Force
+  Set-ItemProperty -Path "HKLM:SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" -Name "FeatureSettingsOverrideMask" -Value 3 -Type DWord -Force
+
   $hyperv = Get-WindowsOptionalFeature -FeatureName Microsoft-Hyper-V-All -Online
-  if ($hyperv) {
-    if (($hyperv).State = "Enabled") {  # HyperV feature found and enabled
-      Run-Cmd 'reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization" /v MinVmVersionForCpuBasedMitigations /t REG_SZ /d "1.0" /f'
-    }
+  if ($hyperv.State -eq "Enabled") {
+    Set-ItemProperty -Path "HKLM:SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization" -Name "MinVmVersionForCpuBasedMitigations" -Value "1.0" -Type String -Force
   }
 }
+
 
 function Check-Spectre4Meltdown {
   $check = @()
@@ -114,10 +139,11 @@ Reg Key - HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Managemen
 
 function Set-NullSession {
   Write-Host "[!] Making registry changes for [Null Sessions - Disable]" -ForegroundColor Yellow
-  Run-Cmd 'reg add "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Lsa" /v RestrictAnonymous /t REG_DWORD /d 1 /f'
-  Run-Cmd 'reg add "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Lsa" /v RestrictAnonymousSAM /t REG_DWORD /d 1 /f'
-  Run-Cmd 'reg add "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Lsa" /v EveryoneIncludesAnonymous /t REG_DWORD /d 0 /f'
+  Set-ItemProperty -Path "HKLM:SYSTEM\CurrentControlSet\Control\Lsa" -Name "RestrictAnonymous" -Value 1 -Type DWord -Force
+  Set-ItemProperty -Path "HKLM:SYSTEM\CurrentControlSet\Control\Lsa" -Name "RestrictAnonymousSAM" -Value 1 -Type DWord -Force
+  Set-ItemProperty -Path "HKLM:SYSTEM\CurrentControlSet\Control\Lsa" -Name "EveryoneIncludesAnonymous" -Value 0 -Type DWord -Force
 }
+
 
 function Check-NullSession {
   $check = @()
@@ -129,12 +155,14 @@ function Check-NullSession {
 
 function Set-WindowsExplorerAutoplay {
   Write-Host "[!] Making registry changes for [Autoplay - Disabled (for computer)]" -ForegroundColor Yellow
-  Run-Cmd 'reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer"'
-  Run-Cmd 'reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" /v NoDriveTypeAutorun /t REG_DWORD /d 0xFF /f'
-  Run-Cmd 'reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" /v NoAutorun /t REG_DWORD /d 0x1 /f'
-  Run-Cmd 'reg add "HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" /v NoDriveTypeAutorun /t REG_DWORD /d 0xFF /f'
-  Run-Cmd 'reg add "HKEY_CURRENT_USER\SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" /v NoAutorun /t REG_DWORD /d 0x1 /f'
+  New-Item -Path "HKLM:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -Force | Out-Null
+  Set-ItemProperty -Path "HKLM:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -Name "NoDriveTypeAutorun" -Value 0xFF -Type DWord -Force
+  Set-ItemProperty -Path "HKLM:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -Name "NoAutorun" -Value 0x1 -Type DWord -Force
+  New-Item -Path "HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -Force | Out-Null
+  Set-ItemProperty -Path "HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -Name "NoDriveTypeAutorun" -Value 0xFF -Type DWord -Force
+  Set-ItemProperty -Path "HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -Name "NoAutorun" -Value 0x1 -Type DWord -Force
 }
+
 
 function Check-WindowsExplorerAutoplay {
   $check = @()
@@ -146,7 +174,7 @@ function Check-WindowsExplorerAutoplay {
 }
 
 function Set-CachedCredentialsDisabled {
-  Run-Cmd 'reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v CachedLogonsCount /t REG_SZ /d 0 /f'
+  Set-ItemProperty -Path "HKLM:SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" -Name "CachedLogonsCount" -Value 0 -Type String -Force
 }
 
 function Check-CachedCredentialsDisabled {
@@ -161,23 +189,21 @@ function Set-MMESecuritySettings {
   if (Check-NullSession) { Set-NullSession }
   if (Check-WindowsExplorerAutoplay) { Set-WindowsExplorerAutoplay }
   if (Check-CachedCredentialsDisabled) { Set-CachedCredentialsDisabled }
+  if (Check-WinVerifyTrust) { Set-WinVerifyTrust }
 }
 
 function Check-MMESecuritySettings {
-  Check-RequireSMBSigning
-  Check-Spectre4Meltdown
-  Check-NullSession
-  Check-WindowsExplorerAutoplay
-  Check-CachedCredentialsDisabled
+  if (Check-RequireSMBSigning) {  }
+  if (Check-Spectre4Meltdown) {  }
+  if (Check-NullSession) {  }
+  if (Check-WindowsExplorerAutoplay) {  }
+  if (Check-CachedCredentialsDisabled) {  }
+  if (Check-WinVerifyTrust) { }
 }
 
 function Initialize-Script {
   Write-Host $banner
   Write-Verbose "[V] Started in Verbose mode."
-  if ($oldpwd -like "\\*") { 
-    # Pwd contains \\ at the beginning, we are in a share, can't run cmd.exe from here.. set location to Temp folder temporarily
-    Set-Location $env:temp
-  }
 }
 
 Initialize-Script
@@ -186,4 +212,5 @@ if ($CheckOnly) {
 } else {
   Set-MMESecuritySettings
 }
-Set-Location $oldpwd
+
+Write-Host "[!] Done!"

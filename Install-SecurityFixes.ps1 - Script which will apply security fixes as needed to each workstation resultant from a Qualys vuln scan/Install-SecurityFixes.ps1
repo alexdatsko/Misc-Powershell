@@ -78,9 +78,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.33"
-     # New in this version:  Dell Command Update - target version checking vs installed version
-$VersionInfo = "v$($Version) - Last modified: 11/14/23"
+$Version = "0.37.34"
+     # New in this version:  378936 Curl - check for file version 8.4.0.0 or open MSRC page
+$VersionInfo = "v$($Version) - Last modified: 11/16/23"
 
 #### VERSION ###################################################
 
@@ -983,7 +983,7 @@ function Get-FileRaw {
 function Parse-ResultsFolder {  
   param ($Results)
  
-  $Paths = New-Object System.Collections.Generic.List[string]
+  $Paths = @()
   $x = 0
   Write-Verbose "Results: $Results"
   $count = [regex]::Matches($Results, "Version is").Count
@@ -997,7 +997,7 @@ function Parse-ResultsFolder {
         Write-Verbose "PathRaw : $PathRaw"
         if ($count -gt 1) {
           if (!($Paths -contains $PathRaw)) {
-            $Paths.Add($PathRaw)
+            $Paths += $PathRaw
           } else {
             Write-Verbose "PathRaw ($PathRaw) matches existing within : $Paths - skipping."
           }
@@ -1015,63 +1015,58 @@ function Parse-ResultsFolder {
 
 
 function Parse-ResultsFile {  
-    [CmdletBinding()]
-    param ($Results)
- 
-  $Paths = New-Object System.Collections.Generic.List[string]
-  $x = 0
+  [CmdletBinding()]
+  param ($Results)
+
+  $Paths = @()
   Write-Verbose "Results: $Results"
-  $count = [regex]::Matches($Results, "Version is").Count
-  Write-Verbose "Count of 'Version is': $count"
-  if ($count -gt 0) {
-    while ($x -le $count) {
-      $PathResults = (($Results -split('Version is'))[0]).trim()
-      Write-Verbose "PathResults : $PathResults"
-      if ($null -ne $PathResults) {
-        $PathRaw = Get-FileRaw $PathResults   # Just return a file instead of Split-Path
-        Write-Verbose "PathRaw : $PathRaw"
-        if ($count -gt 1) {
-          if (!($Paths -contains $PathRaw)) {
-            $Paths.Add($PathRaw)
-          } else {
-            Write-Verbose "PathRaw ($PathRaw) matches existing within : $Paths - skipping."
-          }
+  $splits = $Results -split('Version is')
+  for ($i = 0; $i -lt $splits.Length - 1; $i++) {
+    # Extracting the path from each split segment
+    $splitParts = $splits[$i] -split ' ', 2
+    $PathResults = $splitParts[0].Trim()
+    Write-Verbose "PathResults : $PathResults"
+
+    if ($null -ne $PathResults) {
+      $PathRaw = Get-FileRaw $PathResults   # Assuming Get-FileRaw is a custom function to retrieve file details
+      Write-Verbose "PathRaw : $PathRaw"
+
+      if ($splits.Length -gt 2) {
+        # Avoiding duplicate paths
+        if (!($Paths -contains $PathRaw)) {
+          $Paths += $PathRaw
         } else {
-          return $PathRaw
+          Write-Verbose "PathRaw ($PathRaw) matches existing within : $Paths - skipping."
         }
+      } else {
+        # If there is only one path, return it directly
+        return $PathRaw
       }
-      $x += 1
     }
-  }  else {
-    return $false
   }
   return $Paths  
 }
+
 
 function Parse-ResultsVersion {  
   [CmdletBinding()]
   param ($Results)
 
-  $Versions = New-Object System.Collections.Generic.List[string]
-  $x = 0
+  $Versions = @()
   Write-Verbose "Results: $Results"
-  $count = [regex]::Matches($Results, "Version is").Count
-  Write-Verbose "Count of 'Version is': $count"
-  if ($count -gt 0) {
-    while ($x -le $count) {
-      $VersionResults = (($Results -split('Version is'))[1]).replace("#","").replace(",",".").trim()   # Some versions are 5,14,23,121 instead of 5.14.23.121 
-      Write-Verbose "VersionResults : $VersionResults"
-      if ($count -eq 1) { return $VersionResults } # If its just one, return it now
-      if ($null -ne $VersionResults) {
-        $Versions.Add([version]$VersionResults)
-      }
-      $x += 1
+  $splits = $Results -split('Version is')
+  for ($i = 1; $i -lt $splits.Length; $i++) {
+    $versionString = ($splits[$i] -replace "#", "").Trim() -split ' ',2
+    $VersionResults = $versionString[0].replace(",", ".")
+    Write-Verbose "VersionResults : $VersionResults"
+    if ($null -ne $VersionResults -and $VersionResults -match "^\d+(\.\d+)+$") {
+      $Versions += [version]$VersionResults
     }
-  } else {
-    return $false
   }
+
   return $Versions 
 }
+
 
 function Show-FileVersionComparison {
   [CmdletBinding()]
@@ -1091,7 +1086,6 @@ function Show-FileVersionComparison {
       Write-Host "    [ Current Version: $CurrentEXEFileVersion ] $operator [ Results Version: $EXEFileVersion ]" -ForegroundColor $color
     }
   }
-  
 }
 
 function Backup-BitlockerKeys {
@@ -2506,6 +2500,13 @@ foreach ($QID in $QIDs) {
           New-Item -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config" -Force | Out-Null
           New-ItemProperty -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config" -Name "EnableCertPaddingCheck" -Value "1" -PropertyType "String" -Force | Out-Null    
           Write-Output "[!] Done!"
+        }
+      }
+      378936 {
+        if (Get-YesNo "$_ Fix Microsoft Windows Curl Multiple Security Vulnerabilities? " -Results $Results) { 
+          $curlfile = "c:\windows\system32\curl.exe"
+          Show-FileVersionComparison -Name $curlfile -Results $Results
+          . "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2023-38545"
         }
       }
       106116 {        

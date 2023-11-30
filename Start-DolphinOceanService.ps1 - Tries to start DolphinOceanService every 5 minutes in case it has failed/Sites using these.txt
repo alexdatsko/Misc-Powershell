@@ -1,9 +1,27 @@
 This should fix the Dolphin services crashing / going dead after maintenance or a reboot or backups or whatever else causes them to go not responding eventually.
 
-History:
+-You might need to replace the following variables in each script, unless you place these in the folder:
+D:\Backups (DO NOT DELETE)\Scripts
+
+-Also, the default folder for the reports (will be created automatically) is: 
+D:\Backups (DO NOT DELETE)\Reports\DolphinOcean
+
+-In the scripts, to change the folder, you would need to modify these as needed:
+
+$BackupsDrive="D:"
+$BackupsFolder="Backups (DO NOT DELETE)"
+$ReportFolder = "$BackupsDrive\$BackupsFolder\Reports\DolphinOcean"
+
+-You would also need to modify the scheduled task location:
+
+      <Command>c:\windows\system32\windowspowershell\v1.0\powershell.exe</Command>
+      <Arguments>-exec bypass -file "D:\Backups (DO NOT DELETE)\Scripts\Start-DolphinScheduledJobService.ps1"</Arguments>
+
+-History:
 0.01 - 10/2022 - first version
 0.03 - 10/2023 - fixed a bug in the Ocean script that causes it to not restart every day.  Updated for better logging, cleanup reports over 365 days old, etc.
                - also set up scheduled task to run 15m after startup, and re-exported task xmls
+0.04 - 11/2023 - better notes
 
 Dougherty, Harry - DolphinOceanService
 Luff ServerVM - DolphinScheduledJobService
@@ -11,3 +29,4 @@ Caggiano, David - Server (both)
 Childers, Kyle - Benton - ServerVM (both)
 Wardlaw, David (LittleRock) Server
 Khanna, Ankush - _Server (both) - Newest v0.03  10/6/23
+Hughes, David - _Server (New)(PSMA) - Newest v0.03  11/27/23
