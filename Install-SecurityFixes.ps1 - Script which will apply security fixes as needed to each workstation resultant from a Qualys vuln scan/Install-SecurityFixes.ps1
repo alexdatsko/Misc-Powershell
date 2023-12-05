@@ -78,8 +78,8 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.35"
-     # New in this version:  378936 Curl - check for file version 8.4.0.0 or open MSRC page
+$Version = "0.37.36"
+     # New in this version:  378936 Curl - updated check for KB5031289 - Added Check-WUAHistory scriptlet
 $VersionInfo = "v$($Version) - Last modified: 12/05/23"
 
 #### VERSION ###################################################
@@ -461,6 +461,45 @@ Function Set-DellBiosProviderDefaults {
   } else {
     Write-Verbose "[.] Non-Workstation OS found, ignoring DellBiosProvider changes"
   }
+}
+
+function Convert-WuaResultCodeToName {
+  param( [Parameter(Mandatory=$true)]
+    [int] $ResultCode
+  )
+  $Result = $ResultCode
+  switch($ResultCode) {
+    2 {
+      $Result = "Succeeded"
+    }
+    3 {
+      $Result = "Succeeded With Errors"
+    }
+    4 {
+      $Result = "Failed"
+    }
+  }
+ return $Result
+}
+
+function Get-WuaHistory {
+  # Get a WUA Session
+  $session = (New-Object -ComObject 'Microsoft.Update.Session')
+  # Query the latest 1000 History starting with the first recordp
+  $history = $session.QueryHistory("",0,50) | ForEach-Object {
+    $Result = Convert-WuaResultCodeToName -ResultCode $_.ResultCode
+    # Make the properties hidden in com properties visible.
+    $_ | Add-Member -MemberType NoteProperty -Value $Result -Name Result
+    $Product = $_.Categories | Where-Object {$_.Type -eq 'Product'} | Select-Object -First 1 -ExpandProperty Name
+    $_ | Add-Member -MemberType NoteProperty -Value $_.UpdateIdentity.UpdateId -Name UpdateId
+    $_ | Add-Member -MemberType NoteProperty -Value $_.UpdateIdentity.RevisionNumber -Name RevisionNumber
+    $_ | Add-Member -MemberType NoteProperty -Value $Product -Name Product -PassThru
+    Write-Output $_
+  }
+  #Remove null records and only return the fields we want
+  $history |
+    Where-Object {![String]::IsNullOrWhiteSpace($_.title)} |
+    Select-Object Result, Date, Title, SupportUrl, Product, UpdateId, RevisionNumber
 }
 
 ################################################# CONFIG FUNCTIONS ###############################################
@@ -1020,32 +1059,18 @@ function Parse-ResultsFile {
 
   $Paths = @()
   Write-Verbose "Results: $Results"
-  $splits = $Results -split('Version is')
-  for ($i = 0; $i -lt $splits.Length - 1; $i++) {
-    # Extracting the path from each split segment
-    $splitParts = $splits[$i] -split ' ', 2
-    $PathResults = $splitParts[0].Trim()
-    Write-Verbose "PathResults : $PathResults"
-
-    if ($null -ne $PathResults) {
-      $PathRaw = Get-FileRaw $PathResults   # Assuming Get-FileRaw is a custom function to retrieve file details
-      Write-Verbose "PathRaw : $PathRaw"
-
-      if ($splits.Length -gt 2) {
-        # Avoiding duplicate paths
-        if (!($Paths -contains $PathRaw)) {
-          $Paths += $PathRaw
-        } else {
-          Write-Verbose "PathRaw ($PathRaw) matches existing within : $Paths - skipping."
-        }
-      } else {
-        # If there is only one path, return it directly
-        return $PathRaw
-      }
+  $splits = $Results -split 'Version is'
+  foreach ($split in $splits) {
+    if ($split -match '%.*?\.exe') {
+      # Extract file path
+      $PathResults = $split -replace '#.*', '' -match '%.*?\.exe'
+      $PathFinal = $Matches[0] -replace '%windir%', $env:windir -replace '%systemroot%', $env:systemroot -replace '%systemdrive%', $env:systemdrive
+      $Paths += $PathFinal.Trim()
     }
   }
-  return $Paths  
+  return $Paths
 }
+
 
 
 function Parse-ResultsVersion {  
@@ -1054,39 +1079,45 @@ function Parse-ResultsVersion {
 
   $Versions = @()
   Write-Verbose "Results: $Results"
-  $splits = $Results -split('Version is')
-  for ($i = 1; $i -lt $splits.Length; $i++) {
-    $versionString = ($splits[$i] -replace "#", "").Trim() -split ' ',2
-    $VersionResults = $versionString[0].replace(",", ".")
-    Write-Verbose "VersionResults : $VersionResults"
-    if ($null -ne $VersionResults -and $VersionResults -match "^\d+(\.\d+)+$") {
-      $Versions += [version]$VersionResults
+  $splits = $Results -split 'Version is'
+  foreach ($split in $splits) {
+    if ($split -match '\d+(\.\d+)+') {
+      # Extracting version number
+      $VersionResults = $split -match '\d+(\.\d+)+'
+      $Versions += [version]$Matches[0]
     }
   }
-
-  return $Versions 
+  return $Versions
 }
 
 
 function Show-FileVersionComparison {
   [CmdletBinding()]
-  param ([string]$Name,
-                 $Results)
+  param ([string]$Name, $Results)
 
   if ($Results -like "* Version is *") {
-    $EXEFile = Parse-ResultsFile $Results
-    $EXEFileVersion = Parse-ResultsVersion $Results
-    if (Test-Path -Path "$EXEFile") {
-      $CurrentEXEFileVersion = "$(((gci $EXEFile -File).VersionInfo.FileVersion).Replace(",","."))"
-      $color = "Red"
-      if ($CurrentEXEFileVersion -gt $EXEFileVersion) {        $operator = ">";   $color = "Green"     }   # Current version is higher
-      if ($CurrentEXEFileVersion -eq $EXEFileVersion) {        $operator = "="                         }   # Current version is equal
-      if ($CurrentEXEFileVersion -lt $EXEFileVersion) {        $operator = "<"                         }   # Current version still lower
-      Write-Host "[.] $Name - Comparing new version: Filename: $EXEFile" -ForegroundColor Yellow
-      Write-Host "    [ Current Version: $CurrentEXEFileVersion ] $operator [ Results Version: $EXEFileVersion ]" -ForegroundColor $color
+    $EXEFiles = Parse-ResultsFile $Results
+    $EXEFileVersions = Parse-ResultsVersion $Results
+
+    for ($i = 0; $i -lt $EXEFiles.Length; $i++) {
+      $EXEFile = $EXEFiles[$i]
+      $EXEFileVersion = $EXEFileVersions[$i]
+      Write-Verbose "EXEFile: $EXEFile"
+      Write-Verbose "EXEFileVersion: $EXEFileVersion"
+
+      if (Test-Path -Path "$EXEFile") {
+        $CurrentEXEFileVersion = "$(((gci $EXEFile -File).VersionInfo.FileVersion).Replace(",","."))"
+        $color = "Red"
+        $operator = if ($CurrentEXEFileVersion -gt $EXEFileVersion) { ">"; $color="Green" } elseif ($CurrentEXEFileVersion -eq $EXEFileVersion) { "=" } else { "<" }
+        Write-Host "[.] $Name - Comparing new version: Filename: $EXEFile" -ForegroundColor Yellow
+        Write-Host "    [ Current Version: $CurrentEXEFileVersion ] $operator [ Results Version: $EXEFileVersion ]" -ForegroundColor $color
+      } else {
+        Write-Host "[-] $EXEFile not found.."
+      }
     }
   }
 }
+
 
 function Backup-BitlockerKeys {
   if ($BackupBitlocker) {
@@ -2504,10 +2535,18 @@ foreach ($QID in $QIDs) {
       }
       378936 {
         if (Get-YesNo "$_ Fix Microsoft Windows Curl Multiple Security Vulnerabilities? " -Results $Results) { 
+          Write-Host "[.] Showing Curl.exe version comparison.."
           $curlfile = "c:\windows\system32\curl.exe"
           Show-FileVersionComparison -Name $curlfile -Results $Results
-          Write-Host "[.] Opening MSRC page: https://msrc.microsoft.com/update-guide/vulnerability/CVE-2023-38545"
-          explorer "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2023-38545"
+          $KB5032189_installed = Get-WuaHistory | Where-Object { $_.Title -like "*5032189*" } 
+          if ($KB5032189_installed) {
+            Write-Host "[+] KB5032189 found already installed. This is fixed."
+          } else {
+            Write-Host "[-] KB5032189 not found installed. Showing all Windows update history:"
+            Get-WuaHistory | FT
+            Write-Host "[.] Opening MSRC page: https://msrc.microsoft.com/update-guide/vulnerability/CVE-2023-38545#securityUpdates"
+            explorer "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2023-38545#securityUpdates"
+          }
         }
       }
       106116 {        
