@@ -78,9 +78,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.34"
+$Version = "0.37.35"
      # New in this version:  378936 Curl - check for file version 8.4.0.0 or open MSRC page
-$VersionInfo = "v$($Version) - Last modified: 11/16/23"
+$VersionInfo = "v$($Version) - Last modified: 12/05/23"
 
 #### VERSION ###################################################
 
@@ -2506,7 +2506,8 @@ foreach ($QID in $QIDs) {
         if (Get-YesNo "$_ Fix Microsoft Windows Curl Multiple Security Vulnerabilities? " -Results $Results) { 
           $curlfile = "c:\windows\system32\curl.exe"
           Show-FileVersionComparison -Name $curlfile -Results $Results
-          . "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2023-38545"
+          Write-Host "[.] Opening MSRC page: https://msrc.microsoft.com/update-guide/vulnerability/CVE-2023-38545"
+          explorer "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2023-38545"
         }
       }
       106116 {        
