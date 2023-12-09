@@ -78,9 +78,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.36"
-     # New in this version:  378936 Curl - updated check for KB5031289 - Added Check-WUAHistory scriptlet
-$VersionInfo = "v$($Version) - Last modified: 12/05/23"
+$Version = "0.37.37"
+     # New in this version:  378931 - OLE / ODBC SQL driver update, also 376709	HP Support Assistant Multiple Security Vulnerabilities (HPSBGN03762)
+$VersionInfo = "v$($Version) - Last modified: 12/08/23"
 
 #### VERSION ###################################################
 
@@ -2549,6 +2549,58 @@ foreach ($QID in $QIDs) {
           }
         }
       }
+      378931 {
+        if (Get-YesNo "$_ Fix Microsoft SQL Server, ODBC and OLE DB Driver for SQL Server Multiple Vulnerabilities for October 2023? " -Results $Results) { 
+          $tmp=$env:temp
+          Write-Host "[.] Downloading required VC++ Library files: VC_redist.x64.exe and VC_redist.x64.exe" 
+          wget "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "$($tmp)\vc_redist.x64.exe"
+          wget "https://aka.ms/vs/17/release/vc_redist.x86.exe" -OutFile "$($tmp)\vc_redist.x86.exe"
+          Write-Host "[.] Downloading mseoledbsql_19.3.1.msi" 
+          wget "https://go.microsoft.com/fwlink/?linkid=2248728" -OutFile "$($tmp)\msoledbsql_19.3.2.msi"
+          Write-Host "[.] Running: VC_redist.x64.exe /s"
+          . "$($tmp)\VC_redist.x64.exe" "/s"
+          Write-Host "[.] Running: VC_redist.x86.exe /s" 
+          . "$($tmp)\VC_redist.x86.exe" "/s" 
+          #. "msiexec" "/i $($tmp)\msoledbsql_19.3.1.msi /qn /quiet" # not working.. figured out it needs this last parameter, below to accept eula
+          $params = '/i',"$($tmp)\msoledbsql_19.3.2.msi",'/quiet','/qn','/norestart',"IACCEPTMSOLEDBSQLLICENSETERMS=YES"
+          Write-Host "[.] Running: msiexec, params:"
+          Write-Host @params 
+          & "msiexec.exe" @params 
+          Write-Host "[.] Waiting 30 seconds for this to complete.."
+          start-sleep 30
+          Write-Host "[.] Removing older versions of MS SQL ODBC and OLE DB Driver.."
+          $ResultVersions = Parse-ResultsVersion $Results
+          Write-Verbose "ResultVersions: $ResultVersions"
+          if ($ResultVersions) {
+            if ($ResultVersions.Count -gt 1) {
+              Foreach ($ver in $ResultVersions) {
+                Write-Verbose "Version found: $Ver"
+#                if ([version]$ver -lt [version]19.3.2) {
+                  $Products = (get-wmiobject Win32_Product | Where-Object { ($_.Name -like "Microsoft OLE DB Driver*" -or $_.Name -like "Microsoft ODBC Driver*") -and [version]$_.Version -lt [version]"19.3.2.0"})
+                  if ($Products) {
+                    Write-Verbose "Removing product(s): $Products"
+                    Remove-Software -Products $Products  -Results $Results
+                  } 
+#                }
+              }
+            }
+          }
+          Write-Host "[.] Please make sure this is installed properly, and old, vulnerable versions are removed, opening appwiz.cpl:"
+          . appwiz.cpl
+        }
+      }      
+      376709 {
+        # 376709	HP Support Assistant Multiple Security Vulnerabilities (HPSBGN03762)
+        # C:\Program Files (x86)\Hewlett-Packard\HP Support Framework\\HPSF.exe  Version is  8.8.34.31#
+        if (Get-YesNo "$_ Remove HP Support Assistant Multiple Security Vulnerabilities (HPSBGN03762)? " -Results $Results) { 
+          $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'HP Support Assist*'})
+          if ($Products) {
+              Remove-Software -Products $Products  -Results $Results
+          } else {
+            Write-Host "[!] Product not found: 'HP Support Assist*' !!`n" -ForegroundColor Red
+          }  
+        }       
+      }	
       106116 {        
         if (Get-YesNo "$_ Delete EOL/Obsolete Software: Microsoft Visual C++ 2010 Redistributable Package Detected? " -Results $Results) { 
           Remove-File "$($env:ProgramFiles)\Common Files\Microsoft Shared\VC\msdia100.dll" -Results $Results
