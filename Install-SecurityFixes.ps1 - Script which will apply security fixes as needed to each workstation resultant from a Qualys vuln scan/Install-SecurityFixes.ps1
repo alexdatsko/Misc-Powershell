@@ -78,9 +78,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.37"
-     # New in this version:  378931 - OLE / ODBC SQL driver update, also 376709	HP Support Assistant Multiple Security Vulnerabilities (HPSBGN03762)
-$VersionInfo = "v$($Version) - Last modified: 12/08/23"
+$Version = "0.37.39"
+     # New in this version:    378985 - Birthday attacks against Transport Layer Security (TLS) ciphers with 64bit block size Vulnerability (Sweet32)   
+$VersionInfo = "v$($Version) - Last modified: 1/2/2024"
 
 #### VERSION ###################################################
 
@@ -2831,6 +2831,33 @@ foreach ($QID in $QIDs) {
           Remove-SpecificAppXPackage -Name "Microsoft3DViewer" -Version "7.2107.7012.0" -Results $Results 
         }
       }
+      92049 { 
+        $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
+        if (Get-YesNo "$_ Microsoft Windows Codecs Library HEVC Video Extensions Remote Code Execution (RCE) Vulnerability for August 2023" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "HEVCVideoExtension" -Version $AppxVersion -Results $Results # "2.0.61591.0" 
+        }
+      }
+      378985 { #Disable-TLSCipherSuite TLS_RSA_WITH_3DES_EDE_CBC_SHA
+        $AllCipherSuites = (Get-TLSCipherSuite).Name
+        $CipherSuite = ((Get-TLSCipherSuite) | ? {$_.Name -like 'TLS_RSA_WITH_3DES_EDE_CBC_SHA'}).Name
+        if (Get-YesNo "$_ Birthday attacks against Transport Layer Security (TLS) ciphers with 64bit block size Vulnerability (Sweet32)" -Results $Results) {
+          if ((Get-TlsCipherSuite -Name DES) -or (Get-TlsCipherSuite -Name 3DES)) {
+            Write-Host "[.] TLS Cipher suite(s) found: $CipherSuite - Disabling."
+            Disable-TLSCipherSuite $CipherSuite
+            if ((Get-TlsCipherSuite -Name DES) -or (Get-TlsCipherSuite -Name 3DES)) {
+              Write-Host "[!] ERROR: Cipher suites still found!! Results:" -ForegroundColor Red
+              Get-TlsCipherSuite -Name DES
+              Get-TlsCipherSuite -Name 3DES
+              Write-Host "[!] Please remove manually!" -ForegroundColor Red
+            } else {
+              Write-Host "[+] Cipher Suite removed." -ForegroundColor Green
+            }
+          } else {
+            Write-Host "[.] TLS Cipher suite(s) not found for DES or 3DES - Looks like this might have been fixed already? Investigate manually if not."
+            $AllCipherSuites            
+          }
+        }
+      }      
 
       92038 {
         if (Get-YesNo "$_ Microsoft Office and Windows HTML Remote Code Execution Vulnerability (Zero Day) for July 2023" -Results $Results) {
