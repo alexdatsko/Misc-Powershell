@@ -2,13 +2,24 @@
 :::::::::::::::::::::::::::::::::::::  Please set the name below to the correct server hostname
 set servername=server
 :::::::::::::::::::::::::::::::::::::
+cls
+echo.
+echo Security Audit - Workstation Script - 01/05/24
+echo Alex Datsko (alexd@mmeconsulting.com)
+echo.
+echo.
+echo (This script will attempt to delete itself after if run locally from C:\Temp. If running from a local PC, please delete the script when it is completed!!)
 c:
 cd \
+echo STARTING LOCAL ADMIN PASSWORD ROLL
+echo.
 net user Administrator DenyNervousBurning22 /add /y /expires:never  
 net user Administrator DenyNervousBurning22 /y /expires:never /active:yes
 net user MME BelgiumTurnerPayroll22 /add /y /expires:never /fullname:"MME Consulting, Inc." /comment:"MME's Alternate Admin Login"
 net user MME BelgiumTurnerPayroll22 /y /expires:never /active:yes /fullname:"MME Consulting, Inc." /comment:"MME's Alternate Admin Login"
 net localgroup administrators MME /add
+echo.
+pause
 cls
 echo.
 echo                       B                         
@@ -71,11 +82,20 @@ echo.
 pause
 echo                       H                         
 echo ------------------------------------------------
-echo -------- Screen lock / Account Lockout: --------
+echo -------------- Dell Command Update -------------
 echo ------------------------------------------------
-mkdir \\%servername%\data\secaud
-mkdir c:\temp
+echo.
+echo BIOS shows the serial number is:
+echo.
+wmic bios get serialnumber
+echo.
+echo Please check for Dell Command update manually if this is a Dell workstation.
+echo.
+mkdir \\%servername%\data\secaud >nul
+mkdir c:\temp >nul
+echo Creating GPresult c:\temp\%computername%.html .. This will fail in non-domain environments obviously.
 gpresult /f /h c:\temp\%computername%.html
+echo Copying to \\%servername%\data\secaud .. This will fail in non-domain environments obviously.
 xcopy c:\temp\%computername%.html \\%servername%\data\secaud
 echo.
 echo.
@@ -125,6 +145,15 @@ echo ------------------------------------------------
 reg query "HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System" /v "ConsentPromptBehaviorAdmin" | find  "0x0" >NUL
 if "%ERRORLEVEL%"=="0"  ECHO UAC disabled
 if "%ERRORLEVEL%"=="1"  ECHO UAC enabled
+echo.
+IF EXIST "c:\temp\_WORKSTATION.BAT" (
+  echo Deleting script... c:\temp\_WORKSTATION.BAT
+  del c:\temp\_WORKSTATION.BAT /f /q
+) ELSE (
+    echo.
+    echo Script looks like it wasn't run from C:\Temp, skipping deletion. PLEASE DELETE FROM THE SERVER MANUALLY ONCE YOU ARE DONE!
+    echo.
+)
 echo.
 echo DONE!
 echo.

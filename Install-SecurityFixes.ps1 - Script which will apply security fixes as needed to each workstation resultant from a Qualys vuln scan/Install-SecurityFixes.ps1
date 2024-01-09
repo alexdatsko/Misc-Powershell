@@ -1,8 +1,9 @@
 [cmdletbinding()]  # For verbose, debug etc
 param (
   [switch] $Automated = $false,    # this allows us to run without supervision and apply all changes (could be dangerous!)
-  [string] $CSVFile,               # Allow us to pick a CSV file on the commandline
-  [int[]] $OnlyQIDs,               # Allow us to pick (a) certain QID(s) to remediate
+  [string] $CSVFile,               # Allow user to pick a CSV file on the commandline
+  [int[]] $OnlyQIDs,               # Allow user to pick a list of QID(s) to remediate
+  [int] $QID,                      # Allow user to pick one QID to remediate
   [switch] $Help                   # Allow -Help to display help for parameters
 )
 
@@ -21,6 +22,8 @@ $AllHelp = "########################################################
     Specifies the path to the CSV file to use.
 .PARAMETER Automated
     Indicates whether the script is running in automated mode. Fixes will be applied automatically.
+.PARAMETER QID
+    Pick a certain QID to remediate, i.e 105170
 .PARAMETER OnlyQIDs
     Pick a smaller list of QIDs to remediate, i.e 1,2,5
 .PARAMETER Verbose
@@ -52,6 +55,11 @@ if ($OnlyQIDs) {
   $QIDSpecific=[System.Collections.Generic.List[int]]$OnlyQIDs
   Write-Verbose "-OnlyQIDs parameter found: $QIDSpecific"
 }
+if ($QID) {
+  $QIDSpecific=[int]$QID
+  Write-Verbose "-QID parameter found: $QIDSpecific"
+}
+
 
 # Start a transscript of what happens while the script is running
 try {
@@ -78,9 +86,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.37.39"
-     # New in this version:    378985 - Birthday attacks against Transport Layer Security (TLS) ciphers with 64bit block size Vulnerability (Sweet32)   
-$VersionInfo = "v$($Version) - Last modified: 1/2/2024"
+$Version = "0.38.00"
+     # New in this version:    Added parameter -QID for running against a single vuln only, looked at service permissions possible bug, added App installer QID 91848	
+     $VersionInfo = "v$($Version) - Last modified: 1/9/2024"
 
 #### VERSION ###################################################
 
@@ -375,6 +383,18 @@ Function Get-OS {
         Manufacturer = $cs.Manufacturer
         Model = $cs.Model
         BIOSVersion = $bios.SMBIOSBIOSVersion
+    }
+}
+
+Function Get-OSVersionInfo {
+    # Returns more than Major.Minor.Build .. for caption basically
+    $os = Get-WmiObject -Class Win32_OperatingSystem
+
+    Return [PSCustomObject]@{
+        Caption = $os.Caption
+        Version = $os.Version
+        Build = $os.BuildNumber
+        Architecture = $os.OSArchitecture
     }
 }
 
@@ -888,17 +908,19 @@ function Get-ServicePermIssues {
 Function Get-ServiceFilePerms {
 param ([string]$FilesToCheck)
   $RelevantList = @("Everyone","BUILTIN\Users","BUILTIN\Authenticated Users","BUILTIN\Domain Users")
+  Write-Verbose "Relevant user list: $RelevantList"
   $Output = @() 
   ForEach ($FileToCheck in $FilesToCheck) { 
     $Acl = Get-Acl -Path $FileToCheck   #.FullName   #Not using object from gci
     ForEach ($Access in $Acl.Access) { 
       Write-Verbose "Identity for $($FileToCheck):       $($Access.IdentityReference)"
-      #$RelevantList
       if ($RelevantList -contains $Access.IdentityReference) {
-        #$Access.FileSystemRights
-        if (($Access.FileSystemRights -match "FullControl") -or ($Access.FileSystemRights -like "*Write*")) {
-          $Properties = [ordered]@{'Folder Name'=$FileToCheck;'Group/User'=$Access.IdentityReference;'Permissions'=$Access.FileSystemRights;'Inherited'=$Access.IsInherited} 
-          $Output += New-Object -TypeName PSObject -Property $Properties 
+        foreach ($CurrentRight in $Access.FileSystemRights) {
+          Write-Verbose "FileSystemRights: $CurrentRight"
+          if (($CurrentRight -match "FullControl") -or ($CurrentRight -like "*Write*")) {
+            $Properties = [ordered]@{'Folder Name'=$FileToCheck;'Group/User'=$Access.IdentityReference;'Permissions'=$CurrentRight;'Inherited'=$Access.IsInherited} 
+            #$Output += New-Object -TypeName PSObject -Property $Properties 
+          }
         }
       }
     }
@@ -1457,6 +1479,7 @@ if (!$OnlyQIDs) {   # If we are not just trying a fix for one CSV, we will also 
   }
   Backup-BitlockerKeys # Try to Backup Bitlocker recovery keys to AD
 }
+$OSVersionInfo = Get-OSVersionInfo
 ################# ( READ IN CSV AND PROCESS ) #####################
 
 if (!(Test-Path $($tmp))) {
@@ -1509,113 +1532,113 @@ if ($null -eq $CSVFilename) {
 
 $Rows = @()
 $QIDsAdded = @()
-$QID = ""
+$CurrentQID = ""
 $CSVData | ForEach-Object {
 # Search by title:
-  $QID=($_.QID).Replace('.0','') 
-  if ($QIDsAdded -notcontains $QID) {
+  $CurrentQID=($_.QID).Replace('.0','') 
+  if ($CurrentQIDsAdded -notcontains $CurrentQID) {
     if ($_.Title -like "Apple iCloud for Windows*") {
-      if (!($QIDsAppleiCloud -contains $QID)) {
-        Add-VulnToQIDList $QID $_.Title  'QIDsAddedQIDsAppleiTunes' 
+      if (!($QIDsAppleiCloud -contains $CurrentQID)) {
+        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsAddedQIDsAppleiTunes' 
         . $($QIDsListFile)
-        $QIDsAdded+=[int]$QID
+        $QIDsAdded+=[int]$CurrentQID
       }
     }
     if ($_.Title -like "Apple iTunes for Windows*") {
-      if (!($QIDsAppleiTunes -contains $QID)) {
-        Add-VulnToQIDList $QID $_.Title  'QIDsAppleiTunes' 
+      if (!($QIDsAppleiTunes -contains $CurrentQID)) {
+        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsAppleiTunes' 
         . $($QIDsListFile)
-        $QIDsAdded+=[int]$QID
+        $QIDsAdded+=[int]$CurrentQID
       }
     }
     if ($_.Title -like "Chrome*") {
-      if (!($QIDsTeamviewer -contains $QID)) {
-        Add-VulnToQIDList $QID $_.Title  'QIDsTeamViewer' 
+      if (!($QIDsTeamviewer -contains $CurrentQID)) {
+        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsTeamViewer' 
         . $($QIDsListFile)
-        $QIDsAdded+=[int]$QID
+        $QIDsAdded+=[int]$CurrentQID
       }
     }
     if ($_.Title -like "Firefox*") {
-      if (!($QIDsFirefox -contains $QID)) {
-        Add-VulnToQIDList $QID $_.Title  'QIDsFirefox'
+      if (!($QIDsFirefox -contains $CurrentQID)) {
+        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsFirefox'
         . $($QIDsListFile)
-        $QIDsAdded+=[int]$QID
+        $QIDsAdded+=[int]$CurrentQID
       }
     }
     if ($_.Title -like "Zoom Client*") {
-      if (!($QIDsZoom -contains $QID)) {
-        Add-VulnToQIDList $QID $_.Title  'QIDsZoom'
+      if (!($QIDsZoom -contains $CurrentQID)) {
+        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsZoom'
         . $($QIDsListFile)
-        $QIDsAdded+=[int]$QID
+        $QIDsAdded+=[int]$CurrentQID
       }
     }
     if ($_.Title -like "TeamViewer*") {
-      if (!($QIDsTeamviewer -contains $QID)) {
-        Add-VulnToQIDList $QID $_.Title  'QIDsTeamViewer'
+      if (!($QIDsTeamviewer -contains $CurrentQID)) {
+        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsTeamViewer'
         . $($QIDsListFile)
-        $QIDsAdded+=[int]$QID
+        $QIDsAdded+=[int]$CurrentQID
       }
     }  
     if ($_.Title -like "Dropbox*") {
-      if (!($QIDsDropbox -contains $QID)) {
-        Add-VulnToQIDList $QID $_.Title  'QIDsDropbox'
+      if (!($QIDsDropbox -contains $CurrentQID)) {
+        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsDropbox'
         . $($QIDsListFile)
-        $QIDsAdded+=[int]$QID
+        $QIDsAdded+=[int]$CurrentQID
       }
     }
     if ($_.Title -like "Oracle Java*") {            ########
-      if (!($QIDsOracleJava -contains $QID)) {
-        Add-VulnToQIDList $QID $_.Title  'QIDsOracleJava' 
+      if (!($QIDsOracleJava -contains $CurrentQID)) {
+        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsOracleJava' 
         . $($QIDsListFile)
-        $QIDsAdded+=[int]$QID
+        $QIDsAdded+=[int]$CurrentQID
       }
     }
     if ($_.Title -like "Adopt Open JDK*") {             ############
-      if (!($QIDsAdoptOpenJDK -contains $QID)) {
-        Add-VulnToQIDList $QID $_.Title  'QIDsAdoptOpenJDK' 
+      if (!($QIDsAdoptOpenJDK -contains $CurrentQID)) {
+        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsAdoptOpenJDK' 
         . $($QIDsListFile)
-        $QIDsAdded+=[int]$QID
+        $QIDsAdded+=[int]$CurrentQID
       }
     }
     if ($_.Title -like "VirtualBox*") {
-      if (!($QIDsVirtualBox -contains $QID)) {
-        Add-VulnToQIDList $QID $_.Title  'QIDsVirtualBox'
+      if (!($QIDsVirtualBox -contains $CurrentQID)) {
+        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsVirtualBox'
         . $($QIDsListFile)
-        $QIDsAdded+=[int]$QID
+        $QIDsAdded+=[int]$CurrentQID
       }
     }
     if ($_.Title -like "Adobe Reader*") {  
-      if (!($QIDsAdobeReader -contains $QID)) {
-        Add-VulnToQIDList $QID $_.Title  'QIDsAdobeReader'
-        $QIDsAdded+=[int]$QID
+      if (!($QIDsAdobeReader -contains $CurrentQID)) {
+        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsAdobeReader'
+        $QIDsAdded+=[int]$CurrentQID
       }
     }
     if ($_.Title -like "Intel Graphics*") {
-      if (!($QIDsIntelGraphicsDriver -contains $QID)) {
-        Add-VulnToQIDList $QID $_.Title  'QIDsIntelGraphicsDriver'
+      if (!($QIDsIntelGraphicsDriver -contains $CurrentQID)) {
+        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsIntelGraphicsDriver'
         . $($QIDsListFile)
-        $QIDsAdded+=[int]$QID
+        $QIDsAdded+=[int]$CurrentQID
       }
     }
     if ($_.Title -like "NVIDIA*") {
-      if (!($QIDsNVIDIA -contains $QID)) { 
-        Add-VulnToQIDList $QID $_.Title  'QIDsNVIDIA' 
+      if (!($QIDsNVIDIA -contains $CurrentQID)) { 
+        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsNVIDIA' 
         . $($QIDsListFile)
-        $QIDsAdded+=[int]$QID
+        $QIDsAdded+=[int]$CurrentQID
       }
     }
     if ($_.Title -like "Dell Client*") {
-      if (!($QIDsDellCommandUpdate -contains $QID)) {
-        Add-VulnToQIDList $QID $_.Title  'QIDsDellCommandUpdate' 
+      if (!($QIDsDellCommandUpdate -contains $CurrentQID)) {
+        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsDellCommandUpdate' 
         . $($QIDsListFile)
-        $QIDsAdded+=[int]$QID
+        $QIDsAdded+=[int]$CurrentQID
       }
     }
     if ($_.Title -like "Ghostscript*") {
-      if (!($QIDsGhostscript -contains $QID)) {
-        Add-VulnToQIDList $QID $_.Title  'QIDsGhostScript' 
+      if (!($QIDsGhostscript -contains $CurrentQID)) {
+        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsGhostScript' 
         . $($QIDsListFile)
-        $QIDsAdded+=[int]$QID
+        $QIDsAdded+=[int]$CurrentQID
       }
     }
   }
@@ -1689,15 +1712,15 @@ if ($QIDSpecific) {
   Write-Host "[!] Applying fixes for specific QIDs only: $QIDSpecific `n" -ForegroundColor Yellow
   $QIDs = $QIDSpecific
 }
-foreach ($QID in $QIDs) {
-    $ThisQID = [int]$QID
-    Write-Verbose "-- This QID: $QID -- Type: $($QID.GetType())"
+foreach ($CurrentQID in $QIDs) {
+    $ThisQID = [int]$CurrentQID
+    Write-Verbose "-- This QID: $CurrentQID -- Type: $($CurrentQID.GetType())"
     $VulnDesc = (($Rows | Where-Object { $_.QID -eq $ThisQID }) | Select-Object -First 1)."Vulnerability Description"
     $Results = (($Rows | Where-Object { $_.QID -eq $ThisQID }) | Select-Object -First 1)."Results"
     If ($Automated -eq $true) {
       Write-Verbose "[Running in Automated mode]"
     }
-    switch ([int]$QID)
+    switch ([int]$CurrentQID)
     {
       376023 { 
         if (Get-YesNo "$_ Remove Dell SupportAssist ? " -Results $Results) {
@@ -2251,17 +2274,17 @@ foreach ($QID in $QIDs) {
           }
         }
       }
-      { 105734 -eq $_ } {
+      { ($QIDsAdobeReader -contains $_) -or ($VulnDesc -like "*Adobe Reader*" -and ($QIDsAdobeReader -ne 1)) } {
         if (Get-YesNo "$_ Remove older versions of Adobe Reader ? " -Results $Results) { 
           $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Adobe Reader*'})
           if ($Products) {
+            Write-Host "[.] Products found matching *Adobe Reader* : "
+            $Products
             Remove-Software -Products $Products -Results $Results
           } else {
             Write-Host "[!] Adobe products not found under 'Adobe Reader*' : `n    $Products !!`n" -ForegroundColor Red
           }  
         }
-      }
-      { ($QIDsAdobeReader -contains $_) -or ($VulnDesc -like "*Adobe Reader*" -and ($QIDsAdobeReader -ne 1)) } {
         if (Get-YesNo "$_ Install newest Adobe Reader DC ? ") {
           Get-NewestAdobeReader
           #cmd /c "$($tmp)\readerdc.exe"
@@ -2842,7 +2865,7 @@ foreach ($QID in $QIDs) {
         $CipherSuite = ((Get-TLSCipherSuite) | ? {$_.Name -like 'TLS_RSA_WITH_3DES_EDE_CBC_SHA'}).Name
         if (Get-YesNo "$_ Birthday attacks against Transport Layer Security (TLS) ciphers with 64bit block size Vulnerability (Sweet32)" -Results $Results) {
           if ((Get-TlsCipherSuite -Name DES) -or (Get-TlsCipherSuite -Name 3DES)) {
-            Write-Host "[.] TLS Cipher suite(s) found: $CipherSuite - Disabling."
+            Write-Host "[.] TLS Cipher suite(s) found: $CipherSuite - Disabling." -ForegroundColor Yellow
             Disable-TLSCipherSuite $CipherSuite
             if ((Get-TlsCipherSuite -Name DES) -or (Get-TlsCipherSuite -Name 3DES)) {
               Write-Host "[!] ERROR: Cipher suites still found!! Results:" -ForegroundColor Red
@@ -2853,7 +2876,7 @@ foreach ($QID in $QIDs) {
               Write-Host "[+] Cipher Suite removed." -ForegroundColor Green
             }
           } else {
-            Write-Host "[.] TLS Cipher suite(s) not found for DES or 3DES - Looks like this might have been fixed already? Investigate manually if not."
+            Write-Host "[.] TLS Cipher suite(s) not found for DES or 3DES - Looks like this might have been fixed already? Investigate manually if not." -ForegroundColor Yellow
             $AllCipherSuites            
           }
         }
@@ -2949,9 +2972,8 @@ foreach ($QID in $QIDs) {
           Write-Verbose "IN MAIN LOOP: Returned from Get-ServicePermIssues: $ServicePermIssues"
           foreach ($file in $ServicePermIssues) {
             if (!(Get-ServiceFilePerms $file)) {
-              Write-Output "[+] Permissions are good for $file "
+              Write-Output "[+] Permissions look good for $file ..."
             } else { # FIX PERMS.
-              
               $objACL = Get-ACL $file
               Write-Output "[.] Checking owner of $file .. $($objacl.Owner)"
               # Check for file owner, to resolve problems setting inheritance (if needed)
@@ -3048,7 +3070,32 @@ foreach ($QID in $QIDs) {
         }
         $QIDsMSXMLParser4 = 1
       }
-      91848 {
+      91848000 { # OOPS, already had this below,..    # Microsoft vulnerable Microsoft Desktop Installer detected  Version     '1.21.3133.0'#
+        if (Get-YesNo "$_ Windows AppX Installer Spoofing Vulnerability? " -Results $Results) { 
+          $AppInstallerVersion = (Get-AppxPackage Microsoft.DesktopAppInstaller).Version
+          Write-Host "[.] App Installer Version pre-fix: $AppInstallerVersion"
+
+          $osVersion = $OSVersionInfo.Caption
+          Write-Verbose "OS Version: $osVersion"
+          if ($osVersion -like '*Windows 10*') {
+            Write-Host "[.] Win 10 detected, starting update (MANUAL INTERVENTION REQUIRED! Click through and close when finished.)"
+            # Windows 10 update via store:
+            Write-Host "[.] Opening  ms-windows-store://pdp?hl=en-us&gl=us&productid=9NBLGGH4NNS1&mode=mini&pos=-1928%2C357%2C1936%2C1048&referrer=storeforweb"
+            cmd.exe /c "start ms-windows-store://pdp?hl=en-us&gl=us&productid=9NBLGGH4NNS1&mode=mini&pos=-1928%2C357%2C1936%2C1048&referrer=storeforweb"
+          } elseif ($osVersion -like '*Windows 11*') {
+            Write-Host "[.] Win 11 detected, starting update with 'winget upgrade Microsoft.AppInstaller' .."
+            #weirdly, this can't be run from a share, but it works from a local drive location
+            Set-Location c:
+            & winget.exe upgrade Microsoft.AppInstaller
+          } else {
+            Write-Host "[!] Unknown Windows version '$($env:OSVERSION)'"
+          }
+          $AppInstallerVersion = (Get-AppxPackage Microsoft.DesktopAppInstaller).Version
+          Write-Host "[.] Checking app Installer Version after: $AppInstallerVersion"
+        }
+      }
+
+      91848 {  # This might have a newer update, this was found vulnerable in 1/2024: Microsoft vulnerable Microsoft Desktop Installer detected  Version     '1.21.3133.0'#
         if (Get-YesNo "$_ Install Store Installer app update to 1.16.13405.0 ? " -Results $Results) { 
           # Requires -RunAsAdministrator
           if ($true) {
