@@ -44,6 +44,7 @@ if ($Help) {
 
 $oldPwd = $pwd                               # Grab location script was run from
 $UpdateChromeWait = 60                       # Default to 60 seconds for updating Chrome or Firefox with -Automated. Can be overwritten in Config, for slower systems.. 
+$Update7zipWait = 30                         # How long to wait for the 7-zip Ninite updater to finish and close
 $ConfigFile = "$oldpwd\_config.ps1"          # Configuration file 
 $QIDsListFile = "$oldpwd\QIDLists.ps1"       # QID List file 
 $tmp = "$($env:temp)\SecAud"                 # "temp" Temporary folder to save downloaded files to, this will be overwritten when checking config ..
@@ -86,9 +87,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.00"
-     # New in this version:    Added parameter -QID for running against a single vuln only, looked at service permissions possible bug, added App installer QID 91848	
-     $VersionInfo = "v$($Version) - Last modified: 1/9/2024"
+$Version = "0.38.01"
+     # New in this version:   7-zip updater ninite automated close after 30s test
+     $VersionInfo = "v$($Version) - Last modified: 1/16/2024"
 
 #### VERSION ###################################################
 
@@ -2150,7 +2151,14 @@ foreach ($CurrentQID in $QIDs) {
       378839 {
         if (Get-YesNo "$_ Install newest 7-Zip from Ninite? " -Results $Results) { 
           Invoke-WebRequest -UserAgent $AgentString -Uri "https://ninite.com/7-zip/ninite.exe" -OutFile "$($tmp)\7zninite.exe"
-          cmd /c "$($tmp)\7zninite.exe"
+
+          Start-Process -FilePath "$($tmp)\7zninite.exe" # -NoNewWindow
+          Write-Host "[.] Waiting $Update7zipWait seconds .."
+          Start-Sleep $Update7zipWait # Wait 30 seconds to make sure the app has updated, usually 30s or so at least!! Longer for slower machines!
+          Write-Host "[.] Killing the Ninite 7-zip updater window to close it!"
+          taskkill.exe /f /im ninite.exe
+          taskkill.exe /f /im 7zninite.exe
+          Write-Host "[!] Done!"
           $QIDs7zip = 1
         } else { $QIDs7zip = 1 }
       }
@@ -2551,7 +2559,7 @@ foreach ($CurrentQID in $QIDs) {
           
           Write-Output "[.] Creating registry item: HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config\EnableCertPaddingCheck=1"
           New-Item -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust" -Force | Out-Null
-          New-Item -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config" -Force | Out-Null
+          New-Item -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config" -Force | Out-Null #  \Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config EnableCertPaddingCheck
           New-ItemProperty -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config" -Name "EnableCertPaddingCheck" -Value "1" -PropertyType "String" -Force | Out-Null    
           Write-Output "[!] Done!"
         }
