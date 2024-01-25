@@ -4,7 +4,7 @@ Import-module AIPService
 Install-Module -Name ExchangeOnlineManagement
 Import-Module ExchangeOnlineManagement
 
-Connect-ExchangeOnline -UserPrincipalName o365admin@ovationorthodontics.com
+Connect-ExchangeOnline -UserPrincipalName admin@domain.com
 
 $cred = Get-Credential
 Connect-AIPService -Credential $cred
