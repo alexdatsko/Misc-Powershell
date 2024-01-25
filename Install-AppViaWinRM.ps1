@@ -1,6 +1,6 @@
 # Force Install Qualys - 10/27/22 Alex Datsko MME Consulting Inc
 
-$app="\\server\sysvol\smo.local\Software\Mohr Orthodontics(2592).msi"
+$app="\\server\sysvol\smo.local\Software\Client(2592).msi"
 $CredUser = "smo.local\Administrator"
 $namesToRemove = "CLINICPC","CONSULTPC","DRLT","EAST-CHECKOUTPC","EAST-CONSULT2PC ","EAST-LABPC","EAST-RECEPT2PC","FINANCEPC","HYPERV","IIS","RECEPTION1PC","SERVER","SQL","TERMSERVER"
 
