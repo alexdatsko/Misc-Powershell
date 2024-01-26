@@ -3,7 +3,7 @@
 
 $folder = "C:\temp"  # <--- Put Sysinternals PSExec.exe in here
 $sec = 20            # <--- How many seconds to wait after quickconfig
-$AddServer = "*.aboutfacesandbraces.local"   # <----- added to trustedhosts
+$AddServer = "*.domain.local"   # <----- added to trustedhosts
 
 Write-Host "[ ] Enter credentials to run as across the network (i.e MME or Administrator domain user)"
 $cred = Get-Credential
