@@ -87,9 +87,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.01"
-     # New in this version:   7-zip updater ninite automated close after 30s test
-     $VersionInfo = "v$($Version) - Last modified: 1/16/2024"
+$Version = "0.38.02"
+     # New in this version:   Fixed color on filename picker, remove Dellsupport assist for qid 379210, 
+     $VersionInfo = "v$($Version) - Last modified: 2/1/2024"
 
 #### VERSION ###################################################
 
@@ -595,7 +595,7 @@ function Pick-File {    # Show a list of files with a number to the left of each
   
   $i=0
   $Filenames | ForEach-Object {
-    Write-Host "[$i] $_" -ForegroundColor Blue
+    Write-Host "[$i] $_" -ForegroundColor Gray
     $i += 1
   }
 
@@ -739,10 +739,12 @@ function Remove-SoftwareByName {
 
   # Attempt to uninstall using Win32_Product
   $wmiSoftware = (Get-WmiObject Win32_Product) | Where-Object { $_.Name -like "*$SoftwareName*" }
-  foreach ($software in $wmiSoftware) {
-    if ($software.IdentifyingNumber.length -eq 38) {  # if it looks like it has a real GUID, probably real..
-      Write-Host "[-] Uninstalling $($software.Name)..." -ForegroundColor Yellow
-      $software.Uninstall()
+  if ($wmiSoftware) {
+    foreach ($software in $wmiSoftware) {
+      if ($software.IdentifyingNumber.length -eq 38) {  # if it looks like it has a real GUID, probably real..
+        Write-Host "[-] Uninstalling $($software.Name)..." -ForegroundColor Yellow
+        $software.Uninstall()
+      }
     }
   } else {
       Write-Host "[.] Software '$SoftwareName' not found using Win32_Product."
@@ -920,7 +922,7 @@ param ([string]$FilesToCheck)
           Write-Verbose "FileSystemRights: $CurrentRight"
           if (($CurrentRight -match "FullControl") -or ($CurrentRight -like "*Write*")) {
             $Properties = [ordered]@{'Folder Name'=$FileToCheck;'Group/User'=$Access.IdentityReference;'Permissions'=$CurrentRight;'Inherited'=$Access.IsInherited} 
-            #$Output += New-Object -TypeName PSObject -Property $Properties 
+            $Output += New-Object -TypeName PSObject -Property $Properties 
           }
         }
       }
@@ -1723,7 +1725,7 @@ foreach ($CurrentQID in $QIDs) {
     }
     switch ([int]$CurrentQID)
     {
-      376023 { 
+      { 379210,376023 -contains $_ }  { 
         if (Get-YesNo "$_ Remove Dell SupportAssist ? " -Results $Results) {
           $guid = (Get-Package | Where-Object{$_.Name -like "*SupportAssist*"})
           if ($guid) {  ($guid | Select-Object -expand FastPackageReference).replace("}","").replace("{","")  }
@@ -3011,7 +3013,7 @@ foreach ($CurrentQID in $QIDs) {
                   Write-Output "[!] ERROR: Couldn't set inheritance on $($file) .."
                 }
               }
-              Write-Verbose "[.] Removing Everyone full permissions on $file .."
+              Write-Output "[.] Removing Everyone full permissions on $file .."
               $Right = [System.Security.AccessControl.FileSystemRights]::ReadAndExecute
               $InheritanceFlag = [System.Security.AccessControl.InheritanceFlags]::None 
               $PropagationFlag = [System.Security.AccessControl.PropagationFlags]::InheritOnly  
@@ -3026,7 +3028,7 @@ foreach ($CurrentQID in $QIDs) {
               } catch {
                 Write-Output "[!] ERROR: Couldn't remove Everyone-full permissions on $file .."
               }
-              Write-Verbose "[.] Removing Users-Write/Modify/Append permissions on $file .."
+              Write-Output "[.] Removing Users-Write/Modify/Append permissions on $file .."
               # .. Remove write/append/etc from 'Users'. First remove Users rule completely.
               $objUser = New-Object System.Security.Principal.NTAccount("Users") 
               $objACE = New-Object System.Security.AccessControl.FileSystemAccessRule `

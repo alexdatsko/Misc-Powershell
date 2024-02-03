@@ -1,6 +1,5 @@
 @echo off
 :::::::::::::::::::::::::::::::::::::  Please set the name below to the correct server hostname
-set servername=server
 :::::::::::::::::::::::::::::::::::::
 cls
 echo.
@@ -11,12 +10,21 @@ echo.
 echo (This script will attempt to delete itself after if run locally from C:\Temp. If running from a local PC, please delete the script when it is completed!!)
 c:
 cd \
+echo Please hit Ctrl-C if you make a mistake.
+set /p servername="Enter Server name i.e SERVER or TRA-SERVER etc:"
+SET /P adminpass="Please enter Administrator user LOCAL password:"
+SET /P mmepass="Please enter MME user LOCAL password:"
+echo Admin password entered: %adminpass%
+echo MME password entered: %mmepass%
+echo Please hit Ctrl-C now if you made a mistake and re-run the script!!! 
+pause
+echo.
 echo STARTING LOCAL ADMIN PASSWORD ROLL
 echo.
-net user Administrator DenyNervousBurning22 /add /y /expires:never  
-net user Administrator DenyNervousBurning22 /y /expires:never /active:yes
-net user MME BelgiumTurnerPayroll22 /add /y /expires:never /fullname:"MME Consulting, Inc." /comment:"MME's Alternate Admin Login"
-net user MME BelgiumTurnerPayroll22 /y /expires:never /active:yes /fullname:"MME Consulting, Inc." /comment:"MME's Alternate Admin Login"
+net user Administrator %adminpass% /add /y /expires:never  
+net user Administrator %adminpass% /y /expires:never /active:yes
+net user MME %mmepass% /add /y /expires:never /fullname:"MME Consulting, Inc." /comment:"MME's Alternate Admin Login"
+net user MME %mmepass% /y /expires:never /active:yes /fullname:"MME Consulting, Inc." /comment:"MME's Alternate Admin Login"
 net localgroup administrators MME /add
 echo.
 pause
