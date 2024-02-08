@@ -87,9 +87,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.02"
-     # New in this version:   Fixed color on filename picker, remove Dellsupport assist for qid 379210, 
-     $VersionInfo = "v$($Version) - Last modified: 2/1/2024"
+$Version = "0.38.04"
+# New in this version:   378941, 378755 QIDs for Microsoft Teams update. also 91848 MS AppX Spoofing
+$VersionInfo = "v$($Version) - Last modified: 2/9/2024"
 
 #### VERSION ###################################################
 
@@ -1815,12 +1815,16 @@ foreach ($CurrentQID in $QIDs) {
       375589 {  
         if (Get-YesNo "$_ - Delete Dell DbUtil_2_3.sys ? " -Results $Results) {
           # %windir%\Temp\dbutil_2_3.sys   found#
-          $Filename = ($Results -split " found")[0].trim().replace("%windir%","$env:windir")
-          try {
-            Remove-Item $Filename -Force
-            Write-Host "[+] Removed $Filename" -ForegroundColor Green
-          } catch {
-            Write-Host "[!] Couldn't remove $Filename ! Manual intervention required.." -ForegroundColor Red
+          $Filename = ($Results -split " found")[0].trim().replace("%windir%","$env:windir").replace("%systemdrive%","$env:systemdrive")
+          if (Test-Path $Filename) { 
+            try {
+              Remove-Item $Filename -Force
+            } catch {
+              Write-Host "[!] Couldn't remove $Filename ! Manual intervention required.." -ForegroundColor Red
+            }
+            if (!(Test-Path $Filename)) { Write-Host "[+] Removed $Filename" -ForegroundColor Green } 
+          } else {
+            Write-Host "[!] Error: $Filename -- Not found.." -ForegroundColor Red
           }
         }
       }
@@ -2393,6 +2397,14 @@ foreach ($CurrentQID in $QIDs) {
           }  
         }
       }
+      { 378941,378755 -contains $_ } {
+        if (Get-YesNo "$_ Install latest MS Teams ? ") {
+          $TeamsURL=(IWR "https://teams.microsoft.com/desktopclient/installer/windows/x64").Content
+          IWR $TeamsURL -OutFile "$($tmp)/teams.exe"
+          . "$($tmp)/teams.exe"
+        }
+      }
+
 
 
       { $QIDsMicrosoftNETCoreV5 -contains $_ } {
@@ -2699,6 +2711,19 @@ foreach ($CurrentQID in $QIDs) {
           Remove-SpecificAppXPackage -Name "Office" -Version $AppxVersion -Results $Results # "18.2008.12711.0"
         }
       }
+      91848 {
+        # Multiple versions can be found in one result..
+        # Microsoft vulnerable Microsoft Desktop Installer detected  Version     '1.4.3161.0'
+        # Microsoft vulnerable Microsoft Desktop Installer detected  Version     '1.21.3133.0'#
+        $AppxVersions = Get-VersionResults -Results $Results
+        if (Get-YesNo "$_ Remove Microsoft.DesktopAppInstaller vulnerable versions $AppxVersions " -Results $Results) {
+          ForEach ($AppxVersion in $AppxVersions) {
+            Write-Host "[.] Removing Microsoft.DesktopAppInstaller version $AppxVersion .."
+            Remove-SpecificAppXPackage -Name "Microsoft.DesktopAppInstaller" -Version $AppxVersion -Results $Results
+          }
+        }
+      }
+
       91866 { 
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft Windows Codecs Library HEVC Video and VP9 Extensions Remote Code Execution (RCE) Vulnerability for February 2022" -Results $Results) {
@@ -3080,7 +3105,8 @@ foreach ($CurrentQID in $QIDs) {
         }
         $QIDsMSXMLParser4 = 1
       }
-      91848000 { # OOPS, already had this below,..    # Microsoft vulnerable Microsoft Desktop Installer detected  Version     '1.21.3133.0'#
+      <# Old fixes for 91848 
+      91848001 { # OOPS, already had this below,..    # Microsoft vulnerable Microsoft Desktop Installer detected  Version     '1.21.3133.0'#
         if (Get-YesNo "$_ Windows AppX Installer Spoofing Vulnerability? " -Results $Results) { 
           $AppInstallerVersion = (Get-AppxPackage Microsoft.DesktopAppInstaller).Version
           Write-Host "[.] App Installer Version pre-fix: $AppInstallerVersion"
@@ -3105,7 +3131,7 @@ foreach ($CurrentQID in $QIDs) {
         }
       }
 
-      91848 {  # This might have a newer update, this was found vulnerable in 1/2024: Microsoft vulnerable Microsoft Desktop Installer detected  Version     '1.21.3133.0'#
+      91848000 {  # This might have a newer update, this was found vulnerable in 1/2024: Microsoft vulnerable Microsoft Desktop Installer detected  Version     '1.21.3133.0'#
         if (Get-YesNo "$_ Install Store Installer app update to 1.16.13405.0 ? " -Results $Results) { 
           # Requires -RunAsAdministrator
           if ($true) {
@@ -3160,6 +3186,9 @@ foreach ($CurrentQID in $QIDs) {
           }
         }
       }
+      #>
+
+      # Default - QID not found!
       Default {
         Write-Host "[X] Skipping QID $_ - $VulnDesc" -ForegroundColor Red
       }

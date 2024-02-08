@@ -28,6 +28,8 @@ if ($MachineType -eq '') {
 Write-Output "[!] Machine Type found: $MachineType`n"
 Write-Output "[.] Setting dependencies for NLA Service:"
 if ($MachineType -eq 'Workstation' -or $MachineType -eq 'MemberServer') {
+  # Write-Output "[!] Workstation/Member Server: Setting NLA Service to depend on the Netlogon, TCP/IP, and DNS client service"
+  # sc.exe config nlasvc depend=TcpIp/DNScache/Netlogon
   Write-Output "[!] Workstation/Member Server: Setting NLA Service to depend on the TCP/IP and DNS client service"
   sc.exe config nlasvc depend=TcpIp/DNScache
 } 
