@@ -88,7 +88,7 @@ try {
 
 # No comments after the version number on the next line- Will screw up updates!
 $Version = "0.38.04"
-# New in this version:   378941, 378755 QIDs for Microsoft Teams update. also 91848 MS AppX Spoofing
+# New in this version:   378941, 378755 QIDs for Microsoft Teams update. also 91848 MS AppX Spoofing final form (maybe :)
 $VersionInfo = "v$($Version) - Last modified: 2/9/2024"
 
 #### VERSION ###################################################
