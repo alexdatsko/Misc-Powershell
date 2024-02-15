@@ -1,4 +1,4 @@
-[cmdletbinding()]  # For verbose, debug etc
+Show-FileVersionComparison[cmdletbinding()]  # For verbose, debug etc
 param (
   [switch] $Automated = $false,    # this allows us to run without supervision and apply all changes (could be dangerous!)
   [string] $CSVFile,               # Allow user to pick a CSV file on the commandline
@@ -87,9 +87,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.04"
-# New in this version:   378941, 378755 QIDs for Microsoft Teams update. also 91848 MS AppX Spoofing final form (maybe :)
-$VersionInfo = "v$($Version) - Last modified: 2/9/2024"
+$Version = "0.38.06"
+# New in this version:   Added fix for QID 378985 - Sweet32 fix, also disabling Cipher suites for 3DES and DES thru reg keys as well as disabling TLS_DHE_DSS_WITH_3DES_EDE_CBC_SHA
+$VersionInfo = "v$($Version) - Last modified: 2/15/2024"
 
 #### VERSION ###################################################
 
@@ -1144,6 +1144,9 @@ function Show-FileVersionComparison {
 }
 
 
+
+
+
 function Backup-BitlockerKeys {
   if ($BackupBitlocker) {
     if (Test-Path "C:\Windows\System32\manage-bde.exe") {  # If this exists, bitlocker role is at least installed
@@ -1725,8 +1728,17 @@ foreach ($CurrentQID in $QIDs) {
     }
     switch ([int]$CurrentQID)
     {
-      { 379210,376023 -contains $_ }  { 
+      { 379210,376023,376023,91539,372397,372069,376022 -contains $_ }  { 
         if (Get-YesNo "$_ Remove Dell SupportAssist ? " -Results $Results) {
+
+          $Products = Search-Software "*SupportAssist*" 
+          if (Check-Products $Products) {
+            Remove-Software -Products $Products -Results $Results
+          } else {
+            Write-Host "[!] Dell SupportAssist not found!" -ForegroundColor Red
+          }     
+
+<#
           $guid = (Get-Package | Where-Object{$_.Name -like "*SupportAssist*"})
           if ($guid) {  ($guid | Select-Object -expand FastPackageReference).replace("}","").replace("{","")  }
           msiexec /x $guid /qn /L*V "$($tmp)\SupportAssist.log" REBOOT=R
@@ -1736,6 +1748,8 @@ foreach ($CurrentQID in $QIDs) {
 
           # Or:
           # ([wmi]"\\$env:computername\root\cimv2:Win32_Product.$guid").uninstall()   
+
+#>
         }
       }
       105228 { 
@@ -2134,7 +2148,7 @@ foreach ($CurrentQID in $QIDs) {
               }
             }
             if ($FolderFound) { Remove-Folder (Parse-ResultsFolder -Results $Results) }
-            Show-FileVersionComparison -Name "Zoom" -Results $Results
+            #Show-FileVersionComparison -Name "Zoom" -Results $Results
             $QIDsZoom = 1
         } else { $QIDsZoom = 1 }
       }
@@ -2897,22 +2911,45 @@ foreach ($CurrentQID in $QIDs) {
       }
       378985 { #Disable-TLSCipherSuite TLS_RSA_WITH_3DES_EDE_CBC_SHA
         $AllCipherSuites = (Get-TLSCipherSuite).Name
-        $CipherSuite = ((Get-TLSCipherSuite) | ? {$_.Name -like 'TLS_RSA_WITH_3DES_EDE_CBC_SHA'}).Name
+        $CipherSuites = ((Get-TLSCipherSuite) | ? {$_.Name -like '*DES*'}).Name
         if (Get-YesNo "$_ Birthday attacks against Transport Layer Security (TLS) ciphers with 64bit block size Vulnerability (Sweet32)" -Results $Results) {
-          if ((Get-TlsCipherSuite -Name DES) -or (Get-TlsCipherSuite -Name 3DES)) {
-            Write-Host "[.] TLS Cipher suite(s) found: $CipherSuite - Disabling." -ForegroundColor Yellow
-            Disable-TLSCipherSuite $CipherSuite
-            if ((Get-TlsCipherSuite -Name DES) -or (Get-TlsCipherSuite -Name 3DES)) {
-              Write-Host "[!] ERROR: Cipher suites still found!! Results:" -ForegroundColor Red
-              Get-TlsCipherSuite -Name DES
-              Get-TlsCipherSuite -Name 3DES
-              Write-Host "[!] Please remove manually!" -ForegroundColor Red
+          if ($CipherSuites -ne $null) {
+            foreach ($CipherSuite in $CipherSuites) {
+              Write-Host "[.] TLS Cipher suite(s) found: $CipherSuite - Disabling." -ForegroundColor Yellow
+              Disable-TLSCipherSuite $CipherSuite
+              if ((Get-TlsCipherSuite -Name DES) -or (Get-TlsCipherSuite -Name 3DES)) {
+                Write-Host "[!] ERROR: Cipher suites still found!! Results:" -ForegroundColor Red
+                Get-TlsCipherSuite -Name DES
+                Get-TlsCipherSuite -Name 3DES
+                Write-Host "[!] Please remove manually!" -ForegroundColor Red
+              } else {
+                Write-Host "[+] Cipher Suite removed." -ForegroundColor Green
+              }
             } else {
-              Write-Host "[+] Cipher Suite removed." -ForegroundColor Green
-            }
-          } else {
-            Write-Host "[.] TLS Cipher suite(s) not found for DES or 3DES - Looks like this might have been fixed already? Investigate manually if not." -ForegroundColor Yellow
+              Write-Host "[.] TLS Cipher suite(s) not found for DES or 3DES - Looks like this might have been fixed already? Investigate manually if not." -ForegroundColor Yellow
             $AllCipherSuites            
+            }
+          }
+          # Also apply registry fixes:  NOTE: Creating reg keys with '/' character will not work correctly, so there is a fix, they can be created this way:
+            # Write-Host "[ ] Creating Ciphers subkeys (with /).." -ForegroundColor Green
+            # $key = (get-item HKLM:\).OpenSubKey("SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers", $true)
+            # $null = $key.CreateSubKey('AES 128/128')
+          $RegItems = @("Triple DES 168/168","DES 56/56")
+          Foreach ($Regitem in $Regitems) {
+            Write-Host "[.] Creating new key for SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\$($RegItem) "
+            #New-Item -Path $RegItem -Name Enabled -Force -ErrorAction Continue | Out-Null  # WONT WORK.
+            $key = (get-item HKLM:\).OpenSubKey("SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers", $true)
+            $null = $key.CreateSubKey($RegItem)
+            Write-Host "[.] Making value change for $RegItem - Enabled = DWORD 0"
+            Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\$($RegItem)" -Name Enabled -Value 0 -Force -ErrorAction Continue | Out-Null
+          }
+          Foreach ($Regitem in $Regitems) {
+            $Property=(Get-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\$($RegItem)").Property
+            if ($Property -eq "Enabled") {
+              Write-Host "[.] Checking for created keys: $RegItem : $($Property) - GOOD" -Foregroundcolor Green
+            } else {
+              Write-Host "[.] Checking for created keys: $RegItem : $($Property) - Does not exist!" -Foregroundcolor Red
+            }
           }
         }
       }      

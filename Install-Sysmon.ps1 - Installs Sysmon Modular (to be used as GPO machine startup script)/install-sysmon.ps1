@@ -1,8 +1,13 @@
 #######################################################################################
-# Install-Sysmon.ps1
-# v0.2 8/7/2023 - Alex Datsko
+# Install-Sysmon.ps1 - Alex Datsko
+#
 # This script checks if the SysInternals Sysmon logging solution is not installed, and 
 # installs and configures it if so.
+#
+#
+# History:
+#  v0.2 8/7/2023 
+#  v0.3 2/9/2024 - Fix to check sysmon64 service, minor updates
 #
  
 $Path = "C:\ProgramData\Sysmon"
@@ -16,12 +21,12 @@ $Date = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 $LogFile = "C:\ProgramData\Sysmon\_sysmon.log"
 
 Function Start-Sysmon {
-  While ((Get-Service "Sysmon" -ErrorAction Silentlycontinue).Status -ne "RUNNING") {   
-    "[.] Sysmon service not running. Starting.."  | Tee-Object $Logfile -Append
-    Get-service "Sysmon" | start-service -ErrorAction Continue
+  While ((Get-Service "Sysmon64" -ErrorAction Silentlycontinue).Status -ne "RUNNING") {   
+    "[.] Starting Sysmon64 service.."  | Tee-Object $Logfile -Append
+    Get-service "Sysmon64" | start-service -ErrorAction Continue
     Start-Sleep 3
-    if ((Get-Service "Sysmon" -ErrorAction Silentlycontinue).Status -ne "RUNNING") {
-      "[!] Sysmon service not found, installing!"  | Tee-Object $Logfile -Append
+    if (!(Get-Service "Sysmon64" -ErrorAction Silentlycontinue)) {
+      "[!] Sysmon64 service not found, installing!"  | Tee-Object $Logfile -Append
       Install-Sysmon  
     }
   }
@@ -31,11 +36,11 @@ Function Install-Sysmon {
   "[.] Copying $($From)\sysmon64.exe to $Path .." | Tee-Object $Logfile -Append
   Copy-Item "$($From)\sysmon64.exe" $Path -Force -ErrorAction Continue
   Set-Location "$Path"  # Can't run cmd from a share
-  "[.] $Running $($Path)\sysmon64.exe -accepteula -i $ConfigTo .." | Tee-Object $Logfile -Append
+  "[.] Running $($Path)\sysmon64.exe -accepteula -i $ConfigTo .." | Tee-Object $Logfile -Append
   cmd.exe /c """$($Path)\sysmon64.exe"" -accepteula -i $ConfigTo"
   Start-Sleep 5 
-  "[.] Starting Sysmon service.." | Tee-Object $Logfile -Append
-  Get-service "Sysmon" | start-service
+  "[.] Starting Sysmon64 service.." | Tee-Object $Logfile -Append
+  Get-service "Sysmon64" | start-service
 }
 
 ####################################### MAIN 
