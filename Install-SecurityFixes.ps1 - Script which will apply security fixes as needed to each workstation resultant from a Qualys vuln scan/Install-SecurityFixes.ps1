@@ -1,4 +1,4 @@
-Show-FileVersionComparison[cmdletbinding()]  # For verbose, debug etc
+[cmdletbinding()]  # For verbose, debug etc
 param (
   [switch] $Automated = $false,    # this allows us to run without supervision and apply all changes (could be dangerous!)
   [string] $CSVFile,               # Allow user to pick a CSV file on the commandline
