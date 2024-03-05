@@ -87,9 +87,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.06"
-# New in this version:   Added fix for QID 378985 - Sweet32 fix, also disabling Cipher suites for 3DES and DES thru reg keys as well as disabling TLS_DHE_DSS_WITH_3DES_EDE_CBC_SHA
-$VersionInfo = "v$($Version) - Last modified: 2/15/2024"
+$Version = "0.38.09"
+# New in this version:   Added fix for QID 92117 Microsoft vulnerable Microsoft.Microsoft3DViewer detected  Version     '7.2307.27042.0'#
+$VersionInfo = "v$($Version) - Last modified: 3/5/2024"
 
 #### VERSION ###################################################
 
@@ -2802,14 +2802,26 @@ foreach ($CurrentQID in $QIDs) {
       }
       91834 { 
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
-        if (Get-YesNo "$_ Remove  Microsoft 3D Viewer Remote Code Execution (RCE) Vulnerability - November 2021" -Results $Results) {
+        if (Get-YesNo "$_ Remove Microsoft 3D Viewer Remote Code Execution (RCE) Vulnerability - November 2021" -Results $Results) {
           Remove-SpecificAppXPackage -Name "Microsoft3DViewer" -Version $AppxVersion -Results $Results # "7.2009.29132.0" 
+        }
+      }
+      92117 { # Microsoft 3D Viewer Remote Code Execution (RCE) Vulnerability - February 2024
+        $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
+        if (Get-YesNo "$_ Remove Microsoft 3D Viewer Remote Code Execution (RCE) Vulnerability - February 2024" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "Microsoft3DViewer" -Version $AppxVersion -Results $Results # Microsoft vulnerable Microsoft.Microsoft3DViewer detected  Version     '7.2307.27042.0'#
         }
       }
       91774 { 
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft Paint 3D Remote Code Execution Vulnerability - June 2021" -Results $Results) {
           Remove-SpecificAppXPackage -Name "MSPaint" -Version $AppxVersion -Results $Results # "6.2009.30067.0" 
+        }
+      }
+      91871 { 
+        $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
+        if (Get-YesNo "$_ Remove Microsoft Paint 3D Remote Code Execution (RCE) Vulnerability for March 2022" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "MSPaint" -Version $AppxVersion -Results $Results # Microsoft vulnerable Microsoft.MSPaint detected  Version     '1.0.68.0'#
         }
       }
       91761 {
@@ -2925,10 +2937,11 @@ foreach ($CurrentQID in $QIDs) {
               } else {
                 Write-Host "[+] Cipher Suite removed." -ForegroundColor Green
               }
-            } else {
-              Write-Host "[.] TLS Cipher suite(s) not found for DES or 3DES - Looks like this might have been fixed already? Investigate manually if not." -ForegroundColor Yellow
-            $AllCipherSuites            
             }
+          } else {
+            Write-Host "[.] TLS Cipher suite(s) not found for DES or 3DES - Looks like this might have been fixed already? Investigate manually if not." -ForegroundColor Yellow
+            Write-Host "[.] Listing all TLS Cipher suites:" -ForegroundColor Yellow
+            $AllCipherSuites            
           }
           # Also apply registry fixes:  NOTE: Creating reg keys with '/' character will not work correctly, so there is a fix, they can be created this way:
             # Write-Host "[ ] Creating Ciphers subkeys (with /).." -ForegroundColor Green
