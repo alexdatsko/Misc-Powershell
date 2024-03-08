@@ -87,9 +87,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.09"
-# New in this version:   Added fix for QID 92117 Microsoft vulnerable Microsoft.Microsoft3DViewer detected  Version     '7.2307.27042.0'#
-$VersionInfo = "v$($Version) - Last modified: 3/5/2024"
+$Version = "0.38.10"
+# New in this version:   Added fix for Dell command update, copy exe to $env:temp
+$VersionInfo = "v$($Version) - Last modified: 3/7/2024"
 
 #### VERSION ###################################################
 
@@ -2249,12 +2249,14 @@ foreach ($CurrentQID in $QIDs) {
             $DCUVersion = (($DCUExe -split "_WIN_")[1] -split "_A0")[0]
           }
           if ($DCUExe) {
-            Write-Host "[.] Launching .. $($DCUExe)" -ForegroundColor Yellow
+            Write-Host "[.] Copying $($DCUExe) to $env:temp .." -ForegroundColor Yellow
+            copy-item $DCUExe $env:temp -force -ErrorAction SilentlyContinue
+            Write-Host "[.] Launching .. " -ForegroundColor Yellow
             try {
-              Start-Process -FilePath "$($DCUExe)" -ArgumentList "/s"
+              Start-Process -FilePath "$($env:temp)\$(Split-Path $DCUExe -Leaf)" -ArgumentList "/s"
               Write-Host "[.] Looks to have Launched .. " -ForegroundColor Yellow
             } catch {
-              Write-Host "[!] ERROR - $DCUExe could not be launched `n    With Start-Process -FilepPath ""$($DCUExe)"" -ArgumentList ""/s""" -ForegroundColor Red
+              Write-Host "[!] ERROR - $($env:temp)\$(Split-Path $DCUExe -Leaf) could not be launched `n    With Start-Process -FilepPath ""$($DCUExe)"" -ArgumentList ""/s""" -ForegroundColor Red
             }
             Write-Host "[.] Sleeping for a max of 30 seconds.." -NoNewLine
             $InstalledYet = $false
