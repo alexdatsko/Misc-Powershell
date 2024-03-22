@@ -87,9 +87,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.10"
-# New in this version:   Added fix for Dell command update, copy exe to $env:temp
-$VersionInfo = "v$($Version) - Last modified: 3/7/2024"
+$Version = "0.38.12"
+# New in this version:   Added detection for QID 379223	Windows SMB Version 1 (SMBv1) Detected
+$VersionInfo = "v$($Version) - Last modified: 3/22/2024"
 
 #### VERSION ###################################################
 
@@ -2284,6 +2284,29 @@ foreach ($CurrentQID in $QIDs) {
           $QIDsDellCommandUpdate  = 1
         } else { $QIDsDellCommandUpdate  = 1 }
       }
+      { 110460 -eq $_ } {
+        if (Get-YesNo "$_ Check Office Security Update for March 2024 ? " -Results $Results) {
+          # Office ClicktoRun or Office 365 Suite MARCH 2024 Update is not installed   C:\Program Files (x86)\Microsoft Office\root\Office16\GRAPH.EXE  Version is  16.0.17328.20162#
+          $ResultsMissing = ($Results -split "is not installed")[0].trim()
+          $ResultsVersion = ($Results -split "Version is")[1].trim().replace("#","")
+          $CheckEXE = (((($Results -split "is not installed")[1]) -split "Version is ")[0]).trim().replace("%ProgramFiles%",(Resolve-Path -Path "$env:ProgramFiles").Path).replace("%ProgramFiles(x86)%",(Resolve-Path -Path "${env:ProgramFiles(x86)}").Path)
+          if (Test-Path $CheckEXE) {
+            $CheckEXEVersion = Get-FileVersion $CheckEXE
+            if ($CheckEXEVersion) {
+              Write-Verbose "EXE version found : $CheckEXE - $CheckEXEVersion .. checking against $ResultsVersion"
+              if ([version]$CheckEXEVersion -le [version]$ResultsVersion) {
+                Write-Host "[!] Vulnerable version $CheckEXE found : $CheckEXEVersion <= $ResultsVersion - Update missing: $ResultsMissing"
+              } else {
+                Write-Host "[+] EXE patched version found : $CheckEXEVersion > $VulnDescChromeWinVersion - already patched." -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..
+              }
+            } else {
+              Write-Host "[-] EXE Version not found, for $CheckEXE .." -ForegroundColor Yellow
+            }
+          } else {
+            Write-Host "[!] EXE no longer found: $CheckEXE - likely its already been updated. Let's check.."
+          }
+        }
+      }
       { 106069 -eq $_ } {
         if (Get-YesNo "$_ Remove EOL/Obsolete Software: Microsoft Access Database Engine 2010 Service Pack 2 ? " -Results $Results) { 
           $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Microsoft Access Database Engine 2010*'})
@@ -2619,7 +2642,7 @@ foreach ($CurrentQID in $QIDs) {
           Write-Host "[.] Downloading mseoledbsql_19.3.1.msi" 
           wget "https://go.microsoft.com/fwlink/?linkid=2248728" -OutFile "$($tmp)\msoledbsql_19.3.2.msi"
           Write-Host "[.] Running: VC_redist.x64.exe /s"
-          . "$($tmp)\VC_redist.x64.exe" "/s"
+          . "$($tmp)\VC_redist.x64.exe" "/s"  #this might not be working, didn't seem to work for me.. 
           Write-Host "[.] Running: VC_redist.x86.exe /s" 
           . "$($tmp)\VC_redist.x86.exe" "/s" 
           #. "msiexec" "/i $($tmp)\msoledbsql_19.3.1.msi /qn /quiet" # not working.. figured out it needs this last parameter, below to accept eula
@@ -2627,6 +2650,10 @@ foreach ($CurrentQID in $QIDs) {
           Write-Host "[.] Running: msiexec, params:"
           Write-Host @params 
           & "msiexec.exe" @params 
+<#
+
+# THIS NEEDS TO BE CLEANED UP, MAY REMOVE ALL VERSIONS, DISABLING UNTIL FIXED.. Better to look at it by hand I guess for now.
+
           Write-Host "[.] Waiting 30 seconds for this to complete.."
           start-sleep 30
           Write-Host "[.] Removing older versions of MS SQL ODBC and OLE DB Driver.."
@@ -2636,20 +2663,66 @@ foreach ($CurrentQID in $QIDs) {
             if ($ResultVersions.Count -gt 1) {
               Foreach ($ver in $ResultVersions) {
                 Write-Verbose "Version found: $Ver"
-#                if ([version]$ver -lt [version]19.3.2) {
-                  $Products = (get-wmiobject Win32_Product | Where-Object { ($_.Name -like "Microsoft OLE DB Driver*" -or $_.Name -like "Microsoft ODBC Driver*") -and [version]$_.Version -lt [version]"19.3.2.0"})
-                  if ($Products) {
-                    Write-Verbose "Removing product(s): $Products"
+                $Products = (get-wmiobject Win32_Product | Where-Object { ($_.Name -like "Microsoft OLE DB Driver*" -or $_.Name -like "Microsoft ODBC Driver*") -and [version]$_.Version -lt [version]"19.3.1.0"})
+                if ($Products) {
+                  if (Get-YesNo "Remove older product(s): $($Products.Name) $($Products.Version) ") {}
                     Remove-Software -Products $Products  -Results $Results
-                  } 
-#                }
+                  }
+                } 
               }
             }
           }
+#>
           Write-Host "[.] Please make sure this is installed properly, and old, vulnerable versions are removed, opening appwiz.cpl:"
           . appwiz.cpl
         }
       }      
+      379223 { # Windows SMB Version 1 (SMBv1) Detected -- https://learn.microsoft.com/en-us/windows-server/storage/file-server/troubleshoot/detect-enable-and-disable-smbv1-v2-v3?tabs=server
+        if (Get-YesNo "$_ Windows SMB Version 1 (SMBv1) Detected - Disable " -Results $Results) { 
+          Write-Host "[.] Get-SMBServerConfiguration status:" -ForegroundColor Yellow
+          $SMB1ServerStatus = (Get-SmbServerConfiguration | Format-List EnableSMB1Protocol)
+          ($SMB1ServerStatus | Out-String) -Replace("`n","")
+          Write-Verbose "[.] Checking Registry for MME SMB1Auditing :"
+          if (Get-RegistryEntry -Name SMB1Auditing -ne 1) {  # If registry key is not set, turn on auditing for a month to see if its in use
+            Write-Host "[+] Found we have not checked for SMB1 access here. Setting registry setting, enabling auditing for a month." -ForegroundColor Red
+            (Set-SmbServerConfiguration -AuditSmb1Access $True -Force | Out-String) -Replace ("`n","")
+            Set-RegistryEntry -Name SMB1Auditing 1
+            Write-Host "[.] However, we will give you a chance to disable it now, if you prefer:" -ForegroundColor Yellow
+          } else {  # If registry key IS set, we ran this last month or more, lets check logs for event 3000 and report
+            # Would be really nice to know the last run date here also, for how many days back to check for these events, we'll just do 30 days for now
+            $smb1AccessEvents = Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-SMBServer/Audit'; ID=3000; StartTime=(Get-Date).AddDays(-30)} -ErrorAction SilentlyContinue
+            if ($smb1AccessEvents) { # we need to know the 3000 event 'Client Address' in it, and report this IP/hostname, move recursively thru the list for each address using SMB1
+              Write-Host "[-] Found evidence of SMB1 client access in the event log:" -ForegroundColor Red
+              foreach ($thisevent in $smb1AccessEvents) {  
+                $eventMessage = $thisevent.Message
+                $ipPattern = "\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}"
+                $clientIP = [regex]::Match($eventMessage, $ipPattern).Value
+                Write-Host "[-] Client IP Address: $clientIP" -ForegroundColor Red
+              }
+              $smb1AccessEvent | Format-List
+            } else {
+              Write-Host "[+] No evidence of SMB1 client access found in event logs. Safe to disable completely, and disable the check next month." -ForegroundColor Green
+              Set-RegistryEntry -Name SMB1Auditing -Value 0
+            }
+          } # No matter what, we will give them the option to just run this
+          if (Get-YesNo "NOTE: Disabling this may break things!!! `n`nRisks:`n  [ ] Old iCAT XP computers `n  [ ] Old copier/scanners (scan to SMB) `n  [ ] Other devices that need to access this computer over SMB1.`n`nIt may be safest to do some monitoring first, by turning on SMB v1 auditing (Set-SmbServerConfiguration -AuditSmb1Access `$True) and checking for Event 3000 in the ""Microsoft-Windows-SMBServer\Audit"" event log next month, and then identifying each client that attempts to connect with SMBv1.`n  I have turned on SMB1 auditing for you now, and the script can automatically check for clients next month and disable this if you aren't sure. `nAre you sure you want to continue removing SMB1? " -Results $Results) { 
+            Write-Host "[.] Removing Feature for SMB 1.0:" -ForegroundColor Green
+            # CAPTION INSTALLSTATE NAME SMB 1.0/CIFS File Sharing Support SMB Server version 1 is Enabled# 
+            Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart
+            # HKLM\SYSTEM\CurrentControlSet\Services\mrxsmb10 Start = 2 SMB Client version 1 is Enabled#  # <-- This could show up also
+            Write-Host "[.] Disabling service MRXSMB10:" -ForegroundColor Green
+            if (-not (Test-Path "HKLM:\SYSTEM\CurrentControlSet\Services\mrxsmb10")) {
+              New-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Services\mrxsmb10" -Force | Out-Null
+            }
+            Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\mrxsmb10" -Name "Start" -Value 4
+            Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\mrxsmb10" -Name "Start" 
+            Write-Host "[.] Done.  A reboot will be needed for this to go into effect. Please test all applications and access after!" -ForegroundColor Yellow
+          } else {
+            Write-Host "[!] Nothing changed! Please re-run in a month and check back if any systems have used SMB1 to access this machine." -ForegroundColor Green
+          }
+        }
+      }
+
       376709 {
         # 376709	HP Support Assistant Multiple Security Vulnerabilities (HPSBGN03762)
         # C:\Program Files (x86)\Hewlett-Packard\HP Support Framework\\HPSF.exe  Version is  8.8.34.31#
@@ -3136,7 +3209,7 @@ foreach ($CurrentQID in $QIDs) {
             }
           }
           <# 
-          # Old code to check with accesschk.. couldn't get this quite right..
+          # Old code to check with accesschk.. couldn't get this quite right.. would be nice!!!
           Write-Output "[.] Downloading accesschk.exe from live.Sysinternals.com to check that this is fixed.."
           wget "https://live.sysinternals.com/accesschk.exe" -outfile "\\dc-server\data\secaud\accesschk.exe"
           $AccesschkEveryone = (start-process "\\dc-server\data\secaud\accesschk.exe" -ArgumentList "-accepteula -uwcqv ""Everyone"" *" -WorkingDirectory $env:temp -NoNewWindow)
@@ -3157,88 +3230,7 @@ foreach ($CurrentQID in $QIDs) {
         }
         $QIDsMSXMLParser4 = 1
       }
-      <# Old fixes for 91848 
-      91848001 { # OOPS, already had this below,..    # Microsoft vulnerable Microsoft Desktop Installer detected  Version     '1.21.3133.0'#
-        if (Get-YesNo "$_ Windows AppX Installer Spoofing Vulnerability? " -Results $Results) { 
-          $AppInstallerVersion = (Get-AppxPackage Microsoft.DesktopAppInstaller).Version
-          Write-Host "[.] App Installer Version pre-fix: $AppInstallerVersion"
 
-          $osVersion = $OSVersionInfo.Caption
-          Write-Verbose "OS Version: $osVersion"
-          if ($osVersion -like '*Windows 10*') {
-            Write-Host "[.] Win 10 detected, starting update (MANUAL INTERVENTION REQUIRED! Click through and close when finished.)"
-            # Windows 10 update via store:
-            Write-Host "[.] Opening  ms-windows-store://pdp?hl=en-us&gl=us&productid=9NBLGGH4NNS1&mode=mini&pos=-1928%2C357%2C1936%2C1048&referrer=storeforweb"
-            cmd.exe /c "start ms-windows-store://pdp?hl=en-us&gl=us&productid=9NBLGGH4NNS1&mode=mini&pos=-1928%2C357%2C1936%2C1048&referrer=storeforweb"
-          } elseif ($osVersion -like '*Windows 11*') {
-            Write-Host "[.] Win 11 detected, starting update with 'winget upgrade Microsoft.AppInstaller' .."
-            #weirdly, this can't be run from a share, but it works from a local drive location
-            Set-Location c:
-            & winget.exe upgrade Microsoft.AppInstaller
-          } else {
-            Write-Host "[!] Unknown Windows version '$($env:OSVERSION)'"
-          }
-          $AppInstallerVersion = (Get-AppxPackage Microsoft.DesktopAppInstaller).Version
-          Write-Host "[.] Checking app Installer Version after: $AppInstallerVersion"
-        }
-      }
-
-      91848000 {  # This might have a newer update, this was found vulnerable in 1/2024: Microsoft vulnerable Microsoft Desktop Installer detected  Version     '1.21.3133.0'#
-        if (Get-YesNo "$_ Install Store Installer app update to 1.16.13405.0 ? " -Results $Results) { 
-          # Requires -RunAsAdministrator
-          if ($true) {
-            if ([version]'1.16.13405.0' -gt [version](Get-AppxPackage -Name 'Microsoft.DesktopAppInstaller' -ErrorAction SilentlyContinue).Version) {
-              $zip = (Join-Path -Path $tmp -ChildPath 'Microsoft.DesktopAppInstaller_1.16.13405.0_8wekyb3d8bbwe.zip')
-              $zipFolder = "$($zip -replace '\.zip','')"
-              if (-not(Test-Path -Path $zip)) {
-                $HT = @{
-                  Uri = 'https://download.microsoft.com/download/6/6/8/6680c5b1-3fbe-4b70-8189-90ea08609563/Microsoft.DesktopAppInstaller\_1.16.13405.0\_8wekyb3d8bbwe.zip'
-                  UseBasicParsing = $true
-                  ErrorAction = 'Stop'
-                  OutFile = $zip
-                }
-                try {
-                  Invoke-WebRequest -UserAgent $AgentString -Uri @HT
-                } catch {
-                  Write-Warning -Message "Failed to download zip because $($_.Exception.Message)"
-                }
-              }
-              if (Test-Path -Path $zip) {
-                if ((Get-FileHash -Path $zip).Hash -eq 'e79cea914ba04b953cdeab38489b3190fcc88e566a43696aaefc0eddba1af6ab' ) {
-                  try {
-                    Expand-Archive -Path $zip -DestinationPath (Split-Path $zipFolder -Parent) -Force -ErrorAction Stop
-                  } catch {
-                    Write-Warning -Message "Failed to unzip because $($_.Exception.Message)"
-                  }
-                  if ('Valid' -in (Get-ChildItem -Path "$($zipFolder)\*" -Include * -Recurse -Exclude '*.xml' | Get-AuthenticodeSignature | Select-Object -ExpandProperty Status | Sort-Object -Unique)) {
-                    $HT = @{
-                      Online = $true
-                      PackagePath = Join-Path -Path $zipFolder -ChildPath 'Microsoft.DesktopAppInstaller_1.16.13405.0_8wekyb3d8bbwe.msixbundle'
-                      SkipLicense = $true
-                      ErrorAction = 'Stop'
-                    }
-                    try {
-                      $r = Add-AppxProvisionedPackage @HT
-                      if ($r.Online) {
-                        Write-Verbose 'Successfully provisionned Microsoft.DesktopAppInstaller' -Verbose
-                      }
-                    } catch {
-                      Write-Warning -Message "Failed to install Appx because $($_.Exception.Message)"
-                    }
-                  }
-                } else {
-                  Write-Warning -Message "Downloaded zip file thumbprint (SHA256) doesn't match"
-                }
-              } else {
-                Write-Warning -Message "Zip file $($zip) not found"
-              }
-            } else {
-              Write-Verbose -Message 'Current Microsoft.DesktopAppInstaller appx version is not vulnerable' -Verbose
-            }
-          }
-        }
-      }
-      #>
 
       # Default - QID not found!
       Default {
