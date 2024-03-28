@@ -42,8 +42,10 @@ if ($Help) {
 
 #Clear
 
+$CheckOptionalUpdates = $true                # Set this to false to ignore Optional Updates registry value
+$AlreadySetOptionalUpdates = $false          # This is to make sure we do not keep trying to set the Optional Updates registry value.
 $oldPwd = $pwd                               # Grab location script was run from
-$UpdateChromeWait = 60                       # Default to 60 seconds for updating Chrome or Firefox with -Automated. Can be overwritten in Config, for slower systems.. 
+$UpdateBrowserWait = 60                      # Default to 60 seconds for updating Chrome, Edge or Firefox with -Automated. Can be overwritten in Config, for slower systems.. 
 $Update7zipWait = 30                         # How long to wait for the 7-zip Ninite updater to finish and close
 $ConfigFile = "$oldpwd\_config.ps1"          # Configuration file 
 $QIDsListFile = "$oldpwd\QIDLists.ps1"       # QID List file 
@@ -87,9 +89,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.12"
-# New in this version:   Added detection for QID 379223	Windows SMB Version 1 (SMBv1) Detected
-$VersionInfo = "v$($Version) - Last modified: 3/22/2024"
+$Version = "0.38.20"
+# New in this version:   Added detection for ANY QID related to Missing Microsoft KB's - Added Check-VersionResults for this, also fixed Browser update check bugs.. 
+$VersionInfo = "v$($Version) - Last modified: 3/28/2024"
 
 #### VERSION ###################################################
 
@@ -522,6 +524,51 @@ function Get-WuaHistory {
     Where-Object {![String]::IsNullOrWhiteSpace($_.title)} |
     Select-Object Result, Date, Title, SupportUrl, Product, UpdateId, RevisionNumber
 }
+
+function Check-ResultsForFile {  # 03-28-2024
+  param( [Parameter(Mandatory=$true)]
+    [string] $Results
+  )
+  # This returns a SINGULAR Version from the $Results. The first one..
+
+  # Lets check the results for 'Version is' and replace the path stuff with actual values, as %vars% are not powershell friendly variables ..
+  # There might be more variable expansion I can do, will add it here when needed
+  if ($Results -clike "*Version is*") {   # ack, -clike compares case also, -like does NOT, forgot about this.
+    if ($Results -clike "*is not installed*") {
+      $CheckFile = (($Results -split "is not installed")[0]).trim()
+    } else {
+      $CheckFile = (($Results -split "Version is")[0]).trim()
+    }
+  } else {
+    if ($Results -clike "*file version is*") {
+      $CheckFile = (($Results -split "file version is")[0]).replace("#","").trim()
+    }
+  }
+  Write-Verbose "CheckFile : $CheckFile"
+  $CheckFile = $CheckFile.trim().replace("%ProgramFiles%",(Resolve-Path -Path "$env:ProgramFiles").Path).replace("%ProgramFiles(x86)%",(Resolve-Path -Path "${env:ProgramFiles(x86)}").Path)
+  $CheckFile = $CheckFile.replace("%windir%",(Resolve-Path -Path "${env:WinDir}").Path).trim()
+  return $CheckFile
+}
+
+function Check-ResultsForVersion {  # 03-28-2024
+  param( [Parameter(Mandatory=$true)]
+    [string] $Results
+  )
+  # This returns a SINGULAR file from the $Results. The first one..
+
+  # Lets check the results for 'Version is' and replace the path stuff with actual values, as %vars% are not powershell friendly variables ..
+  # There might be more variable expansion I can do, will add it here when needed
+  if ($Results -clike "*Version is*") {   # ack, -clike compares case also, -like does NOT, forgot about this.
+    $CheckVersion = ((($Results -split "is not installed")[1]) -split "Version is ")[0].trim()
+  } else {
+    if ($Results -clike "*file version is*") {
+      $CheckVersion = (($Results -split "file version is")[1]).replace("#","").trim()
+    }
+  }
+  Write-Verbose "CheckVersion : $CheckVersion"
+  return $CheckVersion
+}
+
 
 ################################################# CONFIG FUNCTIONS ###############################################
 
@@ -1180,7 +1227,18 @@ function Backup-BitlockerKeys {
 
 function Get-FileVersion {
   param ([string]$FileName)
-  $ThisVersion = (Get-Item $FileName).VersionInfo.ProductVersion  # or FileVersion??
+
+  try {
+    if (Test-Path $Filename) {
+      $ThisVersion = (Get-Item $FileName -ErrorAction SilentlyContinue).VersionInfo.ProductVersion  # or FileVersion??
+    } else {
+      Write-Verbose "! File $Filename not found !"
+      return $false
+    }
+  } catch {
+    Write-Verbose "! File $Filename not found, or unknown error checking.. !"
+    return $false
+  }
   return $ThisVersion
 }
 
@@ -1193,19 +1251,41 @@ function Find-Delimiter {
 
 function Get-VersionResults {
   param([string]$Results)
-  $vers = @()
-  $appname = "??"
-  $SplitResults = (($Results) -split "Version")
+  # This checks $Results for the vulnerable Versions found. Can return an array!!!
+
   # Examples:
   #   single: Vulnerable version of Microsoft 3D Builder detected  Version     '18.0.1931.0'#
   #   single: Microsoft vulnerable Microsoft.Microsoft3DViewer detected  Version     '7.2105.4012.0'#    
   #   multiple: Vulnerable Microsoft Paint 3D detected  Version     '6.2105.4017.0'  Version     '6.2203.1037.0'#
+  $vers = @()
+  $appname = "??"  # For now, it appname isn't found, it will show that its returning junk when run with -Verbose
+  if ($Results -like "*version is*") {   # Fuck you qualys, stay consistent with wording please..
+    # %ProgramFiles(x86)%\Google\Chrome\Application\123.0.6312.59\chrome.dll file version is 123.0.6312.59#
+    $SplitResults = (($Results) -split "version is").trim()
+  } else {
+    # assuming its like this instead, outdated UWP app detection:
+    # "Vulnerable Microsoft Paint 3D detected  Version     '6.2105.4017.0'  Version     '6.2203.1037.0'#"
+    $SplitResults = (($Results) -split "Version").trim()
+  }
+  #UWP example
+  # $Results = "Vulnerable Microsoft Paint 3D detected  Version     '6.2105.4017.0'  Version     '6.2203.1037.0'#"
+  # Splits to: 
+  #   Vulnerable Microsoft Paint 3D detected                                                                                                  
+  #   '6.2105.4017.0'
+  #   '6.2203.1037.0'#
+  
+  #Chrome example
+  # $Results = "%ProgramFiles(x86)%\Google\Chrome\Application\123.0.6312.59\chrome.dll file version is 123.0.6312.59#"
+  # Splits to: 
+  #    %ProgramFiles(x86)%\Google\Chrome\Application\123.0.6312.59\chrome.dll file
+  #    123.0.6312.59#  
+
   Write-Verbose "Get-VersionResults - SplitResults : $splitresults"
   Foreach ($result in $SplitResults) {
-    if ($result -like "*detected*") {
-      $appname = ($result).replace("Vulnerable version of","").replace("Microsoft vulnerable","").replace("Vulnerable","").replace("detected","").trim()
+    if ($result -like "*detected*" -or $result -like "*file*") { # This one should give us app name
+      $appname = ($result).replace("Vulnerable version of","").replace("Microsoft vulnerable","").replace("Vulnerable","").replace("detected","").replace("is","").replace("file","").trim()
       Write-Verbose "Get-VersionResults - Appname found : $appname"
-    } else { 
+    } else {  # This is an actual version number
       $newvers = $result.replace("'","").replace("#","").trim()
       Write-Verbose "Get-VersionResults - Vers of $appname found: $newvers"
       $vers += $newvers #add to array, this should be short
@@ -1324,10 +1404,10 @@ Function Update-Chrome {
   Write-Host "[.] Waiting 5 seconds .."
   Start-Sleep 5 # Wait 5 seconds to make sure this is completed
   if ($Automated) {
-    Write-Host "[.] Running the Ninite chrome updater, this window will automatically be closed within $UpdateChromeWait seconds"
+    Write-Host "[.] Running the Ninite chrome updater, this window will automatically be closed within $UpdateBrowserWait seconds"
     Start-Process -FilePath "$($tmp)\ninitechrome.exe" -NoNewWindow
-    Write-Host "[.] Waiting $UpdateChromeWait seconds .."
-    Start-Sleep $UpdateChromeWait # Wait X seconds to make sure the app has updated, usually 30-45s or so at least!! Longer for slower machines!
+    Write-Host "[.] Waiting $UpdateBrowserWait seconds .."
+    Start-Sleep $UpdateBrowserWait # Wait X seconds to make sure the app has updated, usually 30-45s or so at least!! Longer for slower machines!
     Write-Host "[.] Killing the Ninite Chrome updater window!"
     taskkill.exe /f /im ninite.exe
     taskkill.exe /f /im ninitechrome.exe
@@ -1345,10 +1425,10 @@ Function Update-Firefox {
   Write-Host "[.] Waiting 5 seconds .."
   Start-Sleep 5 # Wait 5 seconds to make sure this is completed
   if ($Automated) {
-    Write-Host "[.] Running the Ninite firefox updater, this window will automatically be closed within $UpdateChromeWait seconds"
+    Write-Host "[.] Running the Ninite firefox updater, this window will automatically be closed within $UpdateBrowserWait seconds"
     Start-Process -FilePath "$($tmp)\ninitefirefox.exe" -NoNewWindow
-    Write-Host "[.] Waiting $UpdateChromeWait seconds .."
-    Start-Sleep $UpdateChromeWait # Wait X seconds to make sure the app has updated
+    Write-Host "[.] Waiting $UpdateBrowserWait seconds .."
+    Start-Sleep $UpdateBrowserWait # Wait X seconds to make sure the app has updated
     Write-Host "[.] Killing the Ninite firefox updater window!"
     taskkill.exe /f /im ninite.exe
     taskkill.exe /f /im ninitefirefox.exe
@@ -2059,23 +2139,23 @@ foreach ($CurrentQID in $QIDs) {
           
           # $Results = %ProgramFiles%\Google\Chrome\Application\114.0.5735.91\chrome.dll file version is 114.0.5735.91#
           # %ProgramFiles(x86)%\Google\Chrome\Application\114.0.5735.91\chrome.dll file version is 114.0.5735.91#
-          $ChromeEXE = (($Results -split "file version")[0]).trim().replace("%ProgramFiles%",(Resolve-Path -Path "$env:ProgramFiles").Path).replace("%ProgramFiles(x86)%",(Resolve-Path -Path "${env:ProgramFiles(x86)}").Path)
-          if (Test-Path $ChromeEXE) {
-            $ChromeEXEVersion = Get-FileVersion $ChromeEXE
-            if ($ChromeEXEVersion) {
-              Write-Verbose "Chrome version found : $ChromeEXE - $ChromeEXEVersion .. checking against $VulnDescChromeWinVersion"
-              if ([version]$ChromeEXEVersion -le [version]$VulnDescChromeWinVersion) {
-                Write-Host "[!] Vulnerable version $ChromeEXE found : $ChromeEXEVersion <= $VulnDescChromeWinVersion - Updating.."
+          $ChromeFile = Check-ResultsForFile -Results $Results  # Get the file to check
+          if (Test-Path $ChromeFile) {
+            $ChromeFileVersion = Get-FileVersion $ChromeFile
+            if ($ChromeFileVersion) {
+              Write-Verbose "Chrome version found : $ChromeFile - $ChromeFileVersion .. checking against $VulnDescChromeWinVersion"
+              if ([version]$ChromeFileVersion -lt [version]$VulnDescChromeWinVersion) {  # Fixed bug 3-28-24 - logic above is 'Prior to version' not 'Prior to or equals version'!!
+                Write-Host "[!] Vulnerable version $ChromeFile found : $ChromeFileVersion < $VulnDescChromeWinVersion - Updating.."
                 Update-Chrome
               } else {
-                Write-Host "[+] Chrome patched version found : $ChromeEXEVersion > $VulnDescChromeWinVersion - already patched!" -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..
+                Write-Host "[+] Chrome patched version found : $ChromeFileVersion > $VulnDescChromeWinVersion - already patched!" -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..
               }
             } else {
-              Write-Host "[-] Chrome Version not found, for $ChromeEXE .." -ForegroundColor Yellow
+              Write-Host "[-] Chrome Version not found, for $ChromeFile .." -ForegroundColor Yellow
             }
           } else {
-            Write-Host "[!] Chrome EXE no longer found: $ChromeEXE - likely its already been updated. Let's check.."
-            $ChromeFolder = (Split-Path $(Split-Path $ChromeEXE -Parent) -Parent) # Back 2 folders, as the parent is already missing if upgraded, lets see what other versions are in the parent
+            Write-Host "[!] Chrome EXE no longer found: $ChromeFile - likely its already been updated. Let's check.."
+            $ChromeFolder = (Split-Path $(Split-Path $ChromeFile -Parent) -Parent) # Back 2 folders, as the parent is already missing if upgraded, lets see what other versions are in the parent
             
             $ChromeFolderItems = Get-ChildItem $ChromeFolder | Where-Object { $_ -like "1*" -or $_ -like "2*" }  # In the future versions will be >114, >200 etc.. This is temporary
             Write-Verbose "[.] Found items in $ChromeFolder : $ChromeFolderItems"
@@ -2084,16 +2164,16 @@ foreach ($CurrentQID in $QIDs) {
               # This should find the current chrome version folder.. i.e C:\Program Files\Google\Chrome\Application\114.0.5735.91
             }
 
-            $NewChromeEXE = "$($ChromeFolder)\$($ChromeFolderVersion)\chrome.exe"
-            if (Test-Path $NewChromeEXE) {
-              $ChromeEXEVersion = Get-FileVersion $NewChromeEXE
-              if ($ChromeEXEVersion) {
-                Write-Verbose "Chrome version found : $NewChromeEXE - $ChromeEXEVersion - checking against $VulnDescChromeWinVersion"
-                if ([version]$ChromeEXEVersion -le [version]$VulnDescChromeWinVersion) {
-                  Write-Host "[!] Vulnerable version $ChromeEXE found : $ChromeEXEVersion <= $VulnDescChromeWinVersion - Updating.."
+            $NewChromeFile = "$($ChromeFolder)\$($ChromeFolderVersion)\chrome.exe"
+            if (Test-Path $NewChromeFile) {
+              $ChromeFileVersion = Get-FileVersion $NewChromeFile
+              if ($ChromeFileVersion) {
+                Write-Verbose "Chrome version found : $NewChromeFile - $ChromeFileVersion - checking against $VulnDescChromeWinVersion"
+                if ([version]$ChromeFileVersion -le [version]$VulnDescChromeWinVersion) {
+                  Write-Host "[!] Vulnerable version $ChromeFile found : $ChromeFileVersion <= $VulnDescChromeWinVersion - Updating.."
                   Update-Chrome
                 } else {
-                  Write-Host "[+] Chrome patched version $ChromeEXE found : $ChromeEXEVersion > $VulnDescChromeWinVersion"
+                  Write-Host "[+] Chrome patched version $ChromeFile found : $ChromeFileVersion > $VulnDescChromeWinVersion"
                 }
               }
             } else {
@@ -2107,16 +2187,17 @@ foreach ($CurrentQID in $QIDs) {
         if (Get-YesNo "$_ Check if Microsoft Edge is up to date? " -Results $Results) { 
           # Microsoft Edge Based on Chromium Prior to 114.0.1823.37 Multiple Vulnerabilities
           Write-Verbose "VulnDesc: $VulnDesc"
-          $EdgeEXE = (($Results -split "file version")[0]).trim().replace("%ProgramFiles%",(Resolve-Path -Path "$env:ProgramFiles").Path).replace("%ProgramFiles(x86)%",(Resolve-Path -Path "${env:ProgramFiles(x86)}").Path)
+          $EdgeEXE = Check-ResultsForFile -Results $Results
           if (Test-Path $EdgeEXE) {
-            $VulnDescEdgeWinVersion = (((($VulnDesc -split "Prior to") -split "for Windows")[1]) -split " Multiple")[0].trim()
+            #$VulnDescEdgeWinVersion = (((($VulnDesc -split "Prior to") -split "for Windows")[1]) -split " Multiple")[0].trim()
+            $ResultsVersion = Check-ResultsForVersion -Results $Results
             $EdgeEXEVersion = Get-FileVersion $EdgeEXE
-            Write-Verbose "Edge version found : $EdgeEXE - $EdgeEXEVersion - checking against $VulnDescEdgeWinVersion"
-            if ($EdgeEXEVersion -le 16.0.16227.20258) {
-              Write-Host "[!] Vulnerable version $EdgeEXE found : $EdgeEXEVersion <= $VulnDescEdgeWinVersion - Opening.."
+            Write-Verbose "Edge version found : $EdgeEXE - $EdgeEXEVersion - checking against $ResultsVersion"
+            if ($EdgeEXEVersion -le $ResultsVersion) {
+              Write-Host "[!] Vulnerable version $EdgeEXE found : $EdgeEXEVersion <= $ResultsVersion - Opening.."
               & $EdgeEXE # This is not automation friendly..
             } else {
-              Write-Host "[+] Edge Version found : $EdgeEXEVersion > $VulnDescEdgeWinVersion - already patched!" -ForegroundColor Green
+              Write-Host "[+] Edge Version found : $EdgeEXEVersion > $ResultsVersion - already patched!" -ForegroundColor Green
             }
           } else {
             Write-Host "[!] Edge EXE no longer found: $EdgeEXE - likely its already been updated."
@@ -2289,7 +2370,7 @@ foreach ($CurrentQID in $QIDs) {
           # Office ClicktoRun or Office 365 Suite MARCH 2024 Update is not installed   C:\Program Files (x86)\Microsoft Office\root\Office16\GRAPH.EXE  Version is  16.0.17328.20162#
           $ResultsMissing = ($Results -split "is not installed")[0].trim()
           $ResultsVersion = ($Results -split "Version is")[1].trim().replace("#","")
-          $CheckEXE = (((($Results -split "is not installed")[1]) -split "Version is ")[0]).trim().replace("%ProgramFiles%",(Resolve-Path -Path "$env:ProgramFiles").Path).replace("%ProgramFiles(x86)%",(Resolve-Path -Path "${env:ProgramFiles(x86)}").Path)
+          $CheckEXE = Check-ResultsVersion -Results $Results
           if (Test-Path $CheckEXE) {
             $CheckEXEVersion = Get-FileVersion $CheckEXE
             if ($CheckEXEVersion) {
@@ -2683,8 +2764,8 @@ foreach ($CurrentQID in $QIDs) {
           $SMB1ServerStatus = (Get-SmbServerConfiguration | Format-List EnableSMB1Protocol)
           ($SMB1ServerStatus | Out-String) -Replace("`n","")
           Write-Verbose "[.] Checking Registry for MME SMB1Auditing :"
-          if (Get-RegistryEntry -Name SMB1Auditing -ne 1) {  # If registry key is not set, turn on auditing for a month to see if its in use
-            Write-Host "[+] Found we have not checked for SMB1 access here. Setting registry setting, enabling auditing for a month." -ForegroundColor Red
+          if (Get-RegistryEntry -Name SMB1Auditing -ne 1) {  # If our registry key is not set, turn on auditing for a month to see if its in use and dont do anything else yet (but give the option to if they want)
+            Write-Host "[+] It appears we have not checked for SMB1 access here. Setting registry setting, enabling auditing for a month." -ForegroundColor Red
             (Set-SmbServerConfiguration -AuditSmb1Access $True -Force | Out-String) -Replace ("`n","")
             Set-RegistryEntry -Name SMB1Auditing 1
             Write-Host "[.] However, we will give you a chance to disable it now, if you prefer:" -ForegroundColor Yellow
@@ -3231,13 +3312,68 @@ foreach ($CurrentQID in $QIDs) {
         $QIDsMSXMLParser4 = 1
       }
 
-
-      # Default - QID not found!
+    ############################################
+      # Default - QID not found!  3-28-24 - Lets check for specific Results here. I don't know what the QID numbers will be, but for now, if there are specific KB's in the results, it is likely missing these patches
+      #   But - lets check that those patches are not installed.
       Default {
-        Write-Host "[X] Skipping QID $_ - $VulnDesc" -ForegroundColor Red
+        if ($Results -like "*KB*" -and $Results -like "*is not installed*") {
+          if (Get-YesNo "$_ Check if KB is installed for $VulnDesc " -Results $Results) { 
+            Write-Verbose "- Found $_ is related to a KB, contains 'KB' and 'is not installed'"
+            # Lets check the file versioning stuff instead as it is a better source of truth if a patch is installed or not, thanks Microsoft
+            $ResultsMissing = ($Results -split "is not installed")[0].trim()
+            # This can have multiple versions, ugh.
+            # KB5033920 is not installed  %windir%\Microsoft.NET\Framework64\v4.0.30319\System.dll Version is 4.8.9172.0 %windir%\Microsoft.NET\Framework\v4.0.30319\System.dll Version is 4.8.9172.0 KB5034275 or KB5034274 or KB5034276 is not installed#"
+            $ResultsVersion = ((($Results -split "Version is").trim()[1] -split " ")[0])  # split everything after space, [version] cannot have a space in it.. Also should work for multiple versions, we will just check the first result.
+            Write-Verbose "ResultsVersion : $ResultsVersion"
+            $CheckEXE = Check-ResultsForFile -Results $Results # Get EXE Name to check from $Results 
+            Write-Verbose "CheckEXE: $CheckEXE"
+            if (Test-Path $CheckEXE) {
+              $CheckEXEVersion = Get-FileVersion $CheckEXE
+              Write-Verbose "Get-FileVersion results: $CheckEXEVersion"
+              if ($CheckEXEVersion) {
+                Write-Verbose "EXE/DLL version found : $CheckEXE - $CheckEXEVersion .. checking against -- $ResultsVersion --"
+                if ([version]$CheckEXEVersion -le [version]$ResultsVersion) {
+                  Write-Host "[!] Vulnerable version of $CheckEXE found : $CheckEXEVersion <= $ResultsVersion - Update missing: $ResultsMissing" -ForegroundColor Red
+                  if ($CheckOptionalUpdates -and -not $AlreadySetOptionalUpdates) {
+                    Write-Host "[!] It is possible that Optional Windows updates are disabled, checking.." -ForegroundColor Red
+                    Write-Verbose "NOTE: Othis only applies to Windows 10, version 2004 (May 2020 Update) and later:"
+                    $registryPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
+                    $valueName = "AllowOptionalContent"
+
+                    if (Test-Path -Path $registryPath) {
+                      $value = Get-ItemProperty -Path $registryPath -Name $valueName -ErrorAction SilentlyContinue
+
+                      if ($value -and $value.$valueName -eq 1) {
+                          Write-Host "[!] The 'AllowOptionalContent' value is already set to 1. Not sure why optional updates are not being applied, please remediate manually."
+                      }
+                      else {
+                          Set-ItemProperty -Path $registryPath -Name $valueName -Value 1 -Type DWord
+                          Write-Host "[+] The $registryPath value 'AllowOptionalContent' value has been set to 1." -ForegroundColor Green
+                      }
+                    }
+                    else {
+                      New-Item -Path $registryPath -Force | Out-Null
+                      New-ItemProperty -Path $registryPath -Name $valueName -Value 1 -PropertyType DWord -Force | Out-Null
+                      Write-Host "The registry key $registryPath has been created and the 'AllowOptionalContent' value has been set to 1."
+                      $AlreadySetOptionalUpdates = $true
+                    }
+                  }
+
+                } else {
+                  Write-Host "[+] EXE/DLL patched version found : $CheckEXEVersion > $VulnDescChromeWinVersion - already patched." -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..
+                }
+              } else {
+                Write-Host "[-] EXE/DLL Version not found, for $CheckEXE .." -ForegroundColor Yellow
+              }
+            } else {
+              Write-Host "[!] EXE/DLL no longer found: $CheckEXE - likely its already been updated. Let's check.."
+            }
+          }
+        } else {  # Not sure what this vuln is yet!
+          Write-Host "[X] Skipping QID $_ - $VulnDesc" -ForegroundColor Red
+        }
       }
     }
-}
 
 <#        # File Version check boilerplate code
         $ResultsEXE = "$env:windir\system32\SnippingTool.exe"
@@ -3260,6 +3396,9 @@ foreach ($CurrentQID in $QIDs) {
         }
 Generic 
         #>
+}
+
+
 
 
 if ($SoftwareInstalling.Length -gt 0) {
