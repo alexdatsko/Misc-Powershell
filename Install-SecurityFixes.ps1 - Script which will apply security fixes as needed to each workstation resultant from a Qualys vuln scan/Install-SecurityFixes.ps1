@@ -89,9 +89,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.20"
-# New in this version:   Added detection for ANY QID related to Missing Microsoft KB's - Added Check-VersionResults for this, also fixed Browser update check bugs.. 
-$VersionInfo = "v$($Version) - Last modified: 3/28/2024"
+$Version = "0.38.23"
+# New in this version:   Added detection for ANY QID related to Missing Microsoft KB's - Updated Check-ResultsForFiles, ResultsForFile .. also .NET Core check
+$VersionInfo = "v$($Version) - Last modified: 3/29/2024"
 
 #### VERSION ###################################################
 
@@ -525,13 +525,75 @@ function Get-WuaHistory {
     Select-Object Result, Date, Title, SupportUrl, Product, UpdateId, RevisionNumber
 }
 
+function Check-ResultsForFiles {  # 03-29-2024
+  param( [Parameter(Mandatory=$true)]
+    [string] $Results
+  )
+  # This returns MULTIPLE Filenames from $Results. 
+
+  # Example:
+  #   KB5033920 is not installed  %windir%\Microsoft.NET\Framework64\v2.0.50727\System.dll Version is 2.0.50727.9175 %windir%\Microsoft.NET\Framework\v2.0.50727\System.dll Version is 2.0.50727.9175 %windir%\Microsoft.NET\Framework64\v4.0.30319\System.dll Version is 4.8.9206.0 %windir%\Microsoft.NET\Framework\v4.0.30319\System.dll Version is 4.8.9206.0 KB5034275 or KB5034274 or KB5034276 is not installed#
+  #   KB5034122 is not installed  %windir%\system32\ntoskrnl.exe  Version is  10.0.19041.3693#
+  #   KB5034184 is not installed  %windir%\system32\win32k.sys  Version is  6.2.9200.24518#
+  #   %systemdrive%\Users\Doctor.SMO\AppData\Roaming\Zoom\bin\Zoom.exe  Version is  5.1.28642.705#   (This one is caught below for Zoom, but for example...)
+  # 92099:
+  #  KB5034184 is not installed  %windir%\system32\win32k.sys  Version is  6.2.9200.24518#
+  # 92103:
+  #  KB5034184 is not installed  %windir%\system32\win32k.sys  Version is  6.2.9200.24518# (added .sys)
+  foreach ($Result in ($Results -split('Version is').trim())) {  # Lets catch multiples like the first example
+    if ($Result -like "*.dll*") {
+      if ($Result -like "*%windir%*") {
+        $CheckFile = $env:windir+(($Result -split "%windir%")[1]).trim()   # THESE WILL NOT WORK WITH SPACES IN THE PATH
+      } else {
+        if ($Result -like "*%systemdrive%*") {
+          $CheckFile = $env:systemdrive+(($Result -split "%systemdrive%")[1]).trim() # ..
+        } else {
+          Write-Verbose "- Can't split $Result"
+        }
+      }
+    } else {
+      if ($Result -like "*.exe*") {
+        if ($Result -like "*%windir%*") {
+          $CheckFile = $env:windir+(($Result -split "%windir%")[1]).trim()   # THESE WILL NOT WORK WITH SPACES IN THE PATH
+        } else {
+          if ($Result -like "*%systemdrive%*") {
+            $CheckFile = $env:systemdrive+(($Result -split "%systemdrive%")[1]).trim() # ..
+          } else {
+            Write-Verbose "- Can't split $Result"
+          }
+        }
+      } else {
+        if ($Result -like "*.sys*") {
+          if ($Result -like "*%windir%*") {
+            $CheckFile = $env:windir+(($Result -split "%windir%")[1]).trim()   # THESE WILL NOT WORK WITH SPACES IN THE PATH
+          } else {
+            if ($Result -like "*%systemdrive%*") {
+              $CheckFile = $env:systemdrive+(($Result -split "%systemdrive%")[1]).trim() # ..
+            } else {
+              Write-Verbose "- Can't split $Result"
+            }
+          }
+        }
+      }
+    }
+    Write-Verbose "CheckFile : $CheckFile"
+    $CheckFile = $CheckFile.trim().replace("%ProgramFiles%",(Resolve-Path -Path "$env:ProgramFiles").Path).replace("%ProgramFiles(x86)%",(Resolve-Path -Path "${env:ProgramFiles(x86)}").Path)
+    $CheckFile = $CheckFile.replace("%windir%",(Resolve-Path -Path "${env:WinDir}").Path).trim()
+    $CheckFiles += $CheckFile
+  }
+  return $CheckFile
+}
+
 function Check-ResultsForFile {  # 03-28-2024
   param( [Parameter(Mandatory=$true)]
     [string] $Results
   )
-  # This returns a SINGULAR Version from the $Results. The first one..
+  # This returns a SINGULAR Filename from the $Results. The first one only..
 
-  # Lets check the results for 'Version is' and replace the path stuff with actual values, as %vars% are not powershell friendly variables ..
+  # Example:
+  #   KB5033920 is not installed  %windir%\Microsoft.NET\Framework64\v2.0.50727\System.dll Version is 2.0.50727.9175 %windir%\Microsoft.NET\Framework\v2.0.50727\System.dll Version is 2.0.50727.9175 %windir%\Microsoft.NET\Framework64\v4.0.30319\System.dll Version is 4.8.9206.0 %windir%\Microsoft.NET\Framework\v4.0.30319\System.dll Version is 4.8.9206.0 KB5034275 or KB5034274 or KB5034276 is not installed#
+
+  # Lets check the results for ' is' and replace the path stuff with actual values, as %vars% are not powershell friendly variables ..
   # There might be more variable expansion I can do, will add it here when needed
   if ($Results -clike "*Version is*") {   # ack, -clike compares case also, -like does NOT, forgot about this.
     if ($Results -clike "*is not installed*") {
@@ -554,15 +616,23 @@ function Check-ResultsForVersion {  # 03-28-2024
   param( [Parameter(Mandatory=$true)]
     [string] $Results
   )
-  # This returns a SINGULAR file from the $Results. The first one..
+  # This returns a SINGULAR Version from $Results. The first one only!!
 
-  # Lets check the results for 'Version is' and replace the path stuff with actual values, as %vars% are not powershell friendly variables ..
-  # There might be more variable expansion I can do, will add it here when needed
+  # 92014: 
+  #  KB5034122 is not installed  %windir%\system32\ntoskrnl.exe  Version is  10.0.19041.3693#
+  # 379369:
+  #  C:\Program Files\Adobe\Acrobat DC\Acrobat\Acrobat.dll file version is 23.8.20470.0  C:\Program Files\Adobe\Acrobat DC\Acrobat\Acrobat.dll file version is 23.8.20470.0#
+  # 92097: 
+  #  KB5034279 or KB5034278 is not installed  %windir%\Microsoft.NET\Framework64\v2.0.50727\System.dll Version is 2.0.50727.8970 %windir%\Microsoft.NET\Framework\v2.0.50727\System.dll Version is 2.0.50727.8970 %windir%\Microsoft.NET\Framework64\v4.0.30319\System.dll Version is 4.8.4654.0 %windir%\Microsoft.NET\Framework\v4.0.30319\System.dll Version is 4.8.4654.0#
+  # 100419:
+  #  HKLM\Software\Microsoft\Internet Explorer Version = 9.11.9600.21615 KB5034120 is not installed  %windir%\System32\mshtml.dll  Version is  11.0.9600.21615#
   if ($Results -clike "*Version is*") {   # ack, -clike compares case also, -like does NOT, forgot about this.
-    $CheckVersion = ((($Results -split "is not installed")[1]) -split "Version is ")[0].trim()
+    $CheckVersion = (($Results -split "Version is ")[1].trim() -split " ")[0].replace("#","").trim()
   } else {
     if ($Results -clike "*file version is*") {
-      $CheckVersion = (($Results -split "file version is")[1]).replace("#","").trim()
+      $CheckVersion = ((($Results -split "file version is")[1]) -split " ")[0].replace("#","").trim()
+    } else {
+      Write-Verbose "- unable to parse $Results !!"
     }
   }
   Write-Verbose "CheckVersion : $CheckVersion"
@@ -2173,7 +2243,7 @@ foreach ($CurrentQID in $QIDs) {
                   Write-Host "[!] Vulnerable version $ChromeFile found : $ChromeFileVersion <= $VulnDescChromeWinVersion - Updating.."
                   Update-Chrome
                 } else {
-                  Write-Host "[+] Chrome patched version $ChromeFile found : $ChromeFileVersion > $VulnDescChromeWinVersion"
+                  Write-Host "[+] Chrome patched version $ChromeFile found : $ChromeFileVersion > $VulnDescChromeWinVersion" -ForegroundColor Green
                 }
               }
             } else {
@@ -2528,31 +2598,33 @@ foreach ($CurrentQID in $QIDs) {
 
 
       { $QIDsMicrosoftNETCoreV5 -contains $_ } {
-            <# Remove one or all of these??
-            IdentifyingNumber                      Name                                           LocalPackage
-            -----------------                      ----                                           ------------
-            {8BA25391-0BE6-443A-8EBF-86A29BAFC479} Microsoft .NET Host FX Resolver - 5.0.17 (x64) C:\Windows\Installer\a3227a.msi
-            {5A66E598-37BD-4C8A-A7CB-A71C32ABCD78} Microsoft .NET Runtime - 5.0.17 (x64)          C:\Windows\Installer\a32276.msi
-            {E663ED1E-899C-40E8-91D0-8D37B95E3C69} Microsoft .NET Host - 5.0.17 (x64)             C:\Windows\Installer\a3227f.msi
+        if (Get-YesNo "$_ Remove .NET Core 5 (EOL) " -Results $Results) { 
+          <# Remove one or all of these??
+          IdentifyingNumber                      Name                                           LocalPackage
+          -----------------                      ----                                           ------------
+          {8BA25391-0BE6-443A-8EBF-86A29BAFC479} Microsoft .NET Host FX Resolver - 5.0.17 (x64) C:\Windows\Installer\a3227a.msi
+          {5A66E598-37BD-4C8A-A7CB-A71C32ABCD78} Microsoft .NET Runtime - 5.0.17 (x64)          C:\Windows\Installer\a32276.msi
+          {E663ED1E-899C-40E8-91D0-8D37B95E3C69} Microsoft .NET Host - 5.0.17 (x64)             C:\Windows\Installer\a3227f.msi
 
 
-            For now, will remove just the Runtime which I believe is the only vulnerability..  Maybe we remove all 3 though, will find out.
-            #>
-            Write-Host "[.] Checking for product: '{5A66E598-37BD-4C8A-A7CB-A71C32ABCD78}' (.NET Core 5) .." -ForegroundColor Yellow
-            try {
-              $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{5A66E598-37BD-4C8A-A7CB-A71C32ABCD78}'})
-            } catch {
-              Write-Host "[!] Error running command: '(get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{5A66E598-37BD-4C8A-A7CB-A71C32ABCD78}'})'" -ForegroundColor Red
-              Write-Host "[!] Please remove or update .NET 5 manually." -ForegroundColor Red
-              break
-            }
-            if ($Products) {
-                Remove-Software -Products $Products -Results $Results
-                $QIDsMicrosoftNETCoreV5 = 1
-            } else {
-              Write-Host "[!] Guids not found: $Products !!`n" -ForegroundColor Red
+          For now, will remove just the Runtime which I believe is the only vulnerability..  Maybe we remove all 3 though, will find out.
+          #>
+          Write-Host "[.] Checking for product: '{5A66E598-37BD-4C8A-A7CB-A71C32ABCD78}' (.NET Core 5) .." -ForegroundColor Yellow
+          try {
+            $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{5A66E598-37BD-4C8A-A7CB-A71C32ABCD78}'})
+          } catch {
+            Write-Host "[!] Error running command: '(get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{5A66E598-37BD-4C8A-A7CB-A71C32ABCD78}'})'" -ForegroundColor Red
+            Write-Host "[!] Please remove or update .NET 5 manually." -ForegroundColor Red
+            break
+          }
+          if ($Products) {
+              Remove-Software -Products $Products -Results $Results
               $QIDsMicrosoftNETCoreV5 = 1
-            }             
+          } else {
+            Write-Host "[!] Guids not found: $Products !!`n" -ForegroundColor Red
+            $QIDsMicrosoftNETCoreV5 = 1
+          }             
+        }
       }
       91304 {  # Microsoft Security Update for SQL Server (MS16-136)
         $inst = (get-itemproperty 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server' -ErrorAction SilentlyContinue).InstalledInstances
@@ -3077,6 +3149,14 @@ foreach ($CurrentQID in $QIDs) {
           Remove-SpecificAppXPackage -Name "HEVCVideoExtension" -Version $AppxVersion -Results $Results # "2.0.61591.0" 
         }
       }
+      92067 {
+        if (Get-YesNo "$_ Microsoft HTTP/2 Protocol Distributed Denial of Service (DoS) Vulnerability" -Results $Results) {
+          Write-Host "[.] Disabling HTTP/2 TLS with registry key: HKLM:\SYSTEM\CurrentControlSet\Services\HTTP\Parameters\EnableHttp2Tls=0" -ForegroundColor Yellow
+          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\HTTP\Parameters" -Name EnableHttp2Tls -Value 0
+          Write-Host "[+] Done!" -ForegroundColor Green
+        }
+      }
+      #HKLM\SYSTEM\CurrentControlSet\Services\HTTP\Parameters EnableHttp2Tls
       378985 { #Disable-TLSCipherSuite TLS_RSA_WITH_3DES_EDE_CBC_SHA
         $AllCipherSuites = (Get-TLSCipherSuite).Name
         $CipherSuites = ((Get-TLSCipherSuite) | ? {$_.Name -like '*DES*'}).Name
@@ -3323,9 +3403,10 @@ foreach ($CurrentQID in $QIDs) {
             $ResultsMissing = ($Results -split "is not installed")[0].trim()
             # This can have multiple versions, ugh.
             # KB5033920 is not installed  %windir%\Microsoft.NET\Framework64\v4.0.30319\System.dll Version is 4.8.9172.0 %windir%\Microsoft.NET\Framework\v4.0.30319\System.dll Version is 4.8.9172.0 KB5034275 or KB5034274 or KB5034276 is not installed#"
-            $ResultsVersion = ((($Results -split "Version is").trim()[1] -split " ")[0])  # split everything after space, [version] cannot have a space in it.. Also should work for multiple versions, we will just check the first result.
+            
+            $ResultsVersion = Check-ResultsForVersion -Results $Results  # split everything after space, [version] cannot have a space in it.. Also should work for multiple versions, we will just check the first result.
             Write-Verbose "ResultsVersion : $ResultsVersion"
-            $CheckEXE = Check-ResultsForFile -Results $Results # Get EXE Name to check from $Results 
+            $CheckEXE = Check-ResultsForFiles -Results $Results # Get Multiple EXE/DLL FileNames to check, from $Results 
             Write-Verbose "CheckEXE: $CheckEXE"
             if (Test-Path $CheckEXE) {
               $CheckEXEVersion = Get-FileVersion $CheckEXE
