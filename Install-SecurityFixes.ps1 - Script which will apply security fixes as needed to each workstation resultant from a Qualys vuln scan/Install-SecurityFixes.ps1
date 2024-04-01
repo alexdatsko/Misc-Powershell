@@ -89,9 +89,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.23"
-# New in this version:   Added detection for ANY QID related to Missing Microsoft KB's - Updated Check-ResultsForFiles, ResultsForFile .. also .NET Core check
-$VersionInfo = "v$($Version) - Last modified: 3/29/2024"
+$Version = "0.38.24"
+# New in this version:   Added QIDs for VLC
+$VersionInfo = "v$($Version) - Last modified: 4/1/2024"
 
 #### VERSION ###################################################
 
@@ -1093,7 +1093,7 @@ function Remove-Folder {
 
   if (Test-Path $FolderToDelete) {
     if (Get-YesNo "Found Folder $($FolderToDelete). Try to remove? ") { 
-      takeown.exe /a /r /d Y /f $($FolderToDelete)
+      $null = (takeown.exe /a /r /d Y /f $($FolderToDelete) > $($tmp)/_takeown.log)
       Remove-Item $FolderToDelete -Force -Recurse
       # Or, try { and delete with psexec like below function.. Will come back to this if needed.
     } else {
@@ -2319,6 +2319,46 @@ foreach ($CurrentQID in $QIDs) {
             $QIDsDropbox = 1
         } else { $QIDsDropbox = 1 }
       }
+      { ($VulnDesc -like "*VLC*" -and ($QIDsVLC -ne 1)) } {
+        if (Get-YesNo "$_ Install newest VLC? " -Results $Results) { 
+          #Remove any existing file before downloading..
+          if (Test-Path $installerPath) { Remove-Item $InstallerPath -Force }
+          Write-Host "[.] Checking for old versions of VLC to remove"
+          $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like '*VLC media player*'})
+          if ($Products) {
+            Write-Verbose "Products : $Products"
+            Remove-Software -Products $Products -Results $Results
+          } else {
+            Write-Host "[!] VLC products not found under '*VLC media player*' : `n    Products: [ $Products ]`n" -ForegroundColor Red
+          }   
+
+          $url1 = "https://www.videolan.org/vlc/download-windows.html"
+          $response1 = Invoke-WebRequest -Uri $url1
+
+          # response1 contains a bunch of links, find the ones with ".msi", return the First one.
+          $url2 = $response1.Links | Where-Object { $_.href -match ".msi"} | Select-Object href -First 1
+          Write-Verbose "Download link 1: $($url2.href)"  # Should be something like "//get.videolan.org/vlc/3.0.18/win32/vlc-3.0.18-win32.msi"
+          $response2 = Invoke-WebRequest -Uri ("https:" + $url2.href) # Href is missing the protocol so add it back.
+
+          # response2 contains a bunch of links to Mirror sites, find the First one containing ".msi".
+          $url3 = $response2.Links | Where-Object { $_.href -match ".msi"} | Select-Object href -First 1
+          Write-Verbose "Download link 2 (redirect to mirror): $($url3.href)" # Should be something like "https://mirror.aarnet.edu.au/pub/videolan/vlc/3.0.18/win32/vlc-3.0.18-win32.msi"
+          $filename = Split-Path $url3.href -Leaf # Gets the last part of the URL as the filename.
+          $vlcversion = ((($filename -split "vlc-")[1] -split "-win32.msi")[0]).trim()
+          write-verbose "VLC Version found: $vlcversion)"
+#          $ProgressPreference = 'SilentlyContinue' # Disables the progress meter, showing the progress is incredibly slow
+          $installerPath = "$($tmp)\$($vlcFilename)"
+
+          Write-Host "[.] Downloading $vlcUrl - output: $installerPath"
+          Invoke-WebRequest -Uri $url3.href -UserAgent $AgentString -OutFile $installerPath -ErrorAction SilentlyContinue
+
+          $Arguments = "/i $installerPath /qn /quiet /norestart WRAPPED_ARGUMENTS=""/S"""
+          Write-Host "[.] Running: msiexec.exe $Arguments"
+          Start-Process -FilePath "msiexec.exe" -ArgumentList $Arguments -Wait
+          Write-Host "[.] Looks to have finished!"
+        }
+        $QIDsVLC = 1 # Whether updated or not, don't ask again.
+      }
       378839 {
         if (Get-YesNo "$_ Install newest 7-Zip from Ninite? " -Results $Results) { 
           Invoke-WebRequest -UserAgent $AgentString -Uri "https://ninite.com/7-zip/ninite.exe" -OutFile "$($tmp)\7zninite.exe"
@@ -3425,7 +3465,7 @@ foreach ($CurrentQID in $QIDs) {
                       $value = Get-ItemProperty -Path $registryPath -Name $valueName -ErrorAction SilentlyContinue
 
                       if ($value -and $value.$valueName -eq 1) {
-                          Write-Host "[!] The 'AllowOptionalContent' value is already set to 1. Not sure why optional updates are not being applied, please remediate manually."
+                          Write-Host "[!] The 'AllowOptionalContent' value is already set to 1. Optional Updates reg key has been applied already. Please remediate manually for now or check again next month."
                       }
                       else {
                           Set-ItemProperty -Path $registryPath -Name $valueName -Value 1 -Type DWord
