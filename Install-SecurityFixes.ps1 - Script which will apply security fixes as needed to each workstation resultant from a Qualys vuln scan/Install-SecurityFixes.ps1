@@ -89,9 +89,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.24"
-# New in this version:   Added QIDs for VLC
-$VersionInfo = "v$($Version) - Last modified: 4/1/2024"
+$Version = "0.38.25"
+# New in this version:   Fixed Win10 update assistant (remove by name), Intel Proset removal
+$VersionInfo = "v$($Version) - Last modified: 4/3/2024"
 
 #### VERSION ###################################################
 
@@ -2066,8 +2066,9 @@ foreach ($CurrentQID in $QIDs) {
             $Name="UpdateAssistant"
             $Path = "HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\{D5C69738-B486-402E-85AC-2456D98A64E4}"
             $GUID= "{D5C69738-B486-402E-85AC-2456D98A64E4}"
-            Write-Host "[.] Checking for product: '$GUID' (Microsoft Windows 10 Update Assistant) .." -ForegroundColor Yellow
-            $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like $GUID})
+            Write-Host "[.] Checking for product: 'Windows 10 Update Assistant' .." -ForegroundColor Yellow
+            #$Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like $GUID})
+            $Products = Search-Software "Windows 10 Update Assistant" 
             if ($Products) {
               Remove-Software -Products $Products -Results $Results
             } else {
@@ -3279,22 +3280,25 @@ foreach ($CurrentQID in $QIDs) {
       }
 
       371476 {
-        Write-Host "[.] Checking for product: 'Intel PROset*' " -ForegroundColor Yellow
-        $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Intel PROset*'})
-        if ($Products) {
-          & ncpa.cpl
-          if (Get-YesNo "$_ Remove Intel PROset Wireless software (Check NCPA.cpl first!)? ") {
-            Remove-Software -Products $Products  -Results $Results
+        if (Get-YesNo "$_ Fix Intel Proset Wireless Software" -Results $Results) {
+          Write-Host "[.] Checking for product: 'Intel PROset*' " -ForegroundColor Yellow
+          $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Intel PROset*'})
+          if ($Products) {
+            & ncpa.cpl
+            if (Get-YesNo "$_ Remove Intel PROset Wireless software (Check NCPA.cpl first!)? ") {
+              Remove-Software -Products $Products  -Results $Results
+            }
+          } else {
+            Write-Host "[!] Product not found: 'Intel PROset*' !!`n" -ForegroundColor Red
           }
-        } else {
-          Write-Host "[!] Product not found: 'Intel PROset*' !!`n" -ForegroundColor Red
-        }
-        if (Test-Path "$($env:programfiles)\intel\wifi") {
-          if (Get-YesNo "$_ Remove the folder also ($($env:programfiles)\intel\wifi) ? ") {
-            Write-Host "[.] Removing $($env:programfiles)\intel\wifi\ recursively.."
-            Remove-Folder "$($env:programfiles)\intel\wifi" -Results $Results
+          if (Test-Path "$($env:programfiles)\intel\wifi") {
+            if (Get-YesNo "$_ Remove the folder also ($($env:programfiles)\intel\wifi) ? ") {
+              Write-Host "[.] Removing $($env:programfiles)\intel\wifi\ recursively.."
+              Remove-Folder "$($env:programfiles)\intel\wifi" -Results $Results
+            }
           }
         }
+
       }
       
       90019 {
