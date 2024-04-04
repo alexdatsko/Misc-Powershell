@@ -90,8 +90,8 @@ try {
 
 # No comments after the version number on the next line- Will screw up updates!
 $Version = "0.38.25"
-# New in this version:   Fixed Win10 update assistant (remove by name), Intel Proset removal
-$VersionInfo = "v$($Version) - Last modified: 4/3/2024"
+# New in this version:   Fix for 378985 DES / 3DES Keys fix, could swear this was fixed, but may error if already fixed, abstained from errors and showing better diags if its not fixed, now
+$VersionInfo = "v$($Version) - Last modified: 4/4/2024"
 
 #### VERSION ###################################################
 
@@ -3227,18 +3227,19 @@ foreach ($CurrentQID in $QIDs) {
           $RegItems = @("Triple DES 168/168","DES 56/56")
           Foreach ($Regitem in $Regitems) {
             Write-Host "[.] Creating new key for SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\$($RegItem) "
-            #New-Item -Path $RegItem -Name Enabled -Force -ErrorAction Continue | Out-Null  # WONT WORK.
+            #New-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\$($RegItem)" -Name Enabled -Force -ErrorAction Continue | Out-Null  # WONT WORK because of "/" character in key.. Hack below.
             $key = (get-item HKLM:\).OpenSubKey("SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers", $true)
             $null = $key.CreateSubKey($RegItem)
-            Write-Host "[.] Making value change for $RegItem - Enabled = DWORD 0"
-            Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\$($RegItem)" -Name Enabled -Value 0 -Force -ErrorAction Continue | Out-Null
+            Write-Host "[.] Setting property for $RegItem - Enabled = DWORD 0"
+            Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\""$($RegItem)""" -Name Enabled -Value 0 -Force -ErrorAction SilentlyContinue | Out-Null
           }
           Foreach ($Regitem in $Regitems) {
-            $Property=(Get-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\$($RegItem)").Property
+            $Property=(Get-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\$($RegItem)" -ErrorAcion SilentlyContinue).Property
             if ($Property -eq "Enabled") {
               Write-Host "[.] Checking for created keys: $RegItem : $($Property) - GOOD" -Foregroundcolor Green
             } else {
-              Write-Host "[.] Checking for created keys: $RegItem : $($Property) - Does not exist!" -Foregroundcolor Red
+              Write-Host "[.] Checking for created keys: $RegItem : $($Property) - ERROR, or key does not exist! Listing cipher keys:" -Foregroundcolor Red
+              Get-ChildItem -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\*"
             }
           }
         }
