@@ -14,7 +14,7 @@ if ($msg -eq "default") {
   #write-host "`n Error: please give commit message, i.e :`n  gp.ps1 'added kittens'`n"
   #exit
   $SearchStr = '# New in this version:*'
-  sl "\\synologycms\dropbox\scripts\AlexD Powershell\Misc-Powershell"
+  sl "\\synologycms\dropbox\scripts\AlexD Powershell\Misc-Powershell\Install-SecurityFixes.ps1 - Script which will apply security fixes as needed to each workstation resultant from a Qualys vuln scan"
   $script = Get-Content Install-SecurityFixes.ps1
   foreach ($scriptline in $script) {
     if ($scriptline -like $SearchStr) {
@@ -23,7 +23,8 @@ if ($msg -eq "default") {
     }
   }
 
-} else {
+}
+if ($msg -ne "") {
   write-host "[.] Commit msg: '$msg'"
   sl "\\synologycms\dropbox\scripts\AlexD Powershell\Misc-Powershell"
   write-host "[.] Pulling"
@@ -35,4 +36,7 @@ if ($msg -eq "default") {
   write-host "[.] Pushing.."
   git push
   Write-Host "[!] Done! Exiting.`n"
+} else {
+  Write-Host "[!] Something went wrong, no commit msg:  [ $msg ] `n"
+
 }
