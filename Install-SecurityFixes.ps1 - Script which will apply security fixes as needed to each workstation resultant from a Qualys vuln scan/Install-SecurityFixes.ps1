@@ -47,6 +47,7 @@ $AlreadySetOptionalUpdates = $false          # This is to make sure we do not ke
 $oldPwd = $pwd                               # Grab location script was run from
 $UpdateBrowserWait = 60                      # Default to 60 seconds for updating Chrome, Edge or Firefox with -Automated. Can be overwritten in Config, for slower systems.. 
 $Update7zipWait = 30                         # How long to wait for the 7-zip Ninite updater to finish and close
+$UpdateDellCommandWait = 60                  # How long to wait for Dell Command Update to re-install/update
 $ConfigFile = "$oldpwd\_config.ps1"          # Configuration file 
 $QIDsListFile = "$oldpwd\QIDLists.ps1"       # QID List file 
 $tmp = "$($env:temp)\SecAud"                 # "temp" Temporary folder to save downloaded files to, this will be overwritten when checking config ..
@@ -89,9 +90,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.25"
-# New in this version:   Fix for 378985 DES / 3DES Keys fix, could swear this was fixed, but may error if already fixed, abstained from errors and showing better diags if its not fixed, now
-$VersionInfo = "v$($Version) - Last modified: 4/4/2024"
+$Version = "0.38.26"
+# New in this version:   Fix for 110251 Microsoft Office Remote Code Execution Vulnerabilities (MS15-022) (Msores.dll) - ClickToRun office removal, also DCU fix wait, also added Update-ViaNinite
+$VersionInfo = "v$($Version) - Last modified: 4/5/2024"
 
 #### VERSION ###################################################
 
@@ -266,7 +267,7 @@ function Get-NewerScriptVersion {   # Check in ps1 file for VersionStr and repor
       }
     }
   }
-  Write-Output "[.] ERROR: Script version not found in version from Github!?! Not good, github or internet issue?"
+  #Write-Output "[.] ERROR: Script version not found in version from Github!?! You must be testing a new version.  Setting Automated=false"
   return $false;
 }
 
@@ -277,6 +278,10 @@ function Update-File {  # Not even used currently, but maybe eventually?
         [string]$VersionStr,
         [string]$VersionToCheck)
   if ((Invoke-WebRequest -UserAgent $AgentString -Uri $url).StatusCode -eq 200) { 
+    $SplitPath = [System.IO.DirectoryInfo](Split-Path $FilenameTmp -Parent)
+    if (!(Test-Path $SplitPath)) {  # This should have been done earlier, but maybe not, lets try to create the $env:temp\Secaud folder
+      New-Item -ItemType Directory $SplitPath  
+    }
     $client = new-object System.Net.WebClient
     $client.Encoding = [System.Text.Encoding]::ascii
     $client.DownloadFile("$url","$($FilenameTmp)")
@@ -1194,7 +1199,6 @@ function Parse-ResultsFolder {
   return $Paths  
 } 
 
-
 function Parse-ResultsFile {  
   [CmdletBinding()]
   param ($Results)
@@ -1213,8 +1217,6 @@ function Parse-ResultsFile {
   return $Paths
 }
 
-
-
 function Parse-ResultsVersion {  
   [CmdletBinding()]
   param ($Results)
@@ -1231,7 +1233,6 @@ function Parse-ResultsVersion {
   }
   return $Versions
 }
-
 
 function Show-FileVersionComparison {
   [CmdletBinding()]
@@ -1259,10 +1260,6 @@ function Show-FileVersionComparison {
     }
   }
 }
-
-
-
-
 
 function Backup-BitlockerKeys {
   if ($BackupBitlocker) {
@@ -1465,6 +1462,34 @@ function Remove-SpecificAppXPackage {
     }
   }
 }
+
+Function Update-ViaNinite {
+  param(
+    [string]$Uri,
+    [string]$OutFile,
+    [string]$KillProcess,
+    [string]$UpdateString
+  )
+  Write-Host "[.] Updating to newest $UpdateString from Ninite.com .."
+  Invoke-WebRequest -UserAgent $AgentString -Uri $Uri -OutFile $OutFile
+  Write-Host "[.] Killing all chrome browser windows .."
+  taskkill.exe /f /im $(($KillProcess -split "\\")[-1]) # Works without a \ in $KillProcess either.
+  Write-Host "[.] Waiting 5 seconds .."
+  Start-Sleep 5 # Wait 5 seconds to make sure all processes are killed, could take longer.
+  if ($Automated) {
+    Write-Host "[.] Running the Ninite updater, this window will automatically be closed within $UpdateNiniteWait seconds"
+    Start-Process -FilePath "$($tmp)\ninitechrome.exe" -NoNewWindow
+    Write-Host "[.] Waiting $UpdateNiniteWait seconds .."
+    Start-Sleep $UpdateNiniteWait # Wait X seconds to make sure the app has updated, usually 30-45s or so at least!! Longer for slower machines!
+    Write-Host "[.] Killing the Ninite updater window, hopefully it is stuck at 'Closed'"
+    taskkill.exe /f /im $(($KillProcess -split "\\")[-1])  # Grab filename from full path if given
+  } else {
+    Write-Host "[.] Running the Ninite Chrome updater, please close this window by hitting DONE when complete!"
+    Start-Process -FilePath $OutFile -NoNewWindow -Wait
+  }
+}
+
+
 
 Function Update-Chrome {
   Write-Host "[.] Downloading newest Chrome update from Ninite.com .."
@@ -2307,15 +2332,14 @@ foreach ($CurrentQID in $QIDs) {
       { ($QIDsTeamViewer -contains $_) -or ($VulnDesc -like "*TeamViewer*" -and ($QIDsTeamViewer -ne 1)) } {
         if (Get-YesNo "$_ Install newest Teamviewer from Ninite? " -Results $Results) { 
             #  Teamviewer - https://ninite.com/teamviewer15/ninite.exe
-            Invoke-WebRequest -UserAgent $AgentString -Uri "https://ninite.com/teamviewer15/ninite.exe" -OutFile "$($tmp)\ninite.exe"
-            cmd /c "$($tmp)\ninite.exe"
+            Update-ViaNinite -Uri "https://ninite.com/teamviewer15/ninite.exe" -OutFile "$($tmp)\ninite.exe" -KillProcess "TeamViewer.exe" -UpdateString "TeamViewer 15"
             $QIDsTeamViewer = 1
         } else { $QIDsTeamViewer = 1 }
       }
       { ($QIDsDropbox -contains $_) -or ($VulnDesc -like "*Dropbox*" -and ($QIDsDropbox -ne 1)) } {
         if (Get-YesNo "$_ Install newest Dropbox from Ninite? " -Results $Results) { 
             #  Dropbox - https://ninite.com/dropbox/ninite.exe
-            Invoke-WebRequest -UserAgent $AgentString -Uri "https://ninite.com/dropbox/ninite.exe" -OutFile "$($tmp)\dropboxninite.exe"
+            Update-ViaNinite -Uri "https://ninite.com/dropbox/ninite.exe" -OutFile "$($tmp)\dropboxninite.exe" -KillProcess "Dropbox.exe" -UpdateString "Dropbox"
             cmd /c "$($tmp)\dropboxninite.exe"
             $QIDsDropbox = 1
         } else { $QIDsDropbox = 1 }
@@ -2450,20 +2474,15 @@ foreach ($CurrentQID in $QIDs) {
             } catch {
               Write-Host "[!] ERROR - $($env:temp)\$(Split-Path $DCUExe -Leaf) could not be launched `n    With Start-Process -FilepPath ""$($DCUExe)"" -ArgumentList ""/s""" -ForegroundColor Red
             }
-            Write-Host "[.] Sleeping for a max of 30 seconds.." -NoNewLine
-            $InstalledYet = $false
-            $InstalledCounter = 0
-            while ($InstalledYet -eq $false) {
+            Write-Host "[.] Sleeping for a max of $UpdateDellCommandWait seconds.." -NoNewLine
+            $installedyet = $false
+            while ($InstalledYet -eq $false -and $elapsedtime -lt $UpdateDellCommandWait) {
               Write-Host "." -NoNewLine
-              $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like '*Dell Command | Update*'}) | Select-Object -First 1
-              if ($Products) {
-                $InstalledYet = $true
-              }
-              $InstalledCounter += 1
-              if ($InstalledCounter -gt 4) { # If we check 5 times and its not installed, move on.. It may show up soon, or it may have failed.
-                $InstalledYet = $true
-              }
+              $cmdtime = Measure-Command { $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like '*Dell Command | Update*'}) | Select-Object -First 1 } # Takes 5-10 seconds.. maybe longer.. lets measure
+              $elapsedtime += $cmdtime
+              if ($Products) {                $InstalledYet = $true              }
             }
+            Write-Host ""
             if ($Products) {
               Write-Host "[+] Found, DCU was installed: $(($Products).Version) found" -ForegroundColor Green
             } else {
@@ -2916,7 +2935,18 @@ foreach ($CurrentQID in $QIDs) {
           }
         }
       }
-
+      376709 {
+        # 110251 Microsoft Office Remote Code Execution Vulnerabilities (MS15-022) (Msores.dll) - ClickToRun office removal
+        # %programfiles(x86)%\Common Files\Microsoft Shared\Office15\Msores.dll   Version is  15.0.4687.1000#
+        if (Get-YesNo "$_ Remove HP Support Assistant Multiple Security Vulnerabilities (HPSBGN03762)? " -Results $Results) { 
+          $Products = Get-Products ""
+          if ($Products) {
+              Remove-Software -Products $Products  -Results $Results
+          } else {
+            Write-Host "[!] Product not found: 'HP Support Assist*' !!`n" -ForegroundColor Red
+          }  
+        }       
+      }	
       376709 {
         # 376709	HP Support Assistant Multiple Security Vulnerabilities (HPSBGN03762)
         # C:\Program Files (x86)\Hewlett-Packard\HP Support Framework\\HPSF.exe  Version is  8.8.34.31#
