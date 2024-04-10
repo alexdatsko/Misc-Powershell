@@ -90,9 +90,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.26"
-# New in this version:   Fix for 110251 Microsoft Office Remote Code Execution Vulnerabilities (MS15-022) (Msores.dll) - ClickToRun office removal, also DCU fix wait, also added Update-ViaNinite
-$VersionInfo = "v$($Version) - Last modified: 4/5/2024"
+$Version = "0.38.27"
+# New in this version:   Fixed logic in KB check,  if ([version]$CheckEXEVersion -lt [version]$ResultsVersion) {  instead of LE, also fixed output, correct variable
+$VersionInfo = "v$($Version) - Last modified: 4/8/2024"
 
 #### VERSION ###################################################
 
@@ -3488,7 +3488,7 @@ foreach ($CurrentQID in $QIDs) {
               Write-Verbose "Get-FileVersion results: $CheckEXEVersion"
               if ($CheckEXEVersion) {
                 Write-Verbose "EXE/DLL version found : $CheckEXE - $CheckEXEVersion .. checking against -- $ResultsVersion --"
-                if ([version]$CheckEXEVersion -le [version]$ResultsVersion) {
+                if ([version]$CheckEXEVersion -lt [version]$ResultsVersion) {
                   Write-Host "[!] Vulnerable version of $CheckEXE found : $CheckEXEVersion <= $ResultsVersion - Update missing: $ResultsMissing" -ForegroundColor Red
                   if ($CheckOptionalUpdates -and -not $AlreadySetOptionalUpdates) {
                     Write-Host "[!] It is possible that Optional Windows updates are disabled, checking.." -ForegroundColor Red
@@ -3516,7 +3516,7 @@ foreach ($CurrentQID in $QIDs) {
                   }
 
                 } else {
-                  Write-Host "[+] EXE/DLL patched version found : $CheckEXEVersion > $VulnDescChromeWinVersion - already patched." -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..
+                  Write-Host "[+] EXE/DLL patched version found : $CheckEXEVersion > $ResultsVersion - already patched." -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..
                 }
               } else {
                 Write-Host "[-] EXE/DLL Version not found, for $CheckEXE .." -ForegroundColor Yellow
