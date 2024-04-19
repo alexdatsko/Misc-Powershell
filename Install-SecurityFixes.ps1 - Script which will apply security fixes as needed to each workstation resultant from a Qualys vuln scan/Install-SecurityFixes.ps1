@@ -3471,7 +3471,7 @@ foreach ($CurrentQID in $QIDs) {
       # Default - QID not found!  3-28-24 - Lets check for specific Results here. I don't know what the QID numbers will be, but for now, if there are specific KB's in the results, it is likely missing these patches
       #   But - lets check that those patches are not installed.
       Default {
-        if ($Results -like "*KB*" -and ($Results -like "*is not installed*" -or $Results -like "*GRAPH.EXE*")) {
+        if (($Results -like "*KB*" -or $Results -like "*GRAPH.EXE*") -and $Results -like "*is not installed*") {
           if (Get-YesNo "$_ Check if KB is installed for $VulnDesc " -Results $Results) { 
             Write-Verbose "- Found $_ is related to a KB, contains 'KB' and 'is not installed'"
             # Lets check the file versioning stuff instead as it is a better source of truth if a patch is installed or not, thanks Microsoft
