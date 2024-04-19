@@ -91,7 +91,7 @@ try {
 
 # No comments after the version number on the next line- Will screw up updates!
 $Version = "0.38.30"
-# New in this version:   92117 - Vulnerable version of Microsoft OutlookForWindows detected  Version     '1.2023.1214.201'#
+# New in this version:   92133 - Vulnerable version of Microsoft OutlookForWindows detected  Version     '1.2023.1214.201'#
 $VersionInfo = "v$($Version) - Last modified: 4/19/2024"
 
 #### VERSION ###################################################
@@ -3128,13 +3128,14 @@ foreach ($CurrentQID in $QIDs) {
       92117 { # Microsoft 3D Viewer Remote Code Execution (RCE) Vulnerability - February 2024
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft 3D Viewer Remote Code Execution (RCE) Vulnerability - February 2024" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "Microsoft3DViewer" -Version $AppxVersion -Results $Results # Vulnerable version of Microsoft OutlookForWindows detected  Version     '1.2023.1214.201'#
+          Remove-SpecificAppXPackage -Name "Microsoft3DViewer" -Version $AppxVersion -Results $Results 
         }
       }
       92133 {
-        $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
+        $AppxVersion = ($results -csplit "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft Outlook for Windows Spoofing Vulnerability for April 2024" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "Microsoft OutlookForWindows" -Version $AppxVersion -Results $Results # Microsoft vulnerable Microsoft.Microsoft3DViewer detected  Version     '7.2307.27042.0'#
+          Remove-SpecificAppXPackage -Name "OutlookForWindows" -Version $AppxVersion -Results $Results # Vulnerable version of Microsoft OutlookForWindows detected  Version     '1.2023.1214.201'#
+          #These PoS put 'version' twice in this vuln result, just to screw me up, I swear xD  Luckily, there is -csplit which will match case.
         }
       }
       91774 { 
