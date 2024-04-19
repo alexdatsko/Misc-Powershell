@@ -114,10 +114,12 @@ Write-Host "[.] Reading from file: $InFile"
 Write-Host "[.] Writing to file: $OutFile  `n"
 
 # Test that files exist or can be written to etc
+<#  # 04-19-24 this broke?? wtf, the file 100% exists
 if (-not (Test-Path $InFile)) {
   Write-Host "[!] Error, can't access $InFile"
   exit
 }
+#>
 
 if (Test-Path $OutFile) {
   $input = (Read-Host "[!] $OutFile exists, overwrite? [Y/n] ").ToUpper()

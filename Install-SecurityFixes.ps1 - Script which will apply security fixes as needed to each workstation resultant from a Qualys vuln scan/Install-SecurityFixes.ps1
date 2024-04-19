@@ -90,9 +90,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.27"
-# New in this version:   Fixed logic in KB check,  if ([version]$CheckEXEVersion -lt [version]$ResultsVersion) {  instead of LE, also fixed output, correct variable
-$VersionInfo = "v$($Version) - Last modified: 4/8/2024"
+$Version = "0.38.28"
+# New in this version:   Fixed logic in KB check to also add office vulns- 'GRAPH.EXE' seems to always be there..
+$VersionInfo = "v$($Version) - Last modified: 4/19/2024"
 
 #### VERSION ###################################################
 
@@ -3471,7 +3471,7 @@ foreach ($CurrentQID in $QIDs) {
       # Default - QID not found!  3-28-24 - Lets check for specific Results here. I don't know what the QID numbers will be, but for now, if there are specific KB's in the results, it is likely missing these patches
       #   But - lets check that those patches are not installed.
       Default {
-        if ($Results -like "*KB*" -and $Results -like "*is not installed*") {
+        if ($Results -like "*KB*" -and ($Results -like "*is not installed*" -or $Results -like "*GRAPH.EXE*")) {
           if (Get-YesNo "$_ Check if KB is installed for $VulnDesc " -Results $Results) { 
             Write-Verbose "- Found $_ is related to a KB, contains 'KB' and 'is not installed'"
             # Lets check the file versioning stuff instead as it is a better source of truth if a patch is installed or not, thanks Microsoft
