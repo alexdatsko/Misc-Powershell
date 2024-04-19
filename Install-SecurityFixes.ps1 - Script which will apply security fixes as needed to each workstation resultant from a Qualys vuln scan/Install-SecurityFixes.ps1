@@ -552,25 +552,61 @@ function Check-ResultsForFiles {
   # 110462	Microsoft Office Remote Code Execution (RCE) Vulnerability for April 2024	4				
   #   Office ClicktoRun or Office 365 Suite APRIL 2024 Update is not installed   C:\Program Files (x86)\Microsoft Office\root\Office16\GRAPH.EXE  Version is  16.0.17425.20146#
 
-    # Refactored 4/19/24
-    $CheckFiles = @()
-    $Results -split 'Version is' | ForEach-Object {
-        $Result = $_.Trim()
-        if ($Result -match '(?<Path>.*?)\\(?<FileName>.*\.(?:dll|exe|sys))') {
-            $Path = $Matches.Path
-            $FileName = $Matches.FileName
-
-            $Path = $Path -replace '%windir%', (Resolve-Path -Path "${env:WinDir}").Path
-            $Path = $Path -replace '%systemdrive%', "${env:SystemDrive}"
-            $Path = $Path -replace '%ProgramFiles%', (Resolve-Path -Path "$env:ProgramFiles").Path
-            $Path = $Path -replace '%ProgramFiles\(x86\)%', (Resolve-Path -Path "${env:ProgramFiles(x86)}").Path
-
-            $CheckFile = Join-Path -Path $Path -ChildPath $FileName
-            $CheckFiles += $CheckFile
+  # Refactored 4/19/24, reverted, ugh
+  foreach ($Result in ($Results -split('Version is').trim())) {  # Lets catch multiples like the first example
+    if ($Result -like "*.dll*") {
+      if ($Result -like "*%windir%*") {
+        $CheckFile = $env:windir+(($Result -split "%windir%")[1]).trim()   # THESE WILL NOT WORK WITH SPACES IN THE PATH
+      } else {
+        if ($Result -like "*%systemdrive%*") {
+          $CheckFile = $env:systemdrive+(($Result -split "%systemdrive%")[1]).trim() # ..
+        } else {
+          if ($Result -like "*Program Files (x86)*") {
+            $CheckFile = $env:systemdrive+"\Program Files (x86)"+(($Result -split "Program Files \(x86\)")[1]).trim() # ..works if filename is always at the end of a line
+          } else {
+            Write-Verbose "- Can't split $Result"
+          }
         }
+      }
+    } else {
+      if ($Result -like "*.exe*") {
+        if ($Result -like "*%windir%*") {
+          $CheckFile = $env:windir+(($Result -split "%windir%")[1]).trim()   # THESE WILL NOT WORK WITH SPACES IN THE PATH
+        } else {
+          if ($Result -like "*%systemdrive%*") {
+            $CheckFile = $env:systemdrive+(($Result -split "%systemdrive%")[1]).trim() # ..
+          } else {
+            if ($Result -like "*Program Files (x86)*") {
+              $CheckFile = $env:systemdrive+"\Program Files (x86)"+(($Result -split "Program Files \(x86\)")[1]).trim() # ..
+            } else {
+              Write-Verbose "- Can't split $Result"
+            }
+          }
+        }
+      } else {
+        if ($Result -like "*.sys*") {
+          if ($Result -like "*%windir%*") {
+            $CheckFile = $env:windir+(($Result -split "%windir%")[1]).trim()   # THESE WILL NOT WORK WITH SPACES IN THE PATH
+          } else {
+            if ($Result -like "*%systemdrive%*") {
+              $CheckFile = $env:systemdrive+(($Result -split "%systemdrive%")[1]).trim() # ..
+            } else {
+              if ($Result -like "*Program Files (x86)*") {
+                $CheckFile = $env:systemdrive+"\Program Files (x86)\"+(($Result -split "Program Files (x86)\")[1]).trim() # ..
+              } else {
+                Write-Verbose "- Can't split $Result"
+              }
+            }
+          }
+        }
+      }
     }
-
-    return $CheckFiles
+    Write-Verbose "CheckFile : $CheckFile"
+    $CheckFile = $CheckFile.trim().replace("%ProgramFiles%",(Resolve-Path -Path "$env:ProgramFiles").Path).replace("%ProgramFiles(x86)%",(Resolve-Path -Path "${env:ProgramFiles(x86)}").Path)
+    $CheckFile = $CheckFile.replace("%windir%",(Resolve-Path -Path "${env:WinDir}").Path).trim()
+    $CheckFiles += $CheckFile
+  }
+  return $CheckFile
 }
 
 function Check-ResultsForFile {  # 03-28-2024
