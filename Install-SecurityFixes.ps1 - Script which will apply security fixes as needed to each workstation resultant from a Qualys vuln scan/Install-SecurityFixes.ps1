@@ -3128,13 +3128,13 @@ foreach ($CurrentQID in $QIDs) {
       92117 { # Microsoft 3D Viewer Remote Code Execution (RCE) Vulnerability - February 2024
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft 3D Viewer Remote Code Execution (RCE) Vulnerability - February 2024" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "Microsoft OutlookForWindows" -Version $AppxVersion -Results $Results # Vulnerable version of Microsoft OutlookForWindows detected  Version     '1.2023.1214.201'#
+          Remove-SpecificAppXPackage -Name "Microsoft3DViewer" -Version $AppxVersion -Results $Results # Vulnerable version of Microsoft OutlookForWindows detected  Version     '1.2023.1214.201'#
         }
       }
       92133 {
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft Outlook for Windows Spoofing Vulnerability for April 2024" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "Microsoft3DViewer" -Version $AppxVersion -Results $Results # Microsoft vulnerable Microsoft.Microsoft3DViewer detected  Version     '7.2307.27042.0'#
+          Remove-SpecificAppXPackage -Name "Microsoft OutlookForWindows" -Version $AppxVersion -Results $Results # Microsoft vulnerable Microsoft.Microsoft3DViewer detected  Version     '7.2307.27042.0'#
         }
       }
       91774 { 
