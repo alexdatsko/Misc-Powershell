@@ -90,8 +90,8 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.28"
-# New in this version:   Fixed logic in KB check to also add office vulns- 'GRAPH.EXE' seems to always be there..
+$Version = "0.38.29"
+# New in this version:   Tested refactoring of Check-ResultsForFiles
 $VersionInfo = "v$($Version) - Last modified: 4/19/2024"
 
 #### VERSION ###################################################
@@ -530,10 +530,13 @@ function Get-WuaHistory {
     Select-Object Result, Date, Title, SupportUrl, Product, UpdateId, RevisionNumber
 }
 
-function Check-ResultsForFiles {  # 03-29-2024
-  param( [Parameter(Mandatory=$true)]
-    [string] $Results
-  )
+
+function Check-ResultsForFiles {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string] $Results
+    )
+    
   # This returns MULTIPLE Filenames from $Results. 
 
   # Example:
@@ -545,48 +548,29 @@ function Check-ResultsForFiles {  # 03-29-2024
   #  KB5034184 is not installed  %windir%\system32\win32k.sys  Version is  6.2.9200.24518#
   # 92103:
   #  KB5034184 is not installed  %windir%\system32\win32k.sys  Version is  6.2.9200.24518# (added .sys)
-  foreach ($Result in ($Results -split('Version is').trim())) {  # Lets catch multiples like the first example
-    if ($Result -like "*.dll*") {
-      if ($Result -like "*%windir%*") {
-        $CheckFile = $env:windir+(($Result -split "%windir%")[1]).trim()   # THESE WILL NOT WORK WITH SPACES IN THE PATH
-      } else {
-        if ($Result -like "*%systemdrive%*") {
-          $CheckFile = $env:systemdrive+(($Result -split "%systemdrive%")[1]).trim() # ..
-        } else {
-          Write-Verbose "- Can't split $Result"
+
+  # 110462	Microsoft Office Remote Code Execution (RCE) Vulnerability for April 2024	4				
+  #   Office ClicktoRun or Office 365 Suite APRIL 2024 Update is not installed   C:\Program Files (x86)\Microsoft Office\root\Office16\GRAPH.EXE  Version is  16.0.17425.20146#
+
+    # Refactored 4/19/24
+    $CheckFiles = @()
+    $Results -split 'Version is' | ForEach-Object {
+        $Result = $_.Trim()
+        if ($Result -match '(?<Path>.*?)\\(?<FileName>.*\.(?:dll|exe|sys))') {
+            $Path = $Matches.Path
+            $FileName = $Matches.FileName
+
+            $Path = $Path -replace '%windir%', (Resolve-Path -Path "${env:WinDir}").Path
+            $Path = $Path -replace '%systemdrive%', "${env:SystemDrive}"
+            $Path = $Path -replace '%ProgramFiles%', (Resolve-Path -Path "$env:ProgramFiles").Path
+            $Path = $Path -replace '%ProgramFiles\(x86\)%', (Resolve-Path -Path "${env:ProgramFiles(x86)}").Path
+
+            $CheckFile = Join-Path -Path $Path -ChildPath $FileName
+            $CheckFiles += $CheckFile
         }
-      }
-    } else {
-      if ($Result -like "*.exe*") {
-        if ($Result -like "*%windir%*") {
-          $CheckFile = $env:windir+(($Result -split "%windir%")[1]).trim()   # THESE WILL NOT WORK WITH SPACES IN THE PATH
-        } else {
-          if ($Result -like "*%systemdrive%*") {
-            $CheckFile = $env:systemdrive+(($Result -split "%systemdrive%")[1]).trim() # ..
-          } else {
-            Write-Verbose "- Can't split $Result"
-          }
-        }
-      } else {
-        if ($Result -like "*.sys*") {
-          if ($Result -like "*%windir%*") {
-            $CheckFile = $env:windir+(($Result -split "%windir%")[1]).trim()   # THESE WILL NOT WORK WITH SPACES IN THE PATH
-          } else {
-            if ($Result -like "*%systemdrive%*") {
-              $CheckFile = $env:systemdrive+(($Result -split "%systemdrive%")[1]).trim() # ..
-            } else {
-              Write-Verbose "- Can't split $Result"
-            }
-          }
-        }
-      }
     }
-    Write-Verbose "CheckFile : $CheckFile"
-    $CheckFile = $CheckFile.trim().replace("%ProgramFiles%",(Resolve-Path -Path "$env:ProgramFiles").Path).replace("%ProgramFiles(x86)%",(Resolve-Path -Path "${env:ProgramFiles(x86)}").Path)
-    $CheckFile = $CheckFile.replace("%windir%",(Resolve-Path -Path "${env:WinDir}").Path).trim()
-    $CheckFiles += $CheckFile
-  }
-  return $CheckFile
+
+    return $CheckFiles
 }
 
 function Check-ResultsForFile {  # 03-28-2024
