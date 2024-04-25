@@ -1118,7 +1118,7 @@ function Remove-Folder {
 
   if (Test-Path $FolderToDelete) {
     if (Get-YesNo "Found Folder $($FolderToDelete). Try to remove? ") { 
-      $null = (takeown.exe /a /r /d Y /f $($FolderToDelete) > $($tmp)/_takeown.log)
+      $null = ((takeown.exe /a /r /d Y /f $($FolderToDelete)) | tee -append $($tmp)/_takeown.log)
       Remove-Item $FolderToDelete -Force -Recurse
       # Or, try { and delete with psexec like below function.. Will come back to this if needed.
     } else {
