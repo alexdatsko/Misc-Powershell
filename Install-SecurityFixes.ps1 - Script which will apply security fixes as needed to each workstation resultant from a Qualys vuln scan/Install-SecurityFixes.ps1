@@ -90,9 +90,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.30"
-# New in this version:   92133 - Vulnerable version of Microsoft OutlookForWindows detected  Version     '1.2023.1214.201'#
-$VersionInfo = "v$($Version) - Last modified: 4/19/2024"
+$Version = "0.38.31"
+# New in this version:   Checking if $tmp is writable, falling back to c:\ProgramData\SecAud if not
+$VersionInfo = "v$($Version) - Last modified: 4/25/2024"
 
 #### VERSION ###################################################
 
@@ -121,6 +121,28 @@ $host.ui.RawUI.WindowTitle = "$($env:COMPUTERNAME) - Install-SecurityFixes.ps1"
 
 if ($Automated) {
   Write-Host "`n[!] Running in automated mode!`n"   -ForegroundColor Red
+}
+
+Write-Host "[.] Check if $env:tmp is writable .." -NoNewLine
+$TestFile = Join-Path $env:tmp ([System.Guid]::NewGuid().ToString())
+$TmpPath = "C:\ProgramData\SecAud"  # Backup temporary folder, this should be world writeable on any Windows system if it doesn't exist..
+try {
+    Set-Content -Path $TestFile -Value "Test" -ErrorAction Stop
+    Write-Host "Good."
+    #Write-Verbose "$env:tmp is writable."
+    $TmpPath = $env:tmp
+} catch {
+    Write-Warning "$env:tmp is not writable. Using $TmpPath instead."
+    if (-not (Test-Path $TmpPath)) {
+        try {
+            New-Item -ItemType Directory -Path $TmpPath -Force | Out-Null
+            Write-Host "Failed! Created $TmpPath folder."
+        } catch {
+            throw "Failed to create $TmpPath folder. Error: $($_.Exception.Message)"
+        }
+    }
+} finally {
+    Remove-Item $TestFile -ErrorAction SilentlyContinue
 }
 
 ####################################################### FUNCTIONS #######################################################
