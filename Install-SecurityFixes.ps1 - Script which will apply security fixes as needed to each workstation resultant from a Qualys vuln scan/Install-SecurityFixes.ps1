@@ -2916,25 +2916,35 @@ foreach ($CurrentQID in $QIDs) {
       378931 {
         if (Get-YesNo "$_ Fix Microsoft SQL Server, ODBC and OLE DB Driver for SQL Server Multiple Vulnerabilities for October 2023? " -Results $Results) { 
           # %SYSTEMROOT%\System32\msoledbsql19.dll  Version is  19.3.1.0  %SYSTEMROOT%\SysWOW64\msoledbsql19.dll  Version is  19.3.1.0#
+          # %SYSTEMROOT%\System32\msodbcsql18.dll  Version is  18.3.1.1  %SYSTEMROOT%\SysWOW64\msodbcsql18.dll  Version is  18.3.1.1#
           if ($Results -like "*oledbsql*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2248728"; $LicenseTerms="IACCEPTMSOLEDBSQLLICENSETERMS=YES" }  #19.3.2 OLE
-          if ($Results -like "*odbcdbsql*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2266640"; $LicenseTerms="IACCEPTMSODBCDBSQLLICENSETERMS=YES" } #18.3.3.1 ODBC
+            else {
+              if ($Results -like "*odbcsql*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2266640"; $LicenseTerms="IACCEPTMSODBCDBSQLLICENSETERMS=YES" }  #18.3.1.1 ODBC
+            } else {
+              $OLEODBCUrl="NOPE"
+            }
+          }
           $tmp=$env:temp
-          Write-Host "[.] Downloading required VC++ Library files: VC_redist.x64.exe and VC_redist.x64.exe" 
-          wget "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "$($tmp)\vc_redist.x64.exe"
-          wget "https://aka.ms/vs/17/release/vc_redist.x86.exe" -OutFile "$($tmp)\vc_redist.x86.exe"
-          Write-Host "[.] Downloading mseoledbsql_19.3.2.msi" 
-          wget $OLEODBCUrl -OutFile "$($tmp)\msoleodbcsql.msi"
-          Write-Host "[.] Running: VC_redist.x64.exe /s"
-          . "$($tmp)\VC_redist.x64.exe" "/s"  #this might not be working, didn't seem to work for me.. 
-          Write-Host "[.] Running: VC_redist.x86.exe /s" 
-          . "$($tmp)\VC_redist.x86.exe" "/s" 
-          $params = '/i',"$($tmp)\msoleodbcsql.msi",'/quiet','/qn','/norestart',$licenseterms
-          Write-Host "[.] Running: msiexec, params:"
-          Write-Host @params 
-          & "msiexec.exe" @params 
+          if ($OLEODBCUrl -eq 'NOPE') {
+            Write-Host "[!] Something went wrong.. Results could not be parsed for oledbsql or odbcsql !!"
+          } else {
+            Write-Host "[.] Downloading required VC++ Library files: VC_redist.x64.exe and VC_redist.x64.exe" 
+            wget "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "$($tmp)\vc_redist.x64.exe"
+            wget "https://aka.ms/vs/17/release/vc_redist.x86.exe" -OutFile "$($tmp)\vc_redist.x86.exe"
+            Write-Host "[.] Downloading mseoledbsql_19.3.2.msi" 
+            wget $OLEODBCUrl -OutFile "$($tmp)\msoleodbcsql.msi"
+            Write-Host "[.] Running: VC_redist.x64.exe /s"
+            . "$($tmp)\VC_redist.x64.exe" "/s"  #this might not be working, didn't seem to work for me.. 
+            Write-Host "[.] Running: VC_redist.x86.exe /s" 
+            . "$($tmp)\VC_redist.x86.exe" "/s" 
+            $params = '/i',"$($tmp)\msoleodbcsql.msi",'/quiet','/qn','/norestart',$licenseterms
+            Write-Host "[.] Running: msiexec, params:"
+            Write-Host @params 
+            & "msiexec.exe" @params 
 
-          Write-Host "[.] Please make sure this is installed properly, and old, vulnerable versions are removed, opening appwiz.cpl:"
-          . appwiz.cpl
+            Write-Host "[.] Please make sure this is installed properly, and old, vulnerable versions are removed, opening appwiz.cpl:"
+            . appwiz.cpl
+          }
         }
       }      
       379223 { # Windows SMB Version 1 (SMBv1) Detected -- https://learn.microsoft.com/en-us/windows-server/storage/file-server/troubleshoot/detect-enable-and-disable-smbv1-v2-v3?tabs=server
@@ -3318,7 +3328,7 @@ foreach ($CurrentQID in $QIDs) {
             Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\""$($RegItem)""" -Name Enabled -Value 0 -Force -ErrorAction SilentlyContinue | Out-Null
           }
           Foreach ($Regitem in $Regitems) {
-            $Property=(Get-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\$($RegItem)" -ErrorAcion SilentlyContinue).Property
+            $Property=(Get-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\$($RegItem)" -ErrorAction SilentlyContinue).Property
             if ($Property -eq "Enabled") {
               Write-Host "[.] Checking for created keys: $RegItem : $($Property) - GOOD" -Foregroundcolor Green
             } else {
