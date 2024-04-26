@@ -90,8 +90,8 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.32"
-# New in this version:   Fixed -le instead of -lt in generic Windows/file update check
+$Version = "0.38.33"
+# New in this version:   Few small fixes, Teamviewer, OLE/ODBC, 3DES/DES keys, ...
 $VersionInfo = "v$($Version) - Last modified: 4/26/2024"
 
 #### VERSION ###################################################
