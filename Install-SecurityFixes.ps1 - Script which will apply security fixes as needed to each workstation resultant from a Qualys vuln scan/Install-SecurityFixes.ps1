@@ -46,7 +46,7 @@ $CheckOptionalUpdates = $true                # Set this to false to ignore Optio
 $AlreadySetOptionalUpdates = $false          # This is to make sure we do not keep trying to set the Optional Updates registry value.
 $oldPwd = $pwd                               # Grab location script was run from
 $UpdateBrowserWait = 60                      # Default to 60 seconds for updating Chrome, Edge or Firefox with -Automated. Can be overwritten in Config, for slower systems.. 
-$Update7zipWait = 30                         # How long to wait for the 7-zip Ninite updater to finish and close
+$UpdateNiniteWait = 60                       # How long to wait for the Ninite updater to finish and close
 $UpdateDellCommandWait = 60                  # How long to wait for Dell Command Update to re-install/update
 $ConfigFile = "$oldpwd\_config.ps1"          # Configuration file 
 $QIDsListFile = "$oldpwd\QIDLists.ps1"       # QID List file 
@@ -1548,7 +1548,7 @@ Function Update-ViaNinite {
     Start-Process -FilePath "$($tmp)\ninitechrome.exe" -NoNewWindow
     Write-Host "[.] Waiting $UpdateNiniteWait seconds .."
     Start-Sleep $UpdateNiniteWait # Wait X seconds to make sure the app has updated, usually 30-45s or so at least!! Longer for slower machines!
-    Write-Host "[.] Killing the Ninite updater window, hopefully it is stuck at 'Closed'"
+    Write-Host "[.] Killing the Ninite updater window, hopefully it is stuck at 'Done'"
     taskkill.exe /f /im $(($KillProcess -split "\\")[-1])  # Grab filename from full path if given
   } else {
     Write-Host "[.] Running the Ninite Chrome updater, please close this window by hitting DONE when complete!"
