@@ -591,33 +591,9 @@ At \\server\data\SecAud\Install-SecurityFixes.ps1:628 char:5
 +     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
     + FullyQualifiedErrorId : InvokeMethodOnNull
- 
-You cannot call a method on a null-valued expression.
-At \\server\data\SecAud\Install-SecurityFixes.ps1:627 char:5
-+     $CheckFile = $CheckFile.trim().replace("%ProgramFiles%",(Resolve- ...
-+     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
-    + FullyQualifiedErrorId : InvokeMethodOnNull
- 
-You cannot call a method on a null-valued expression.
-At \\server\data\SecAud\Install-SecurityFixes.ps1:628 char:5
-+     $CheckFile = $CheckFile.replace("%windir%",(Resolve-Path -Path "$ ...
-+     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
-    + FullyQualifiedErrorId : InvokeMethodOnNull
- 
-Test-Path : Cannot bind argument to parameter 'Path' because it is null.
-At \\server\data\SecAud\Install-SecurityFixes.ps1:3535 char:27
-+             if (Test-Path $CheckEXE) {
-+                           ~~~~~~~~~
-    + CategoryInfo          : InvalidData: (:) [Test-Path], ParameterBindingValidationException
-    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.TestPathCom
-   mand
-
+..
 $Results="Office ClicktoRun or Office 365 Suite APRIL 2024 Update is not installed   C:\Program Files\Microsoft Office\root\Office16\GRAPH.EXE  Version is  16.0.17425.20146#""
- 
-
-   #>
+#>
 
   # Refactored 4/19/24, reverted, ugh
   foreach ($Result in ($Results -split('Version is').trim())) {  # Lets catch multiples like the first example
@@ -669,11 +645,15 @@ $Results="Office ClicktoRun or Office 365 Suite APRIL 2024 Update is not install
       }
     }
     Write-Verbose "CheckFile : $CheckFile"
-    $CheckFile = $CheckFile.trim().replace("%ProgramFiles%",(Resolve-Path -Path "$env:ProgramFiles").Path).replace("%ProgramFiles(x86)%",(Resolve-Path -Path "${env:ProgramFiles(x86)}").Path)
-    $CheckFile = $CheckFile.replace("%windir%",(Resolve-Path -Path "${env:WinDir}").Path).trim()
-    $CheckFiles += $CheckFile
+    if ($CheckFile) {
+      $CheckFile = $CheckFile.trim().replace("%ProgramFiles%",(Resolve-Path -Path "$env:ProgramFiles").Path).replace("%ProgramFiles(x86)%",(Resolve-Path -Path "${env:ProgramFiles(x86)}").Path)
+      $CheckFile = $CheckFile.replace("%windir%",(Resolve-Path -Path "${env:WinDir}").Path).trim()
+      $CheckFiles += $CheckFile
+    } else {
+      Write-Host "[!] CheckFile empty!!"
+    }
   }
-  return $CheckFile
+  return $CheckFiles
 }
 
 function Check-ResultsForFile {  # 03-28-2024
@@ -2935,44 +2915,24 @@ foreach ($CurrentQID in $QIDs) {
       }
       378931 {
         if (Get-YesNo "$_ Fix Microsoft SQL Server, ODBC and OLE DB Driver for SQL Server Multiple Vulnerabilities for October 2023? " -Results $Results) { 
+          # %SYSTEMROOT%\System32\msoledbsql19.dll  Version is  19.3.1.0  %SYSTEMROOT%\SysWOW64\msoledbsql19.dll  Version is  19.3.1.0#
+          if ($Results -like "*oledbsql*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2248728"; $LicenseTerms="IACCEPTMSOLEDBSQLLICENSETERMS=YES" }  #19.3.2 OLE
+          if ($Results -like "*odbcdbsql*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2266640"; $LicenseTerms="IACCEPTMSODBCDBSQLLICENSETERMS=YES" } #18.3.3.1 ODBC
           $tmp=$env:temp
           Write-Host "[.] Downloading required VC++ Library files: VC_redist.x64.exe and VC_redist.x64.exe" 
           wget "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "$($tmp)\vc_redist.x64.exe"
           wget "https://aka.ms/vs/17/release/vc_redist.x86.exe" -OutFile "$($tmp)\vc_redist.x86.exe"
-          Write-Host "[.] Downloading mseoledbsql_19.3.1.msi" 
-          wget "https://go.microsoft.com/fwlink/?linkid=2248728" -OutFile "$($tmp)\msoledbsql_19.3.2.msi"
+          Write-Host "[.] Downloading mseoledbsql_19.3.2.msi" 
+          wget $OLEODBCUrl -OutFile "$($tmp)\msoleodbcsql.msi"
           Write-Host "[.] Running: VC_redist.x64.exe /s"
           . "$($tmp)\VC_redist.x64.exe" "/s"  #this might not be working, didn't seem to work for me.. 
           Write-Host "[.] Running: VC_redist.x86.exe /s" 
           . "$($tmp)\VC_redist.x86.exe" "/s" 
-          #. "msiexec" "/i $($tmp)\msoledbsql_19.3.1.msi /qn /quiet" # not working.. figured out it needs this last parameter, below to accept eula
-          $params = '/i',"$($tmp)\msoledbsql_19.3.2.msi",'/quiet','/qn','/norestart',"IACCEPTMSOLEDBSQLLICENSETERMS=YES"
+          $params = '/i',"$($tmp)\msoleodbcsql.msi",'/quiet','/qn','/norestart',$licenseterms
           Write-Host "[.] Running: msiexec, params:"
           Write-Host @params 
           & "msiexec.exe" @params 
-<#
 
-# THIS NEEDS TO BE CLEANED UP, MAY REMOVE ALL VERSIONS, DISABLING UNTIL FIXED.. Better to look at it by hand I guess for now.
-
-          Write-Host "[.] Waiting 30 seconds for this to complete.."
-          start-sleep 30
-          Write-Host "[.] Removing older versions of MS SQL ODBC and OLE DB Driver.."
-          $ResultVersions = Parse-ResultsVersion $Results
-          Write-Verbose "ResultVersions: $ResultVersions"
-          if ($ResultVersions) {
-            if ($ResultVersions.Count -gt 1) {
-              Foreach ($ver in $ResultVersions) {
-                Write-Verbose "Version found: $Ver"
-                $Products = (get-wmiobject Win32_Product | Where-Object { ($_.Name -like "Microsoft OLE DB Driver*" -or $_.Name -like "Microsoft ODBC Driver*") -and [version]$_.Version -lt [version]"19.3.1.0"})
-                if ($Products) {
-                  if (Get-YesNo "Remove older product(s): $($Products.Name) $($Products.Version) ") {}
-                    Remove-Software -Products $Products  -Results $Results
-                  }
-                } 
-              }
-            }
-          }
-#>
           Write-Host "[.] Please make sure this is installed properly, and old, vulnerable versions are removed, opening appwiz.cpl:"
           . appwiz.cpl
         }
