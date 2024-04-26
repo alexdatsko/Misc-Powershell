@@ -90,9 +90,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.31"
-# New in this version:   Checking if $tmp is writable, falling back to c:\ProgramData\SecAud if not
-$VersionInfo = "v$($Version) - Last modified: 4/25/2024"
+$Version = "0.38.32"
+# New in this version:   Fixed -le instead of -lt in generic Windows/file update check
+$VersionInfo = "v$($Version) - Last modified: 4/26/2024"
 
 #### VERSION ###################################################
 
@@ -573,6 +573,51 @@ function Check-ResultsForFiles {
 
   # 110462	Microsoft Office Remote Code Execution (RCE) Vulnerability for April 2024	4				
   #   Office ClicktoRun or Office 365 Suite APRIL 2024 Update is not installed   C:\Program Files (x86)\Microsoft Office\root\Office16\GRAPH.EXE  Version is  16.0.17425.20146#
+
+
+<# # errors 4/26/24 Cogan: 
+
+[?] 110462 Check if KB is installed for Microsoft Office Remote Code Execution (RCE) Vulnerability for April 2024  [y/N/a/s/?] : y
+You cannot call a method on a null-valued expression.
+At \\server\data\SecAud\Install-SecurityFixes.ps1:627 char:5
++     $CheckFile = $CheckFile.trim().replace("%ProgramFiles%",(Resolve- ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+ 
+You cannot call a method on a null-valued expression.
+At \\server\data\SecAud\Install-SecurityFixes.ps1:628 char:5
++     $CheckFile = $CheckFile.replace("%windir%",(Resolve-Path -Path "$ ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+ 
+You cannot call a method on a null-valued expression.
+At \\server\data\SecAud\Install-SecurityFixes.ps1:627 char:5
++     $CheckFile = $CheckFile.trim().replace("%ProgramFiles%",(Resolve- ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+ 
+You cannot call a method on a null-valued expression.
+At \\server\data\SecAud\Install-SecurityFixes.ps1:628 char:5
++     $CheckFile = $CheckFile.replace("%windir%",(Resolve-Path -Path "$ ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+ 
+Test-Path : Cannot bind argument to parameter 'Path' because it is null.
+At \\server\data\SecAud\Install-SecurityFixes.ps1:3535 char:27
++             if (Test-Path $CheckEXE) {
++                           ~~~~~~~~~
+    + CategoryInfo          : InvalidData: (:) [Test-Path], ParameterBindingValidationException
+    + FullyQualifiedErrorId : ParameterArgumentValidationErrorNullNotAllowed,Microsoft.PowerShell.Commands.TestPathCom
+   mand
+
+$Results="Office ClicktoRun or Office 365 Suite APRIL 2024 Update is not installed   C:\Program Files\Microsoft Office\root\Office16\GRAPH.EXE  Version is  16.0.17425.20146#""
+ 
+
+   #>
 
   # Refactored 4/19/24, reverted, ugh
   foreach ($Result in ($Results -split('Version is').trim())) {  # Lets catch multiples like the first example
@@ -3537,7 +3582,7 @@ foreach ($CurrentQID in $QIDs) {
               Write-Verbose "Get-FileVersion results: $CheckEXEVersion"
               if ($CheckEXEVersion) {
                 Write-Verbose "EXE/DLL version found : $CheckEXE - $CheckEXEVersion .. checking against -- $ResultsVersion --"
-                if ([version]$CheckEXEVersion -lt [version]$ResultsVersion) {
+                if ([version]$CheckEXEVersion -le [version]$ResultsVersion) {
                   Write-Host "[!] Vulnerable version of $CheckEXE found : $CheckEXEVersion <= $ResultsVersion - Update missing: $ResultsMissing" -ForegroundColor Red
                   if ($CheckOptionalUpdates -and -not $AlreadySetOptionalUpdates) {
                     Write-Host "[!] It is possible that Optional Windows updates are disabled, checking.." -ForegroundColor Red
