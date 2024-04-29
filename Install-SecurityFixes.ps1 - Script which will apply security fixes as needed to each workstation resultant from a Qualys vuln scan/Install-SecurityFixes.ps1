@@ -90,9 +90,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.33"
-# New in this version:   Few small fixes, Teamviewer, OLE/ODBC, 3DES/DES keys, ...
-$VersionInfo = "v$($Version) - Last modified: 4/26/2024"
+$Version = "0.38.34"
+# New in this version:   Small fix to Remove-Folder, logging
+$VersionInfo = "v$($Version) - Last modified: 4/29/2024"
 
 #### VERSION ###################################################
 
@@ -1165,7 +1165,7 @@ function Remove-Folder {
 
   if (Test-Path $FolderToDelete) {
     if (Get-YesNo "Found Folder $($FolderToDelete). Try to remove? ") { 
-      $null = ((takeown.exe /a /r /d Y /f $($FolderToDelete)) | tee -append $($tmp)/_takeown.log)
+      $null = ((takeown.exe /a /r /d Y /f $($FolderToDelete)) | Tee -Append -FilePath "$($tmp)/_takeown.log")
       Remove-Item $FolderToDelete -Force -Recurse
       # Or, try { and delete with psexec like below function.. Will come back to this if needed.
     } else {
@@ -2917,24 +2917,26 @@ foreach ($CurrentQID in $QIDs) {
         if (Get-YesNo "$_ Fix Microsoft SQL Server, ODBC and OLE DB Driver for SQL Server Multiple Vulnerabilities for October 2023? " -Results $Results) { 
           # %SYSTEMROOT%\System32\msoledbsql19.dll  Version is  19.3.1.0  %SYSTEMROOT%\SysWOW64\msoledbsql19.dll  Version is  19.3.1.0#
           # %SYSTEMROOT%\System32\msodbcsql18.dll  Version is  18.3.1.1  %SYSTEMROOT%\SysWOW64\msodbcsql18.dll  Version is  18.3.1.1#
-          if ($Results -like "*oledbsql*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2248728"; $LicenseTerms="IACCEPTMSOLEDBSQLLICENSETERMS=YES" } else { #19.3.2 OLE
-            if ($Results -like "*odbcsql*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2266640"; $LicenseTerms="IACCEPTMSODBCDBSQLLICENSETERMS=YES" } else { #18.3.1.1 ODBC
+          if ($Results -like "*oledbsql*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2248728"; $LicenseTerms="IACCEPTMSOLEDBSQLLICENSETERMS=YES"; $OLEODBC="19.3.2 OLE" } else { #19.3.2 OLE
+            if ($Results -like "*odbcsql*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2266640"; $LicenseTerms="IACCEPTMSODBCDBSQLLICENSETERMS=YES"; $OLEODBC="18.3.3.1 ODBC" } else { #18.3.3.1 ODBC
               $OLEODBCUrl="NOPE"
             }
           }
           $tmp=$env:temp
           if ($OLEODBCUrl -eq 'NOPE') {
             Write-Host "[!] Something went wrong.. Results could not be parsed for oledbsql or odbcsql !!"
+            Write-Host "Results = [ $Results ]"
           } else {
             Write-Host "[.] Downloading required VC++ Library files: VC_redist.x64.exe and VC_redist.x64.exe" 
             wget "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "$($tmp)\vc_redist.x64.exe"
             wget "https://aka.ms/vs/17/release/vc_redist.x86.exe" -OutFile "$($tmp)\vc_redist.x86.exe"
-            Write-Host "[.] Downloading mseoledbsql_19.3.2.msi" 
-            wget $OLEODBCUrl -OutFile "$($tmp)\msoleodbcsql.msi"
             Write-Host "[.] Running: VC_redist.x64.exe /s"
             . "$($tmp)\VC_redist.x64.exe" "/s"  #this might not be working, didn't seem to work for me.. 
             Write-Host "[.] Running: VC_redist.x86.exe /s" 
             . "$($tmp)\VC_redist.x86.exe" "/s" 
+
+            Write-Host "[.] Downloading msoleodbcsql.msi from $OLEODBCUrl for $OLEODBC.."
+            wget $OLEODBCUrl -OutFile "$($tmp)\msoleodbcsql.msi"
             $params = '/i',"$($tmp)\msoleodbcsql.msi",'/quiet','/qn','/norestart',$licenseterms
             Write-Host "[.] Running: msiexec, params:"
             Write-Host @params 
