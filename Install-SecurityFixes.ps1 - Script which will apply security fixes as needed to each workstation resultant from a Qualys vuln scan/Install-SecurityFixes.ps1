@@ -40,7 +40,6 @@ if ($Help) {
   exit
 }
 
-#Clear
 
 $CheckOptionalUpdates = $true                # Set this to false to ignore Optional Updates registry value
 $AlreadySetOptionalUpdates = $false          # This is to make sure we do not keep trying to set the Optional Updates registry value.
@@ -90,9 +89,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.34"
-# New in this version:   Small fix to Remove-Folder, logging
-$VersionInfo = "v$($Version) - Last modified: 4/29/2024"
+$Version = "0.38.35"
+# New in this version:   Small fix to generic update checker, single file vs multiple returned was screwing up version checks
+$VersionInfo = "v$($Version) - Last modified: 5/2/2024"
 
 #### VERSION ###################################################
 
@@ -575,26 +574,6 @@ function Check-ResultsForFiles {
   #   Office ClicktoRun or Office 365 Suite APRIL 2024 Update is not installed   C:\Program Files (x86)\Microsoft Office\root\Office16\GRAPH.EXE  Version is  16.0.17425.20146#
 
 
-<# # errors 4/26/24 Cogan: 
-
-[?] 110462 Check if KB is installed for Microsoft Office Remote Code Execution (RCE) Vulnerability for April 2024  [y/N/a/s/?] : y
-You cannot call a method on a null-valued expression.
-At \\server\data\SecAud\Install-SecurityFixes.ps1:627 char:5
-+     $CheckFile = $CheckFile.trim().replace("%ProgramFiles%",(Resolve- ...
-+     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
-    + FullyQualifiedErrorId : InvokeMethodOnNull
- 
-You cannot call a method on a null-valued expression.
-At \\server\data\SecAud\Install-SecurityFixes.ps1:628 char:5
-+     $CheckFile = $CheckFile.replace("%windir%",(Resolve-Path -Path "$ ...
-+     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
-    + FullyQualifiedErrorId : InvokeMethodOnNull
-..
-$Results="Office ClicktoRun or Office 365 Suite APRIL 2024 Update is not installed   C:\Program Files\Microsoft Office\root\Office16\GRAPH.EXE  Version is  16.0.17425.20146#""
-#>
-
   # Refactored 4/19/24, reverted, ugh
   foreach ($Result in ($Results -split('Version is').trim())) {  # Lets catch multiples like the first example
     if ($Result -like "*.dll*") {
@@ -665,11 +644,18 @@ function Check-ResultsForFile {  # 03-28-2024
   # Example:
   #   KB5033920 is not installed  %windir%\Microsoft.NET\Framework64\v2.0.50727\System.dll Version is 2.0.50727.9175 %windir%\Microsoft.NET\Framework\v2.0.50727\System.dll Version is 2.0.50727.9175 %windir%\Microsoft.NET\Framework64\v4.0.30319\System.dll Version is 4.8.9206.0 %windir%\Microsoft.NET\Framework\v4.0.30319\System.dll Version is 4.8.9206.0 KB5034275 or KB5034274 or KB5034276 is not installed#
 
+  # Errors 5/2/24:
+  # $Results="KB5036892 is not installed  %windir%\system32\ntoskrnl.exe  Version is  10.0.19041.4239#""
+
+
   # Lets check the results for ' is' and replace the path stuff with actual values, as %vars% are not powershell friendly variables ..
   # There might be more variable expansion I can do, will add it here when needed
   if ($Results -clike "*Version is*") {   # ack, -clike compares case also, -like does NOT, forgot about this.
     if ($Results -clike "*is not installed*") {
-      $CheckFile = (($Results -split "is not installed")[0]).trim()
+      $CheckFile = (($Results -split "is not installed")[1]).trim()
+      if ($Results -clike "*Version is*") {
+        $CheckFile = (($CheckFile -split "Version is")[0]).trim() # Remove rest of string..
+      }
     } else {
       $CheckFile = (($Results -split "Version is")[0]).trim()
     }
@@ -3545,7 +3531,7 @@ foreach ($CurrentQID in $QIDs) {
             
             $ResultsVersion = Check-ResultsForVersion -Results $Results  # split everything after space, [version] cannot have a space in it.. Also should work for multiple versions, we will just check the first result.
             Write-Verbose "ResultsVersion : $ResultsVersion"
-            $CheckEXE = Check-ResultsForFiles -Results $Results # Get Multiple EXE/DLL FileNames to check, from $Results 
+            $CheckEXE = Check-ResultsForFile -Results $Results # Get SINGLE EXE/DLL FileNames to check, from $Results  (Changed from multiple 5/2/24)
             Write-Verbose "CheckEXE: $CheckEXE"
             if (Test-Path $CheckEXE) {
               $CheckEXEVersion = Get-FileVersion $CheckEXE
