@@ -89,8 +89,8 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.35"
-# New in this version:   Small fix to generic update checker, single file vs multiple returned was screwing up version checks
+$Version = "0.38.36"
+# New in this version:   379596	Microsoft SQL Server ODBC and OLE DB Driver for SQL Server Multiple Vulnerabilities for April 2024 - fix: OLE 18.7.2 x64
 $VersionInfo = "v$($Version) - Last modified: 5/2/2024"
 
 #### VERSION ###################################################
@@ -2899,13 +2899,33 @@ foreach ($CurrentQID in $QIDs) {
           }
         }
       }
-      378931 {
-        if (Get-YesNo "$_ Fix Microsoft SQL Server, ODBC and OLE DB Driver for SQL Server Multiple Vulnerabilities for October 2023? " -Results $Results) { 
+      { 378931,379596 } {
+        if (Get-YesNo "$_ Fix Microsoft SQL Server, ODBC and OLE DB Driver for SQL Server Multiple Vulnerabilities ? " -Results $Results) { 
           # %SYSTEMROOT%\System32\msoledbsql19.dll  Version is  19.3.1.0  %SYSTEMROOT%\SysWOW64\msoledbsql19.dll  Version is  19.3.1.0#
           # %SYSTEMROOT%\System32\msodbcsql18.dll  Version is  18.3.1.1  %SYSTEMROOT%\SysWOW64\msodbcsql18.dll  Version is  18.3.1.1#
-          if ($Results -like "*oledbsql*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2248728"; $LicenseTerms="IACCEPTMSOLEDBSQLLICENSETERMS=YES"; $OLEODBC="19.3.2 OLE" } else { #19.3.2 OLE
-            if ($Results -like "*odbcsql*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2266640"; $LicenseTerms="IACCEPTMSODBCDBSQLLICENSETERMS=YES"; $OLEODBC="18.3.3.1 ODBC" } else { #18.3.3.1 ODBC
-              $OLEODBCUrl="NOPE"
+          
+          # 05-02-24
+          # 379596	Microsoft SQL Server ODBC and OLE DB Driver for SQL Server Multiple Vulnerabilities for April 2024	
+          <#   Affected Software:  Microsoft ODBC Driver 17 for SQL Server on Windows version prior to 17.10.6.1  
+               Microsoft ODBC Driver 18 for SQL Server on Windows version prior to 18.3.3.1  
+               Microsoft ODBC Driver 17 for SQL Server on Linux version prior to 17.10.6.1  
+               Microsoft ODBC Driver 18 for SQL Server on Linux version prior to 18.3.3.1  
+               Microsoft SQL Server 2022 for x64-based Systems (GDR)   
+               Microsoft SQL Server 2019 for x64-based Systems (GDR)   
+               Microsoft SQL Server 2022 for x64-based Systems ( (CU 12))   
+               Microsoft SQL Server 2019 for x64-based Systems (CU 25)   
+               Microsoft OLE DB Driver 19 for SQL Server version prior to 19.3.3.0  
+               Microsoft OLE DB Driver 18 for SQL Server version prior to 18.7.2.0  #>
+          #   %SYSTEMROOT%\System32\msoledbsql.dll  Version is  18.6.7.0  %SYSTEMROOT%\SysWOW64\msoledbsql.dll  Version is  18.6.7.0#
+          # New version: Microsoft OLE DB Driver 18 for SQL Server version prior to 18.7.2.0
+          # x86 installer: https://go.microsoft.com/fwlink/?linkid=2266858  https://download.microsoft.com/download/2/6/1/2613c841-cf12-4ba3-b0f8-50dcc195faa4/en-US/18.7.2.0/x86/msoledbsql.msi
+          # x64 installer: https://go.microsoft.com/fwlink/?linkid=2266757  https://download.microsoft.com/download/2/6/1/2613c841-cf12-4ba3-b0f8-50dcc195faa4/en-US/18.7.2.0/x64/msoledbsql.msi
+
+          if ($Results -like "*oledbsql*" -and $Results -like "*19*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2248728"; $LicenseTerms="IACCEPTMSOLEDBSQLLICENSETERMS=YES"; $OLEODBC="19.3.2 OLE" } else { #19.3.2 OLE
+            if ($Results -like "*oledbsql*" -and $Results -like "*18*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2266757"; $LicenseTerms="IACCEPTMSOLEDBSQLLICENSETERMS=YES"; $OLEODBC="18.7.2 OLE" } else { #18.7.2 OLE
+              if ($Results -like "*odbcsql*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2266640"; $LicenseTerms="IACCEPTMSODBCDBSQLLICENSETERMS=YES"; $OLEODBC="18.3.3.1 ODBC" } else { #18.3.3.1 ODBC
+                $OLEODBCUrl="NOPE"
+              }
             }
           }
           $tmp=$env:temp
