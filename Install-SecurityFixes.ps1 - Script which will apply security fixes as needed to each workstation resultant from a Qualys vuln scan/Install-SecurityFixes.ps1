@@ -89,9 +89,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.36"
-# New in this version:   379596	Microsoft SQL Server ODBC and OLE DB Driver for SQL Server Multiple Vulnerabilities for April 2024 - fix: OLE 18.7.2 x64
-$VersionInfo = "v$($Version) - Last modified: 5/2/2024"
+$Version = "0.38.37"
+# New in this version:   Fix for 379596	Microsoft SQL Server ODBC and OLE DB Driver for SQL Server Multiple Vulnerabilities for April 2024 - OLE 18.7.2 x64 - also:  Disable complete automation of SMB1 feature removal
+$VersionInfo = "v$($Version) - Last modified: 5/3/2024"
 
 #### VERSION ###################################################
 
@@ -120,6 +120,7 @@ $host.ui.RawUI.WindowTitle = "$($env:COMPUTERNAME) - Install-SecurityFixes.ps1"
 
 if ($Automated) {
   Write-Host "`n[!] Running in automated mode!`n"   -ForegroundColor Red
+  Set-RegistryEntry -Name "Automated" -Value $true
 }
 
 Write-Host "[.] Check if $env:tmp is writable .." -NoNewLine
@@ -160,7 +161,7 @@ function Get-YesNo {
          [string] $results)
   
   $done = 0
-  if (!($Automated)) { 
+  if ((-not $Automated) -and ([bool](Get-RegistryEntry -Name "Automated") -ne $true)) {    # Catch the global var or the registry entry
     while ($done -eq 0) {
       $yesno = Read-Host  "`n[?] $text [y/N/a/s/?] "
       if ($yesno.ToUpper()[0] -eq 'Y') { return $true } 
@@ -187,18 +188,20 @@ function Get-YesNo {
 ################################################# SCRIPT FUNCTIONS ###############################################
 
 function Set-RegistryEntry {
-  param(
-      [string]$Path = "HKLM:\Software\MME Consulting Inc\Install-SecurityFixes",
-      [string]$Name,
-      [int]$Value = 1
-  )
+    param(
+        [string]$Path = "HKLM:\Software\MME Consulting Inc\Install-SecurityFixes",
+        [string]$Name,
+        [object]$Value
+    )
 
-  if (-Not(Test-Path -Path $Path)) {
-    Write-Verbose "Set-RegistryEntry: !! (Test-Path -Path $Path) - Creating"
-    New-Item -Path $Path -Force | Out-Null
-  }
-  Write-Verbose "Set-RegistryEntry: Creating: Set-ItemProperty -Path $Path -Name $Name -Value $Value"
-  Set-ItemProperty -Path $Path -Name $Name -Value $Value
+    if (-Not(Test-Path -Path $Path)) {
+        Write-Verbose "Set-RegistryEntry: !! (Test-Path -Path $Path) - Creating"
+        New-Item -Path $Path -Force | Out-Null
+    }
+
+    $ValueAsString = $Value.ToString()
+    Write-Verbose "Set-RegistryEntry: Creating: Set-ItemProperty -Path $Path -Name $Name -Value $ValueAsString"
+    Set-ItemProperty -Path $Path -Name $Name -Value $ValueAsString
 }
 
 function Get-RegistryEntry {
@@ -222,6 +225,65 @@ function Get-RegistryEntry {
   }
   return 0
 }
+
+function Show-RegistryValues {
+    param(
+        [string]$Path = "HKLM:\Software\MME Consulting Inc\Install-SecurityFixes"
+    )
+
+    if (Test-Path -Path $Path -ErrorAction SilentlyContinue) {
+        $RegValues = Get-ItemProperty -Path $Path -ErrorAction SilentlyContinue
+
+        if ($RegValues) {
+            Write-Host "Registry values in $Path :"
+            $RegValues.PSObject.Properties | ForEach-Object {
+                Write-Host "  $($_.Name) = $($_.Value)"
+            }
+        } else {
+            Write-Host "No values found in $Path"
+        }
+    } else {
+        Write-Host "Registry path $Path does not exist"
+    }
+}
+
+function Remove-RegistryEntry {
+    param(
+        [string]$Path = "HKLM:\Software\MME Consulting Inc\Install-SecurityFixes",
+        [string]$Name
+    )
+
+    if (Test-Path -Path $Path -ErrorAction SilentlyContinue) {
+        $Reg = Get-ItemProperty -Path $Path -ErrorAction SilentlyContinue
+
+        if ($Reg.PSObject.Properties.Name -contains $Name) {
+            Write-Verbose "Removing registry value: $Path\$Name"
+            Remove-ItemProperty -Path $Path -Name $Name -ErrorAction SilentlyContinue
+        } else {
+            Write-Verbose "Registry value not found: $Path\$Name"
+        }
+    } else {
+        Write-Verbose "Registry path not found: $Path"
+    }
+}
+<# # # Setting and pulling string/integer values from registry: # # #
+
+Set-RegistryEntry -Name "IntegerValue" -Value 42
+Set-RegistryEntry -Name "StringValue" -Value "Hello, World!"
+Set-RegistryEntry -Name "BooleanValue" -Value $true
+
+Show-RegistryValues
+
+$IntegerValue = [int](Get-RegistryEntry -Name "IntegerValue")
+$StringValue = Get-RegistryEntry -Name "StringValue"
+$BooleanValue = [bool](Get-RegistryEntry -Name "BooleanValue")
+
+Remove-RegistryEntry -Name "IntegerValue" 
+Remove-RegistryEntry -Name "StringValue" 
+Remove-RegistryEntry -Name "BooleanValue" 
+
+Show-RegistryValues
+#>
 
 function Read-QIDLists {    # NOT USING!!!!
   # READ IN VALUES FROM QIDsList 
@@ -774,7 +836,7 @@ function Pick-File {    # Show a list of files with a number to the left of each
     $i += 1
   }
 
-  if (!$Automated -and ($i -gt 1)) {
+  if ((-not $Automated) -and ([bool](Get-RegistryEntry -Name "Automated") -ne $true) -and ($i -gt 1)) {
     Write-Host "[$i] EXIT" -ForegroundColor Blue
     $Selection = Read-Host "Select file to import, [Enter=0] ?"
     if ($Selection -eq $i) { Write-Host "[-] Exiting!" -ForegroundColor Gray; exit }
@@ -2899,7 +2961,7 @@ foreach ($CurrentQID in $QIDs) {
           }
         }
       }
-      { 378931,379596 } {
+      { 378931,379596 -contains $_ } {
         if (Get-YesNo "$_ Fix Microsoft SQL Server, ODBC and OLE DB Driver for SQL Server Multiple Vulnerabilities ? " -Results $Results) { 
           # %SYSTEMROOT%\System32\msoledbsql19.dll  Version is  19.3.1.0  %SYSTEMROOT%\SysWOW64\msoledbsql19.dll  Version is  19.3.1.0#
           # %SYSTEMROOT%\System32\msodbcsql18.dll  Version is  18.3.1.1  %SYSTEMROOT%\SysWOW64\msodbcsql18.dll  Version is  18.3.1.1#
@@ -2981,20 +3043,24 @@ foreach ($CurrentQID in $QIDs) {
               Set-RegistryEntry -Name SMB1Auditing -Value 0
             }
           } # No matter what, we will give them the option to just run this
-          if (Get-YesNo "NOTE: Disabling this may break things!!! `n`nRisks:`n  [ ] Old iCAT XP computers `n  [ ] Old copier/scanners (scan to SMB) `n  [ ] Other devices that need to access this computer over SMB1.`n`nIt may be safest to do some monitoring first, by turning on SMB v1 auditing (Set-SmbServerConfiguration -AuditSmb1Access `$True) and checking for Event 3000 in the ""Microsoft-Windows-SMBServer\Audit"" event log next month, and then identifying each client that attempts to connect with SMBv1.`n  I have turned on SMB1 auditing for you now, and the script can automatically check for clients next month and disable this if you aren't sure. `nAre you sure you want to continue removing SMB1? " -Results $Results) { 
-            Write-Host "[.] Removing Feature for SMB 1.0:" -ForegroundColor Green
-            # CAPTION INSTALLSTATE NAME SMB 1.0/CIFS File Sharing Support SMB Server version 1 is Enabled# 
-            Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart
-            # HKLM\SYSTEM\CurrentControlSet\Services\mrxsmb10 Start = 2 SMB Client version 1 is Enabled#  # <-- This could show up also
-            Write-Host "[.] Disabling service MRXSMB10:" -ForegroundColor Green
-            if (-not (Test-Path "HKLM:\SYSTEM\CurrentControlSet\Services\mrxsmb10")) {
-              New-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Services\mrxsmb10" -Force | Out-Null
+          if (-not $Automated) {
+            if (Get-YesNo "NOTE: Disabling this may break things!!! `n`nRisks:`n  [ ] Old iCAT XP computers `n  [ ] Old copier/scanners (scan to SMB) `n  [ ] Other devices that need to access this computer over SMB1.`n`nIt may be safest to do some monitoring first, by turning on SMB v1 auditing (Set-SmbServerConfiguration -AuditSmb1Access `$True) and checking for Event 3000 in the ""Microsoft-Windows-SMBServer\Audit"" event log next month, and then identifying each client that attempts to connect with SMBv1.`n  I have turned on SMB1 auditing for you now, and the script can automatically check for clients next month and disable this if you aren't sure. `nAre you sure you want to continue removing SMB1? " -Results $Results) { 
+              Write-Host "[.] Removing Feature for SMB 1.0:" -ForegroundColor Green
+              # CAPTION INSTALLSTATE NAME SMB 1.0/CIFS File Sharing Support SMB Server version 1 is Enabled# 
+              Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart
+              # HKLM\SYSTEM\CurrentControlSet\Services\mrxsmb10 Start = 2 SMB Client version 1 is Enabled#  # <-- This could show up also
+              Write-Host "[.] Disabling service MRXSMB10:" -ForegroundColor Green
+              if (-not (Test-Path "HKLM:\SYSTEM\CurrentControlSet\Services\mrxsmb10")) {
+                New-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Services\mrxsmb10" -Force | Out-Null
+              }
+              Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\mrxsmb10" -Name "Start" -Value 4
+              Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\mrxsmb10" -Name "Start" 
+              Write-Host "[.] Done.  A reboot will be needed for this to go into effect. Please test all applications and access after!" -ForegroundColor Yellow
+            } else {
+              Write-Host "[!] Nothing changed! Please re-run in a month and check back if any systems have used SMB1 to access this machine." -ForegroundColor Green
             }
-            Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\mrxsmb10" -Name "Start" -Value 4
-            Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\mrxsmb10" -Name "Start" 
-            Write-Host "[.] Done.  A reboot will be needed for this to go into effect. Please test all applications and access after!" -ForegroundColor Yellow
           } else {
-            Write-Host "[!] Nothing changed! Please re-run in a month and check back if any systems have used SMB1 to access this machine." -ForegroundColor Green
+              Write-Host "[.] Refusing to remove feature for SMB 1.0 with -Automated, if you want to do this we can modify the code to allow it" -ForegroundColor Yello
           }
         }
       }
@@ -3637,9 +3703,13 @@ Set-Location $oldpwd
 # Disabling the file deletion step for now, EPDR keeps killing the script for being 'suspicious' at this point.
 #Write-Host "[.] Deleting all temporary files from $tmp .."
 #Remove-Item -Path "$tmp" -Recurse -Force -ErrorAction SilentlyContinue
+
+Set-RegistryEntry -Name "Automated" -Value $false
+
 Stop-Transcript
 if (!($Automated)) {
   $null = Read-Host "--- Press enter to exit ---"
 }
 Write-Host "`n"
+
 Exit
