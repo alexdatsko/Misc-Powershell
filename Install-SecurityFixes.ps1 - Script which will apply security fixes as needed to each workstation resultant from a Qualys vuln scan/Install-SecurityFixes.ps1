@@ -1,6 +1,7 @@
 [cmdletbinding()]  # For verbose, debug etc
 param (
   [switch] $Automated = $false,    # this allows us to run without supervision and apply all changes (could be dangerous!)
+  [switch] $NoAuto,                # this allows us to turn off the registry value for Automated and ReRun 
   [string] $CSVFile,               # Allow user to pick a CSV file on the commandline
   [int[]] $OnlyQIDs,               # Allow user to pick a list of QID(s) to remediate
   [int] $QID,                      # Allow user to pick one QID to remediate
@@ -22,6 +23,8 @@ $AllHelp = "########################################################
     Specifies the path to the CSV file to use.
 .PARAMETER Automated
     Indicates whether the script is running in automated mode. Fixes will be applied automatically.
+.PARAMETER NoAuto
+    This is a fix to make sure the script will not re-run as automated next time.
 .PARAMETER QID
     Pick a certain QID to remediate, i.e 105170
 .PARAMETER OnlyQIDs
@@ -40,7 +43,11 @@ if ($Help) {
   exit
 }
 
-
+# Common URL Variables for updates:
+$AgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.67 Safari/537.36"
+$DCUUrl = "https://dl.dell.com/FOLDER11201514M/1/Dell-Command-Update-Application_4R78G_WIN_5.2.0_A00.EXE"
+$DCUFilename = ($DCUUrl -split "/")[-1]
+$DCUVersion = (($DCUUrl -split "_WIN_")[1] -split "_A0")[0]
 $CheckOptionalUpdates = $true                # Set this to false to ignore Optional Updates registry value
 $AlreadySetOptionalUpdates = $false          # This is to make sure we do not keep trying to set the Optional Updates registry value.
 $oldPwd = $pwd                               # Grab location script was run from
@@ -89,63 +96,80 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.37"
-# New in this version:   Fix for 379596	Microsoft SQL Server ODBC and OLE DB Driver for SQL Server Multiple Vulnerabilities for April 2024 - OLE 18.7.2 x64 - also:  Disable complete automation of SMB1 feature removal
+$Version = "0.38.38"
+# New in this version:   Fixing Automated / ReRun registry check logic stuff, added -NoAuto param to get rid of reg entries!
 $VersionInfo = "v$($Version) - Last modified: 5/3/2024"
 
 #### VERSION ###################################################
 
-# Common URL Variables for updates:
-$AgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.67 Safari/537.36"
-$DCUUrl = "https://dl.dell.com/FOLDER10791703M/1/Dell-Command-Update-Application_44TH5_WIN_5.1.0_A00.EXE"
-$DCUFilename = ($DCUUrl -split "/")[-1]
-$DCUVersion = (($DCUUrl -split "_WIN_")[1] -split "_A0")[0]
-
-# Self-elevate the script if required
-if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
-    Write-Output "`n[!] Not running under Admin context - Re-launching as admin!"
-    if ([int](Get-CimInstance -Class Win32_OperatingSystem | Select-Object -ExpandProperty BuildNumber) -ge 6000) {
-        $Command = "-File `"" + $MyInvocation.MyCommand.Path + "`" " + $MyInvocation.UnboundArguments
-        Start-Process -FilePath PowerShell.exe -Verb RunAs -ArgumentList $Command
-        Set-Location $pwd
-        Exit
-  }
-}
-
-# Change title of window
-$host.ui.RawUI.WindowTitle = "$($env:COMPUTERNAME) - Install-SecurityFixes.ps1"
-
-# Try to use TLS 1.2, this fixes many SSL problems with downloading files, before TLS 1.2 is not secure any longer.
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-
-if ($Automated) {
-  Write-Host "`n[!] Running in automated mode!`n"   -ForegroundColor Red
-  Set-RegistryEntry -Name "Automated" -Value $true
-}
-
-Write-Host "[.] Check if $env:tmp is writable .." -NoNewLine
-$TestFile = Join-Path $env:tmp ([System.Guid]::NewGuid().ToString())
-$TmpPath = "C:\ProgramData\SecAud"  # Backup temporary folder, this should be world writeable on any Windows system if it doesn't exist..
-try {
-    Set-Content -Path $TestFile -Value "Test" -ErrorAction Stop
-    Write-Host "Good."
-    #Write-Verbose "$env:tmp is writable."
-    $TmpPath = $env:tmp
-} catch {
-    Write-Warning "$env:tmp is not writable. Using $TmpPath instead."
-    if (-not (Test-Path $TmpPath)) {
-        try {
-            New-Item -ItemType Directory -Path $TmpPath -Force | Out-Null
-            Write-Host "Failed! Created $TmpPath folder."
-        } catch {
-            throw "Failed to create $TmpPath folder. Error: $($_.Exception.Message)"
-        }
-    }
-} finally {
-    Remove-Item $TestFile -ErrorAction SilentlyContinue
-}
 
 ####################################################### FUNCTIONS #######################################################
+
+function Init-Script {
+  param (
+    [boolean]$Automated = $false
+  )
+  $AutomatedReg = [bool](Get-RegistryEntry -Name "Automated")
+  $ReRunReg = [bool](Get-RegistryEntry -Name "ReRun")
+  Write-Host "[.] Automated (param) : $Automated"
+  Write-Host "[.] Automated (Reg key) : $AutomatedReg"
+  Write-Host "[.] ReRun (Reg key) : $ReRunReg"
+
+  if ($NoAuto) {
+    Write-Host "[!] -NoAuto detected!  Resetting Registry values for Automated and ReRun to false.." -ForegroundColor Green
+    Set-RegistryEntry -Name "Automated" -Value $false
+    Set-RegistryEntry -Name "ReRun" -Value $false
+    $AutomatedReg = $false
+    $ReRunReg = $false
+    $Automated = $false
+  }
+
+  if ($Automated -or (($AutomatedReg -eq $true) -and ($ReRunReg -eq $true))) {
+    Write-Host "`n[!] Running in automated mode!`n"   -ForegroundColor Red
+    Set-RegistryEntry -Name "Automated" -Value $true
+  }
+  Set-RegistryEntry -Name "ReRun" -Value $false
+
+  # Self-elevate the script if required
+  if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
+      Write-Output "`n[!] Not running under Admin context - Re-launching as admin!"
+      if ([int](Get-CimInstance -Class Win32_OperatingSystem | Select-Object -ExpandProperty BuildNumber) -ge 6000) {
+          $Command = "-File `"" + $MyInvocation.MyCommand.Path + "`" " + $MyInvocation.UnboundArguments
+          Set-RegistryEntry -Name "ReRun" -Value $true
+          Start-Process -FilePath PowerShell.exe -Verb RunAs -ArgumentList $Command
+          Set-Location $pwd
+          Exit
+    }
+  }
+
+  # Change title of window
+  $host.ui.RawUI.WindowTitle = "$($env:COMPUTERNAME) - Install-SecurityFixes.ps1"
+
+  # Try to use TLS 1.2, this fixes many SSL problems with downloading files, before TLS 1.2 is not secure any longer.
+  [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+  Write-Host "[.] Check if $env:tmp is writable .." -NoNewLine
+  $TestFile = Join-Path $env:tmp ([System.Guid]::NewGuid().ToString())
+  $TmpPath = "C:\ProgramData\SecAud"  # Backup temporary folder, this should be world writeable on any Windows system if it doesn't exist..
+  try {
+      Set-Content -Path $TestFile -Value "Test" -ErrorAction Stop
+      Write-Host "Good."
+      #Write-Verbose "$env:tmp is writable."
+      $TmpPath = $env:tmp
+  } catch {
+      Write-Warning "$env:tmp is not writable. Using $TmpPath instead."
+      if (-not (Test-Path $TmpPath)) {
+          try {
+              New-Item -ItemType Directory -Path $TmpPath -Force | Out-Null
+              Write-Host "Failed! Created $TmpPath folder."
+          } catch {
+              throw "Failed to create $TmpPath folder. Error: $($_.Exception.Message)"
+          }
+      }
+  } finally {
+      Remove-Item $TestFile -ErrorAction SilentlyContinue
+  }
+}
 
 function Print-YesNoHelp {
   Write-Host "[?] Legend: (Not case sensitive)"
@@ -161,7 +185,7 @@ function Get-YesNo {
          [string] $results)
   
   $done = 0
-  if ((-not $Automated) -and ([bool](Get-RegistryEntry -Name "Automated") -ne $true)) {    # Catch the global var or the registry entry
+  if (-not $Automated) {    # Catch the global var or the registry entry
     while ($done -eq 0) {
       $yesno = Read-Host  "`n[?] $text [y/N/a/s/?] "
       if ($yesno.ToUpper()[0] -eq 'Y') { return $true } 
@@ -435,6 +459,7 @@ Function Update-Script {
     Stop-Transcript
     $Vars = Get-Vars
     Write-Verbose "Re-running script with Vars: '$Vars'"
+    Set-RegistryEntry -Name "ReRun" -Value $true
     . "$($pwd)\Install-SecurityFixes.ps1" $Vars  # Dot source and run from here once, then exit.
     Stop-Transcript
     exit
@@ -613,6 +638,15 @@ function Get-WuaHistory {
     Select-Object Result, Date, Title, SupportUrl, Product, UpdateId, RevisionNumber
 }
 
+function Replace-PercentVars {
+  param(
+    $CheckFile
+  )
+  $CheckFile = $CheckFile.trim().replace("%ProgramFiles%",(Resolve-Path -Path "$env:ProgramFiles").Path).replace("%ProgramFiles(x86)%",(Resolve-Path -Path "${env:ProgramFiles(x86)}").Path)
+  $CheckFile = $CheckFile.replace("%windir%",(Resolve-Path -Path "${env:WinDir}").Path).trim()
+  $CheckFile.replace("%SYSTEMROOT%",(Resolve-Path -Path "${env:SYSTEMROOT}").Path).trim()
+  return $CheckFile
+}
 
 function Check-ResultsForFiles {
     param(
@@ -687,8 +721,7 @@ function Check-ResultsForFiles {
     }
     Write-Verbose "CheckFile : $CheckFile"
     if ($CheckFile) {
-      $CheckFile = $CheckFile.trim().replace("%ProgramFiles%",(Resolve-Path -Path "$env:ProgramFiles").Path).replace("%ProgramFiles(x86)%",(Resolve-Path -Path "${env:ProgramFiles(x86)}").Path)
-      $CheckFile = $CheckFile.replace("%windir%",(Resolve-Path -Path "${env:WinDir}").Path).trim()
+      $CheckFile = Replace-PercentVars $CheckFile     
       $CheckFiles += $CheckFile
     } else {
       Write-Host "[!] CheckFile empty!!"
@@ -727,8 +760,7 @@ function Check-ResultsForFile {  # 03-28-2024
     }
   }
   Write-Verbose "CheckFile : $CheckFile"
-  $CheckFile = $CheckFile.trim().replace("%ProgramFiles%",(Resolve-Path -Path "$env:ProgramFiles").Path).replace("%ProgramFiles(x86)%",(Resolve-Path -Path "${env:ProgramFiles(x86)}").Path)
-  $CheckFile = $CheckFile.replace("%windir%",(Resolve-Path -Path "${env:WinDir}").Path).trim()
+  $CheckFile = Replace-PercentVars $CheckFile  
   return $CheckFile
 }
 
@@ -836,7 +868,7 @@ function Pick-File {    # Show a list of files with a number to the left of each
     $i += 1
   }
 
-  if ((-not $Automated) -and ([bool](Get-RegistryEntry -Name "Automated") -ne $true) -and ($i -gt 1)) {
+  if ((-not $Automated) -and ($i -gt 1)) {
     Write-Host "[$i] EXIT" -ForegroundColor Blue
     $Selection = Read-Host "Select file to import, [Enter=0] ?"
     if ($Selection -eq $i) { Write-Host "[-] Exiting!" -ForegroundColor Gray; exit }
@@ -1702,6 +1734,8 @@ $RemediationValues = @{ "Excel" = "Excel.exe"; "Graph" = "Graph.exe"; "Access" =
 ################################################################################################################## MAIN ############################################################################################################
 ################################################################################################################## MAIN ############################################################################################################
 
+Init-Script -Automated $Automated
+
 $hostname = $env:COMPUTERNAME
 $datetime = Get-Date -Format "yyyy-MM-dd HH:mm:ss K"
 $datetimedateonly = Get-Date -Format "yyyy-MM-dd"
@@ -1729,7 +1763,10 @@ if (([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDat
 
 # Check for newer version of script before anything..
 Update-Script  # CHECKS FOR SCRIPT UPDATES, UPDATES AND RERUNS IF POSSIBLE
-if (Update-QIDLists) { . "$($QIDsListFile)" }
+if (Update-QIDLists) {         
+  Set-RegistryEntry -Name "ReRun" -Value $true
+ . "$($QIDsListFile)" 
+ }
 
 # Lets check the Config first for $ServerName, as that is our default..
 if ($ServerName) {
@@ -2983,14 +3020,43 @@ foreach ($CurrentQID in $QIDs) {
           # x86 installer: https://go.microsoft.com/fwlink/?linkid=2266858  https://download.microsoft.com/download/2/6/1/2613c841-cf12-4ba3-b0f8-50dcc195faa4/en-US/18.7.2.0/x86/msoledbsql.msi
           # x64 installer: https://go.microsoft.com/fwlink/?linkid=2266757  https://download.microsoft.com/download/2/6/1/2613c841-cf12-4ba3-b0f8-50dcc195faa4/en-US/18.7.2.0/x64/msoledbsql.msi
 
-          if ($Results -like "*oledbsql*" -and $Results -like "*19*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2248728"; $LicenseTerms="IACCEPTMSOLEDBSQLLICENSETERMS=YES"; $OLEODBC="19.3.2 OLE" } else { #19.3.2 OLE
-            if ($Results -like "*oledbsql*" -and $Results -like "*18*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2266757"; $LicenseTerms="IACCEPTMSOLEDBSQLLICENSETERMS=YES"; $OLEODBC="18.7.2 OLE" } else { #18.7.2 OLE
+          if ($Results -like "*oledbsql*" -and $Results -like "*19*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2248728"; $LicenseTerms="IACCEPTMSOLEDBSQLLICENSETERMS=YES"; $OLEODBC="19.3.2 OLE"; $ProductCheck = "Microsoft OLE DB Driver" } else { #19.3.2 OLE
+            if ($Results -like "*oledbsql*" -and $Results -like "*18*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2266757"; $LicenseTerms="IACCEPTMSOLEDBSQLLICENSETERMS=YES"; $OLEODBC="18.7.2 OLE"; $ProductCheck = "Microsoft ODBC DB Driver"  } else { #18.7.2 OLE
               if ($Results -like "*odbcsql*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2266640"; $LicenseTerms="IACCEPTMSODBCDBSQLLICENSETERMS=YES"; $OLEODBC="18.3.3.1 ODBC" } else { #18.3.3.1 ODBC
                 $OLEODBCUrl="NOPE"
               }
             }
           }
-          $tmp=$env:temp
+
+          $ResultsVersion = Check-ResultsForVersion -Results $Results  # split everything after space, [version] cannot have a space in it.. Also should work for multiple versions, we will just check the first result.
+          Write-Verbose "ResultsVersion : $ResultsVersion"
+          $CheckFile = Check-ResultsForFile -Results $Results # Get SINGLE EXE/DLL FileNames to check, from $Results  (Changed from multiple 5/2/24)
+          Write-Verbose "CheckFile: $CheckFile"
+          if (Test-Path $CheckFile) {
+            $CheckFileVersion = Get-FileVersion $CheckFile
+            Write-Verbose "Get-FileVersion results: $CheckFileVersion"
+            if ($CheckFileVersion) {
+              Write-Verbose "EXE/DLL version found : $CheckFile - $CheckFileVersion .. checking against -- $ResultsVersion --"
+              if ([version]$CheckFileVersion -le [version]$ResultsVersion) {
+                Write-Host "[!] Vulnerable version of $CheckFile found : $CheckFileVersion <= $ResultsVersion - Update missing: $ResultsMissing" -ForegroundColor Red
+                $Products = Get-Products $ProductCheck
+                if ($Products) {
+                  foreach ($Product in $Products) {
+                    Remove-Software -Products $Products  -Results $Results
+                  }
+                }
+          
+              } else {
+                Write-Host "[+] EXE/DLL patched version found : $CheckFileVersion > $ResultsVersion - already patched." -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..
+              }
+            } else {
+              Write-Host "[-] EXE/DLL Version not found, for $CheckFile .." -ForegroundColor Yellow
+            }
+          } else {
+            Write-Host "[!] EXE/DLL no longer found: $CheckFile - likely its already been updated. Let's check.."
+          }
+
+
           if ($OLEODBCUrl -eq 'NOPE') {
             Write-Host "[!] Something went wrong.. Results could not be parsed for oledbsql or odbcsql !!"
             Write-Host "Results = [ $Results ]"
@@ -3021,10 +3087,10 @@ foreach ($CurrentQID in $QIDs) {
           $SMB1ServerStatus = (Get-SmbServerConfiguration | Format-List EnableSMB1Protocol)
           ($SMB1ServerStatus | Out-String) -Replace("`n","")
           Write-Verbose "[.] Checking Registry for MME SMB1Auditing :"
-          if (Get-RegistryEntry -Name SMB1Auditing -ne 1) {  # If our registry key is not set, turn on auditing for a month to see if its in use and dont do anything else yet (but give the option to if they want)
+          if (Get-RegistryEntry -Name "SMB1Auditing" -ne 1) {  # If our registry key is not set, turn on auditing for a month to see if its in use and dont do anything else yet (but give the option to if they want)
             Write-Host "[+] It appears we have not checked for SMB1 access here. Setting registry setting, enabling auditing for a month." -ForegroundColor Red
             (Set-SmbServerConfiguration -AuditSmb1Access $True -Force | Out-String) -Replace ("`n","")
-            Set-RegistryEntry -Name SMB1Auditing 1
+            Set-RegistryEntry -Name "SMB1Auditing" 1
             Write-Host "[.] However, we will give you a chance to disable it now, if you prefer:" -ForegroundColor Yellow
           } else {  # If registry key IS set, we ran this last month or more, lets check logs for event 3000 and report
             # Would be really nice to know the last run date here also, for how many days back to check for these events, we'll just do 30 days for now
@@ -3628,7 +3694,7 @@ foreach ($CurrentQID in $QIDs) {
                   Write-Host "[!] Vulnerable version of $CheckEXE found : $CheckEXEVersion <= $ResultsVersion - Update missing: $ResultsMissing" -ForegroundColor Red
                   if ($CheckOptionalUpdates -and -not $AlreadySetOptionalUpdates) {
                     Write-Host "[!] It is possible that Optional Windows updates are disabled, checking.." -ForegroundColor Red
-                    Write-Verbose "NOTE: Othis only applies to Windows 10, version 2004 (May 2020 Update) and later:"
+                    Write-Verbose "NOTE: This only applies to Windows 10, version 2004 (May 2020 Update) and later:"
                     $registryPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
                     $valueName = "AllowOptionalContent"
 
@@ -3705,6 +3771,7 @@ Set-Location $oldpwd
 #Remove-Item -Path "$tmp" -Recurse -Force -ErrorAction SilentlyContinue
 
 Set-RegistryEntry -Name "Automated" -Value $false
+Set-RegistryEntry -Name "ReRun" -Value $false
 
 Stop-Transcript
 if (!($Automated)) {
