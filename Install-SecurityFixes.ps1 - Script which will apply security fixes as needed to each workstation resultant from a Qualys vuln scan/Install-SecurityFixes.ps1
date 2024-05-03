@@ -98,7 +98,7 @@ try {
 
 # No comments after the version number on the next line- Will screw up updates!
 $Version = "0.38.39"
-# New in this version:   More fixes to 378931 OLE/ODBC
+# New in this version:   More testing+fixes to 378931 OLE/ODBC
 $VersionInfo = "v$($Version) - Last modified: 5/3/2024"
 
 #### VERSION ###################################################
@@ -3078,10 +3078,10 @@ foreach ($CurrentQID in $QIDs) {
               Write-Host "[.] Downloading required VC++ Library files: VC_redist.x64.exe and VC_redist.x64.exe" 
               wget "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "$($tmp)\vc_redist.x64.exe"
               wget "https://aka.ms/vs/17/release/vc_redist.x86.exe" -OutFile "$($tmp)\vc_redist.x86.exe"
-              Write-Host "[.] Running: VC_redist.x64.exe /silent /install /norestart"    # STILL RESTARTING , THIS POS.. 
-              . "$($tmp)\VC_redist.x64.exe" "/silent /install /norestart"  #this might not be working, didn't seem to work for me.. 
-              Write-Host "[.] Running: VC_redist.x86.exe /silent /install /norestart"
-              . "$($tmp)\VC_redist.x86.exe" "/silent /install /norestart" 
+              Write-Host "[.] Running: VC_redist.x64.exe /silent /norestart"    # STILL RESTARTING , THIS POS.. 
+              . "$($tmp)\VC_redist.x64.exe" "/silent /norestart" 
+              Write-Host "[.] Running: VC_redist.x86.exe /silent /norestart"
+              . "$($tmp)\VC_redist.x86.exe" "/silent /norestart" 
 
               Write-Host "[.] Downloading msoleodbcsql.msi from $OLEODBCUrl for $OLEODBC.."
               wget $OLEODBCUrl -OutFile "$($tmp)\msoleodbcsql.msi"
