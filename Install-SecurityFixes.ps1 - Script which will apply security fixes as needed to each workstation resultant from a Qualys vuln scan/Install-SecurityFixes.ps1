@@ -183,7 +183,8 @@ function Print-YesNoHelp {
 
 function Get-YesNo {
   param ([string] $text,
-         [string] $results)
+         [string] $results,
+         [string] $QID)
   
   $done = 0
   if (-not $Automated) {    # Catch the global var or the registry entry
@@ -205,7 +206,7 @@ function Get-YesNo {
     foreach ($result in $Results) {
       Write-Verbose "$($result)"
     }
-    Write-Host "[+] AUTOMATED: Choosing yes for $text .."
+    Write-Host "`n[+] AUTOMATED: $QID - Choosing yes for $text .."
     return $true
   }
 }
@@ -2816,12 +2817,13 @@ foreach ($CurrentQID in $QIDs) {
           }  
         }
       }
-      { 378941,378755 -contains $_ } {
+      { $QIDsMSTeams -contains $_ } {
         if (Get-YesNo "$_ Install latest MS Teams ? ") {
           $TeamsURL=(IWR "https://teams.microsoft.com/desktopclient/installer/windows/x64").Content
           IWR $TeamsURL -OutFile "$($tmp)/teams.exe"
           . "$($tmp)/teams.exe"
         }
+        $QIDsMSTeams = 1
       }
 
 
@@ -3015,7 +3017,7 @@ foreach ($CurrentQID in $QIDs) {
           }
         }
       }
-      { 378931,379596 -contains $_ } {
+      { $MicrosoftODBCOLEDB -contains $_ } {
         if (Get-YesNo "$_ Fix Microsoft SQL Server, ODBC and OLE DB Driver for SQL Server Multiple Vulnerabilities ? " -Results $Results) { 
           # %SYSTEMROOT%\System32\msoledbsql19.dll  Version is  19.3.1.0  %SYSTEMROOT%\SysWOW64\msoledbsql19.dll  Version is  19.3.1.0#
           # %SYSTEMROOT%\System32\msodbcsql18.dll  Version is  18.3.1.1  %SYSTEMROOT%\SysWOW64\msodbcsql18.dll  Version is  18.3.1.1#
@@ -3112,6 +3114,7 @@ foreach ($CurrentQID in $QIDs) {
             }
           }
         }
+        $MicrosoftODBCOLEDB = 1
       }      
       379223 { # Windows SMB Version 1 (SMBv1) Detected -- https://learn.microsoft.com/en-us/windows-server/storage/file-server/troubleshoot/detect-enable-and-disable-smbv1-v2-v3?tabs=server
         if (Get-YesNo "$_ Windows SMB Version 1 (SMBv1) Detected - Disable " -Results $Results) { 
