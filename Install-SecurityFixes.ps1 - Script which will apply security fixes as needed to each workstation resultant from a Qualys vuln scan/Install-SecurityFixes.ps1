@@ -3076,17 +3076,17 @@ foreach ($CurrentQID in $QIDs) {
             Write-Host "[.] Downloading required VC++ Library files: VC_redist.x64.exe and VC_redist.x64.exe" 
             wget "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "$($tmp)\vc_redist.x64.exe"
             wget "https://aka.ms/vs/17/release/vc_redist.x86.exe" -OutFile "$($tmp)\vc_redist.x86.exe"
-            Write-Host "[.] Running: VC_redist.x64.exe /q /norestart"
-            . "$($tmp)\VC_redist.x64.exe" "/q /norestart"  #this might not be working, didn't seem to work for me.. 
-            Write-Host "[.] Running: VC_redist.x86.exe /q /norestart"
-            . "$($tmp)\VC_redist.x86.exe" "/q /norestart" 
+            Write-Host "[.] Running: VC_redist.x64.exe /silent /install /norestart"    # STILL RESTARTING , THIS POS.. 
+            . "$($tmp)\VC_redist.x64.exe" "/silent /install /norestart"  #this might not be working, didn't seem to work for me.. 
+            Write-Host "[.] Running: VC_redist.x86.exe /silent /install /norestart"
+            . "$($tmp)\VC_redist.x86.exe" "/silent /install /norestart" 
 
             Write-Host "[.] Downloading msoleodbcsql.msi from $OLEODBCUrl for $OLEODBC.."
             wget $OLEODBCUrl -OutFile "$($tmp)\msoleodbcsql.msi"
             $params = '/quiet','/qn','/norestart',"$licenseterms"
-            Write-Host "[.] Running: msiexec, params:"
+            Write-Host "[.] Running: $($tmp)\msoleodbcsql.msi , params:"
             Write-Host @params 
-            cmd.exe /c "$($tmp)\msoleodbcsql.msi" @params 
+            . cmd.exe /c "$($tmp)\msoleodbcsql.msi" @params 
             Write-Host "[.] Waiting $SoftwareInstallWait seconds for installation to complete.."
             Start-Sleep $SoftwareInstallWait
             # Check for installation, 
