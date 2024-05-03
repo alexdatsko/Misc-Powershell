@@ -97,8 +97,8 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.39"
-# New in this version:   More testing+fixes to 378931 OLE/ODBC
+$Version = "0.38.40"
+# New in this version:   More testing+fixes to 378931 OLE/ODBC..
 $VersionInfo = "v$($Version) - Last modified: 5/3/2024"
 
 #### VERSION ###################################################
