@@ -97,8 +97,8 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.38"
-# New in this version:   Fixing Automated / ReRun registry check logic stuff, added -NoAuto param to get rid of reg entries!
+$Version = "0.38.39"
+# New in this version:   More fixes to 378931 OLE/ODBC
 $VersionInfo = "v$($Version) - Last modified: 5/3/2024"
 
 #### VERSION ###################################################
@@ -3046,10 +3046,11 @@ foreach ($CurrentQID in $QIDs) {
           }
 
           $RemovalAfter = $false
+          $AlreadyPatched = $false
           $ResultsVersion = Check-ResultsForVersion -Results $Results  # split everything after space, [version] cannot have a space in it.. Also should work for multiple versions, we will just check the first result.
           Write-Verbose "ResultsVersion : $ResultsVersion"
           $CheckFile = Check-ResultsForFile -Results $Results # Get SINGLE EXE/DLL FileNames to check, from $Results  (Changed from multiple 5/2/24)
-          Write-Verbose "CheckFile: $CheckFile"
+          Write-Host "[.] Checking File: $CheckFile"
           if (Test-Path $CheckFile) {
             $CheckFileVersion = Get-FileVersion $CheckFile
             Write-Verbose "Get-FileVersion results: $CheckFileVersion"
@@ -3059,7 +3060,8 @@ foreach ($CurrentQID in $QIDs) {
                 Write-Host "[!] Vulnerable version of $CheckFile found : $CheckFileVersion <= $ResultsVersion - Update missing: $ResultsMissing" -ForegroundColor Red
                 $RemovalAfter = $true
               } else {
-                Write-Host "[+] EXE/DLL patched version found : $CheckFileVersion > $ResultsVersion - already patched." -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..
+                Write-Host "[+] EXE/DLL patched version found : $CheckFileVersion > $ResultsVersion - already patched." -ForegroundColor Green  
+                $AlreadyPatched = $true
               }
             } else {
               Write-Host "[-] EXE/DLL Version not found, for $CheckFile .." -ForegroundColor Yellow
@@ -3068,43 +3070,46 @@ foreach ($CurrentQID in $QIDs) {
             Write-Host "[!] EXE/DLL no longer found: $CheckFile - likely its already been updated. Let's check.."
           }
 
-
           if ($OLEODBCUrl -eq 'NOPE') {
             Write-Host "[!] Something went wrong.. Results could not be parsed for oledbsql or odbcsql !!"
             Write-Host "Results = [ $Results ]"
           } else {
-            Write-Host "[.] Downloading required VC++ Library files: VC_redist.x64.exe and VC_redist.x64.exe" 
-            wget "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "$($tmp)\vc_redist.x64.exe"
-            wget "https://aka.ms/vs/17/release/vc_redist.x86.exe" -OutFile "$($tmp)\vc_redist.x86.exe"
-            Write-Host "[.] Running: VC_redist.x64.exe /silent /install /norestart"    # STILL RESTARTING , THIS POS.. 
-            . "$($tmp)\VC_redist.x64.exe" "/silent /install /norestart"  #this might not be working, didn't seem to work for me.. 
-            Write-Host "[.] Running: VC_redist.x86.exe /silent /install /norestart"
-            . "$($tmp)\VC_redist.x86.exe" "/silent /install /norestart" 
+            if (-not $AlreadyPatched) {
+              Write-Host "[.] Downloading required VC++ Library files: VC_redist.x64.exe and VC_redist.x64.exe" 
+              wget "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "$($tmp)\vc_redist.x64.exe"
+              wget "https://aka.ms/vs/17/release/vc_redist.x86.exe" -OutFile "$($tmp)\vc_redist.x86.exe"
+              Write-Host "[.] Running: VC_redist.x64.exe /silent /install /norestart"    # STILL RESTARTING , THIS POS.. 
+              . "$($tmp)\VC_redist.x64.exe" "/silent /install /norestart"  #this might not be working, didn't seem to work for me.. 
+              Write-Host "[.] Running: VC_redist.x86.exe /silent /install /norestart"
+              . "$($tmp)\VC_redist.x86.exe" "/silent /install /norestart" 
 
-            Write-Host "[.] Downloading msoleodbcsql.msi from $OLEODBCUrl for $OLEODBC.."
-            wget $OLEODBCUrl -OutFile "$($tmp)\msoleodbcsql.msi"
-            $params = '/quiet','/qn','/norestart',"$licenseterms"
-            Write-Host "[.] Running: $($tmp)\msoleodbcsql.msi , params:"
-            Write-Host @params 
-            . cmd.exe /c "$($tmp)\msoleodbcsql.msi" @params 
-            Write-Host "[.] Waiting $SoftwareInstallWait seconds for installation to complete.."
-            Start-Sleep $SoftwareInstallWait
-            # Check for installation, 
-            # If not, check for reason in get-winevent 
-            if ($RemovalAfter) {
-              $Products = Get-Products $ProductCheck
-              if ($Products) {
-                foreach ($Product in $Products) {
-                  if ($Product.Version -lt [version]($OLEODBC -split " ")[0]) {
-                    Write-Host "[!] Removal of old version needed: $($Product.Version)" -ForegroundColor Red
-                    Remove-Software -Products $Product
-                    Write-Host "[!] Removal complete."
+              Write-Host "[.] Downloading msoleodbcsql.msi from $OLEODBCUrl for $OLEODBC.."
+              wget $OLEODBCUrl -OutFile "$($tmp)\msoleodbcsql.msi"
+              $params = '/quiet','/qn','/norestart',"$licenseterms"
+              Write-Host "[.] Running: $($tmp)\msoleodbcsql.msi , params:"
+              Write-Host @params 
+              . cmd.exe /c "$($tmp)\msoleodbcsql.msi" @params 
+              Write-Host "[.] Waiting $SoftwareInstallWait seconds for installation to complete.."
+              Start-Sleep $SoftwareInstallWait
+              # Check for installation, 
+              # If not, check for reason in get-winevent 
+              if ($RemovalAfter) {
+                $Products = Get-Products $ProductCheck
+                if ($Products) {
+                  foreach ($Product in $Products) {
+                    if ($Product.Version -lt [version]($OLEODBC -split " ")[0]) {
+                      Write-Host "[!] Removal of old version needed: $($Product.Version)" -ForegroundColor Red
+                      Remove-Software -Products $Product
+                      Write-Host "[!] Removal complete."
+                    }
                   }
                 }
               }
+              Write-Host "[.] Please make sure this is installed properly, and old, vulnerable versions are removed, opening appwiz.cpl:"
+              . appwiz.cpl
+            } else {
+              Write-Verbose "Already patched.. moving on."
             }
-            Write-Host "[.] Please make sure this is installed properly, and old, vulnerable versions are removed, opening appwiz.cpl:"
-            . appwiz.cpl
           }
         }
       }      
