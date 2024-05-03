@@ -54,6 +54,7 @@ $oldPwd = $pwd                               # Grab location script was run from
 $UpdateBrowserWait = 60                      # Default to 60 seconds for updating Chrome, Edge or Firefox with -Automated. Can be overwritten in Config, for slower systems.. 
 $UpdateNiniteWait = 60                       # How long to wait for the Ninite updater to finish and close
 $UpdateDellCommandWait = 60                  # How long to wait for Dell Command Update to re-install/update
+$SoftwareInstallWait = 60                    # How long to wait for generic software to finish installing
 $ConfigFile = "$oldpwd\_config.ps1"          # Configuration file 
 $QIDsListFile = "$oldpwd\QIDLists.ps1"       # QID List file 
 $tmp = "$($env:temp)\SecAud"                 # "temp" Temporary folder to save downloaded files to, this will be overwritten when checking config ..
@@ -642,9 +643,10 @@ function Replace-PercentVars {
   param(
     $CheckFile
   )
-  $CheckFile = $CheckFile.trim().replace("%ProgramFiles%",(Resolve-Path -Path "$env:ProgramFiles").Path).replace("%ProgramFiles(x86)%",(Resolve-Path -Path "${env:ProgramFiles(x86)}").Path)
+  $CheckFile = $CheckFile.replace("%ProgramFiles%",(Resolve-Path -Path "$env:ProgramFiles").Path).trim()
+  $CheckFile = $CheckFile.replace("%ProgramFiles(x86)%",(Resolve-Path -Path "${env:ProgramFiles(x86)}").Path).trim()
   $CheckFile = $CheckFile.replace("%windir%",(Resolve-Path -Path "${env:WinDir}").Path).trim()
-  $CheckFile.replace("%SYSTEMROOT%",(Resolve-Path -Path "${env:SYSTEMROOT}").Path).trim()
+  $CheckFile = $CheckFile.replace("%SYSTEMROOT%",(Resolve-Path -Path "${env:SYSTEMROOT}").Path).trim()
   return $CheckFile
 }
 
@@ -741,7 +743,9 @@ function Check-ResultsForFile {  # 03-28-2024
 
   # Errors 5/2/24:
   # $Results="KB5036892 is not installed  %windir%\system32\ntoskrnl.exe  Version is  10.0.19041.4239#""
-
+  
+  # Errors Multiples 5/3/24:
+  # KB5037036 or KB5037035 is not installed  %windir%\Microsoft.NET\Framework64\v4.0.30319\System.dll Version is 4.8.9220.0 %windir%\Microsoft.NET\Framework\v4.0.30319\System.dll Version is 4.8.9220.0#
 
   # Lets check the results for ' is' and replace the path stuff with actual values, as %vars% are not powershell friendly variables ..
   # There might be more variable expansion I can do, will add it here when needed
@@ -750,17 +754,20 @@ function Check-ResultsForFile {  # 03-28-2024
       $CheckFile = (($Results -split "is not installed")[1]).trim()
       if ($Results -clike "*Version is*") {
         $CheckFile = (($CheckFile -split "Version is")[0]).trim() # Remove rest of string..
+        Write-Verbose "split1: $CheckFile"
       }
     } else {
       $CheckFile = (($Results -split "Version is")[0]).trim()
+      write-Verbose "split2: $CheckFile"
     }
   } else {
     if ($Results -clike "*file version is*") {
       $CheckFile = (($Results -split "file version is")[0]).replace("#","").trim()
     }
   }
-  Write-Verbose "CheckFile : $CheckFile"
-  $CheckFile = Replace-PercentVars $CheckFile  
+  Write-Verbose "PreFinal Check-ResultsForFile : [ $CheckFile ]"
+  $CheckFile = Replace-PercentVars $CheckFile
+  Write-Verbose "Final Check-ResultsForFile : [ $CheckFile ]"
   return $CheckFile
 }
 
@@ -1087,6 +1094,16 @@ Function Check-Products {
     }
   }
   return $false
+}
+
+function Get-Products {
+  param (
+    [string]$ProductName
+  )
+  $ProductSearch = "*$($ProductName)*"
+  Write-Host "[.] Searching for $ProductSearch using Get-WmiObject Win_32Product .."  -ForegroundColor Yellow
+  $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like $ProductSearch})
+  return $Products
 }
 
 function Remove-RegistryItem {
@@ -1440,17 +1457,17 @@ function Backup-BitlockerKeys {
 }
 
 function Get-FileVersion {
-  param ([string]$FileName)
+  param ([string]$FileNameToTest)
 
   try {
-    if (Test-Path $Filename) {
-      $ThisVersion = (Get-Item $FileName -ErrorAction SilentlyContinue).VersionInfo.ProductVersion  # or FileVersion??
+    if (Test-Path -Path $FileNameToTest) {
+      $ThisVersion = (Get-Item $FileNameToTest -ErrorAction SilentlyContinue).VersionInfo.ProductVersion  # or FileVersion??
     } else {
-      Write-Verbose "! File $Filename not found !"
+      Write-Verbose "! File $FileNameToTest not found !"
       return $false
     }
   } catch {
-    Write-Verbose "! File $Filename not found, or unknown error checking.. !"
+    Write-Verbose "! File $FileNameToTest not found, or unknown error checking.. !"
     return $false
   }
   return $ThisVersion
@@ -3021,13 +3038,14 @@ foreach ($CurrentQID in $QIDs) {
           # x64 installer: https://go.microsoft.com/fwlink/?linkid=2266757  https://download.microsoft.com/download/2/6/1/2613c841-cf12-4ba3-b0f8-50dcc195faa4/en-US/18.7.2.0/x64/msoledbsql.msi
 
           if ($Results -like "*oledbsql*" -and $Results -like "*19*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2248728"; $LicenseTerms="IACCEPTMSOLEDBSQLLICENSETERMS=YES"; $OLEODBC="19.3.2 OLE"; $ProductCheck = "Microsoft OLE DB Driver" } else { #19.3.2 OLE
-            if ($Results -like "*oledbsql*" -and $Results -like "*18*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2266757"; $LicenseTerms="IACCEPTMSOLEDBSQLLICENSETERMS=YES"; $OLEODBC="18.7.2 OLE"; $ProductCheck = "Microsoft ODBC DB Driver"  } else { #18.7.2 OLE
-              if ($Results -like "*odbcsql*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2266640"; $LicenseTerms="IACCEPTMSODBCDBSQLLICENSETERMS=YES"; $OLEODBC="18.3.3.1 ODBC" } else { #18.3.3.1 ODBC
+            if ($Results -like "*oledbsql*" -and $Results -like "*18*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2266757"; $LicenseTerms="IACCEPTMSOLEDBSQLLICENSETERMS=YES"; $OLEODBC="18.7.2 OLE"; $ProductCheck = "Microsoft OLE DB Driver"  } else { #18.7.2 OLE
+              if ($Results -like "*odbcsql*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2266640"; $LicenseTerms="IACCEPTMSODBCDBSQLLICENSETERMS=YES"; $OLEODBC="18.3.3.1 ODBC"; $ProductCheck = "Microsoft ODBC DB Driver" } else { #18.3.3.1 ODBC
                 $OLEODBCUrl="NOPE"
               }
             }
           }
 
+          $RemovalAfter = $false
           $ResultsVersion = Check-ResultsForVersion -Results $Results  # split everything after space, [version] cannot have a space in it.. Also should work for multiple versions, we will just check the first result.
           Write-Verbose "ResultsVersion : $ResultsVersion"
           $CheckFile = Check-ResultsForFile -Results $Results # Get SINGLE EXE/DLL FileNames to check, from $Results  (Changed from multiple 5/2/24)
@@ -3039,13 +3057,7 @@ foreach ($CurrentQID in $QIDs) {
               Write-Verbose "EXE/DLL version found : $CheckFile - $CheckFileVersion .. checking against -- $ResultsVersion --"
               if ([version]$CheckFileVersion -le [version]$ResultsVersion) {
                 Write-Host "[!] Vulnerable version of $CheckFile found : $CheckFileVersion <= $ResultsVersion - Update missing: $ResultsMissing" -ForegroundColor Red
-                $Products = Get-Products $ProductCheck
-                if ($Products) {
-                  foreach ($Product in $Products) {
-                    Remove-Software -Products $Products  -Results $Results
-                  }
-                }
-          
+                $RemovalAfter = $true
               } else {
                 Write-Host "[+] EXE/DLL patched version found : $CheckFileVersion > $ResultsVersion - already patched." -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..
               }
@@ -3064,18 +3076,33 @@ foreach ($CurrentQID in $QIDs) {
             Write-Host "[.] Downloading required VC++ Library files: VC_redist.x64.exe and VC_redist.x64.exe" 
             wget "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "$($tmp)\vc_redist.x64.exe"
             wget "https://aka.ms/vs/17/release/vc_redist.x86.exe" -OutFile "$($tmp)\vc_redist.x86.exe"
-            Write-Host "[.] Running: VC_redist.x64.exe /s"
-            . "$($tmp)\VC_redist.x64.exe" "/s"  #this might not be working, didn't seem to work for me.. 
-            Write-Host "[.] Running: VC_redist.x86.exe /s" 
-            . "$($tmp)\VC_redist.x86.exe" "/s" 
+            Write-Host "[.] Running: VC_redist.x64.exe /q /norestart"
+            . "$($tmp)\VC_redist.x64.exe" "/q /norestart"  #this might not be working, didn't seem to work for me.. 
+            Write-Host "[.] Running: VC_redist.x86.exe /q /norestart"
+            . "$($tmp)\VC_redist.x86.exe" "/q /norestart" 
 
             Write-Host "[.] Downloading msoleodbcsql.msi from $OLEODBCUrl for $OLEODBC.."
             wget $OLEODBCUrl -OutFile "$($tmp)\msoleodbcsql.msi"
-            $params = '/i',"$($tmp)\msoleodbcsql.msi",'/quiet','/qn','/norestart',$licenseterms
+            $params = '/quiet','/qn','/norestart',"$licenseterms"
             Write-Host "[.] Running: msiexec, params:"
             Write-Host @params 
-            & "msiexec.exe" @params 
-
+            cmd.exe /c "$($tmp)\msoleodbcsql.msi" @params 
+            Write-Host "[.] Waiting $SoftwareInstallWait seconds for installation to complete.."
+            Start-Sleep $SoftwareInstallWait
+            # Check for installation, 
+            # If not, check for reason in get-winevent 
+            if ($RemovalAfter) {
+              $Products = Get-Products $ProductCheck
+              if ($Products) {
+                foreach ($Product in $Products) {
+                  if ($Product.Version -lt [version]($OLEODBC -split " ")[0]) {
+                    Write-Host "[!] Removal of old version needed: $($Product.Version)" -ForegroundColor Red
+                    Remove-Software -Products $Product
+                    Write-Host "[!] Removal complete."
+                  }
+                }
+              }
+            }
             Write-Host "[.] Please make sure this is installed properly, and old, vulnerable versions are removed, opening appwiz.cpl:"
             . appwiz.cpl
           }
@@ -3130,15 +3157,18 @@ foreach ($CurrentQID in $QIDs) {
           }
         }
       }
-      376709 {
+      110251 {
         # 110251 Microsoft Office Remote Code Execution Vulnerabilities (MS15-022) (Msores.dll) - ClickToRun office removal
         # %programfiles(x86)%\Common Files\Microsoft Shared\Office15\Msores.dll   Version is  15.0.4687.1000#
-        if (Get-YesNo "$_ Remove HP Support Assistant Multiple Security Vulnerabilities (HPSBGN03762)? " -Results $Results) { 
-          $Products = Get-Products ""
-          if ($Products) {
+        
+        # Click To Run Office version can be removed, usually causes this - this is unfinished
+
+        if (Get-YesNo "$_ Remove Microsoft Office Remote Code Execution Vulnerabilities (MS15-022) (Msores.dll) - ClickToRun office removal? " -Results $Results) { 
+          #$Products = Get-Products ""  
+          if ($Products -eq "yeahno") {
               Remove-Software -Products $Products  -Results $Results
           } else {
-            Write-Host "[!] Product not found: 'HP Support Assist*' !!`n" -ForegroundColor Red
+            Write-Host "[!] Product not found: '(MS Office click-to-run versions)' Please remove manually/update script !!`n" -ForegroundColor Red
           }  
         }       
       }	
@@ -3674,7 +3704,7 @@ foreach ($CurrentQID in $QIDs) {
       #   But - lets check that those patches are not installed.
       Default {
         if (($Results -like "*KB*" -or $Results -like "*GRAPH.EXE*") -and $Results -like "*is not installed*") {
-          if (Get-YesNo "$_ Check if KB is installed for $VulnDesc " -Results $Results) { 
+          if (Get-YesNo "(Default) $_ Check if KB is installed for $VulnDesc " -Results $Results) { 
             Write-Verbose "- Found $_ is related to a KB, contains 'KB' and 'is not installed'"
             # Lets check the file versioning stuff instead as it is a better source of truth if a patch is installed or not, thanks Microsoft
             $ResultsMissing = ($Results -split "is not installed")[0].trim()
@@ -3683,7 +3713,7 @@ foreach ($CurrentQID in $QIDs) {
             
             $ResultsVersion = Check-ResultsForVersion -Results $Results  # split everything after space, [version] cannot have a space in it.. Also should work for multiple versions, we will just check the first result.
             Write-Verbose "ResultsVersion : $ResultsVersion"
-            $CheckEXE = Check-ResultsForFile -Results $Results # Get SINGLE EXE/DLL FileNames to check, from $Results  (Changed from multiple 5/2/24)
+            $CheckEXE = ((Check-ResultsForFile -Results $Results) -Replace "`r","" -Replace "`n","") # Get SINGLE EXE/DLL FileNames to check, from $Results  (Changed from multiple 5/2/24), fixed line endings 5/3/24
             Write-Verbose "CheckEXE: $CheckEXE"
             if (Test-Path $CheckEXE) {
               $CheckEXEVersion = Get-FileVersion $CheckEXE
