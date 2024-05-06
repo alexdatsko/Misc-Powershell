@@ -113,7 +113,8 @@ function Init-Script {
   $ReRunReg = [bool](Get-RegistryEntry -Name "ReRun")
   Write-Host "[.] Automated (param) : $Automated"
   Write-Host "[.] ReRun (Reg key) : $ReRunReg"
-
+  if ($ReRunReg -eq $true) { $Automated = $true ; $ReRunReg = $false ; Set-RegistryEntry -Name "ReRun" -Value $false  }
+  
   if ($NoAuto) {
     Write-Host "[!] -NoAuto detected!  Resetting Registry values for Automated and ReRun to false.." -ForegroundColor Green
     Set-RegistryEntry -Name "ReRun" -Value $false
@@ -122,7 +123,7 @@ function Init-Script {
     $Automated = $false
   }
 
-  if ($Automated -or ($ReRunReg -eq $true)) {
+  if ($Automated) {
     Write-Host "`n[!] Running in automated mode!`n"   -ForegroundColor Red
   }
   Set-RegistryEntry -Name "ReRun" -Value $false  # Set this to false each time launch occurs, we only set to $true if the script launches again
@@ -457,7 +458,9 @@ Function Update-Script {
     Stop-Transcript
     $Vars = Get-Vars
     Write-Verbose "Re-running script with Vars: '$Vars'"
-    Set-RegistryEntry -Name "ReRun" -Value $true
+    if ($Automated) {
+      Set-RegistryEntry -Name "ReRun" -Value $true
+    }
     . "$($pwd)\Install-SecurityFixes.ps1" $Vars  # Dot source and run from here once, then exit.
     Stop-Transcript
     exit
@@ -476,6 +479,9 @@ Function Update-QIDLists {
     Write-Host "[+] Updates found, reloading QIDLists.ps1 .."
     return $true
     #Read-QIDLists  # Doesn't work in this scope, do it below in global scope
+    if ($Automated) {
+      Set-RegistryEntry -Name "ReRun" -Value $true
+    }
   } else {
     Write-Host "[-] No update found for $($QIDsVersion)."
     return $false
@@ -1776,9 +1782,8 @@ if (([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDat
 . "$($QIDsListFile)"
 
 # Check for newer version of script before anything..
-Update-Script  # CHECKS FOR SCRIPT UPDATES, UPDATES AND RERUNS IF POSSIBLE
+Update-Script  # CHECKS FOR SCRIPT UPDATES, UPDATES AND RERUNS IF NECESSARY
 if (Update-QIDLists) {         
-  Set-RegistryEntry -Name "ReRun" -Value $true
  . "$($QIDsListFile)" 
  }
 
