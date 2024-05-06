@@ -37,7 +37,7 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.41"
+$Version = "0.38.40"
 # New in this version:   Fixes for -Automated / rerun reg key stuff..
 $VersionInfo = "v$($Version) - Last modified: 5/6/2024"
 
@@ -1754,8 +1754,14 @@ $RemediationValues = @{ "Excel" = "Excel.exe"; "Graph" = "Graph.exe"; "Access" =
 ################################################################################################################## MAIN ############################################################################################################
 ################################################################################################################## MAIN ############################################################################################################
 
+    Write-Verbose "1Automated: $Automated"
+    Write-Verbose "1global:Automated: $global:Automated"
+
 #$Automated = $global:Automated  # This shouldn't change anything
 Init-Script -Automated $Automated
+
+    Write-Verbose "2Automated: $Automated"
+    Write-Verbose "2global:Automated: $global:Automated"
 
 $hostname = $env:COMPUTERNAME
 $datetime = Get-Date -Format "yyyy-MM-dd HH:mm:ss K"
@@ -1778,15 +1784,15 @@ if (([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDat
   }
 }
 
-    Write-Verbose "Automated: $Automated"
-    Write-Verbose "global:Automated: $global:Automated"
+    Write-Verbose "3Automated: $Automated"
+    Write-Verbose "3global:Automated: $global:Automated"
 
 # These variables should be referenced globally:
 . "$($ConfigFile)"
 . "$($QIDsListFile)"
 
-    Write-Verbose "Automated: $Automated"
-    Write-Verbose "global:Automated: $global:Automated"
+    Write-Verbose "4Automated: $Automated"
+    Write-Verbose "4global:Automated: $global:Automated"
 
 # Check for newer version of script before anything..
 Update-Script  # CHECKS FOR SCRIPT UPDATES, UPDATES AND RERUNS IF NECESSARY
@@ -1794,8 +1800,8 @@ if (Update-QIDLists) {
  . "$($QIDsListFile)" 
  }
 
-    Write-Verbose "Automated: $Automated"
-    Write-Verbose "global:Automated: $global:Automated"
+    Write-Verbose "5Automated: $Automated"
+    Write-Verbose "5global:Automated: $global:Automated"
 
 # Lets check the Config first for $ServerName, as that is our default..
 if ($ServerName) {
