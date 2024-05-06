@@ -8,6 +8,8 @@ param (
   [switch] $Help                   # Allow -Help to display help for parameters
 )
 
+write-host "0global:Automated $global:Automated"
+
 $AllHelp = "########################################################
 # Install-SecurityFixes.ps1
 # Alex Datsko - alex.datsko@mmeconsulting.com
@@ -37,7 +39,7 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.40"
+$Version = "0.38.41"
 # New in this version:   Fixes for -Automated / rerun reg key stuff..
 $VersionInfo = "v$($Version) - Last modified: 5/6/2024"
 
@@ -121,7 +123,6 @@ function Init-Script {
   
   if ($Automated) {
     Write-Host "`n[!] Running in automated mode!`n"   -ForegroundColor Red
-    $global:Automated = $true
   }
   
   # Self-elevate the script if required
@@ -459,6 +460,7 @@ Function Update-Script {
     $Vars = Get-Vars
     Write-Verbose "Re-running script with Vars: '$Vars'"
     if ($global:Automated) {
+      Write-Verbose "Script was run as automated, setting ReRun reg entry to true."
       Set-RegistryEntry -Name "ReRun" -Value $true
     }
     . "$($pwd)\Install-SecurityFixes.ps1" $Vars  # Dot source and run from here once, then exit.
