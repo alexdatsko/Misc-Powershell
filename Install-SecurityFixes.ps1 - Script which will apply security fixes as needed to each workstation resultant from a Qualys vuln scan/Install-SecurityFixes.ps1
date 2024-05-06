@@ -97,9 +97,9 @@ try {
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.40"
-# New in this version:   More testing+fixes to 378931 OLE/ODBC..
-$VersionInfo = "v$($Version) - Last modified: 5/3/2024"
+$Version = "0.38.41"
+# New in this version:   Fixes for -Automated / rerun reg key stuff..
+$VersionInfo = "v$($Version) - Last modified: 5/6/2024"
 
 #### VERSION ###################################################
 
@@ -110,26 +110,22 @@ function Init-Script {
   param (
     [boolean]$Automated = $false
   )
-  $AutomatedReg = [bool](Get-RegistryEntry -Name "Automated")
   $ReRunReg = [bool](Get-RegistryEntry -Name "ReRun")
   Write-Host "[.] Automated (param) : $Automated"
-  Write-Host "[.] Automated (Reg key) : $AutomatedReg"
   Write-Host "[.] ReRun (Reg key) : $ReRunReg"
 
   if ($NoAuto) {
     Write-Host "[!] -NoAuto detected!  Resetting Registry values for Automated and ReRun to false.." -ForegroundColor Green
-    Set-RegistryEntry -Name "Automated" -Value $false
     Set-RegistryEntry -Name "ReRun" -Value $false
     $AutomatedReg = $false
     $ReRunReg = $false
     $Automated = $false
   }
 
-  if ($Automated -or (($AutomatedReg -eq $true) -and ($ReRunReg -eq $true))) {
+  if ($Automated -or ($ReRunReg -eq $true)) {
     Write-Host "`n[!] Running in automated mode!`n"   -ForegroundColor Red
-    Set-RegistryEntry -Name "Automated" -Value $true
   }
-  Set-RegistryEntry -Name "ReRun" -Value $false
+  Set-RegistryEntry -Name "ReRun" -Value $false  # Set this to false each time launch occurs, we only set to $true if the script launches again
 
   # Self-elevate the script if required
   if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
@@ -206,7 +202,7 @@ function Get-YesNo {
     foreach ($result in $Results) {
       Write-Verbose "$($result)"
     }
-    Write-Host "`n[+] AUTOMATED: $QID - Choosing yes for $text .."
+    Write-Host "[+] AUTOMATED: $QID - Choosing yes for $text .."
     return $true
   }
 }
@@ -3808,7 +3804,6 @@ Set-Location $oldpwd
 #Write-Host "[.] Deleting all temporary files from $tmp .."
 #Remove-Item -Path "$tmp" -Recurse -Force -ErrorAction SilentlyContinue
 
-Set-RegistryEntry -Name "Automated" -Value $false
 Set-RegistryEntry -Name "ReRun" -Value $false
 
 Stop-Transcript
