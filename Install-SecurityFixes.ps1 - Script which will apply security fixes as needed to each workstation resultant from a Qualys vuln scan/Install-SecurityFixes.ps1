@@ -106,31 +106,32 @@ function Init-Script {
   param (
     [boolean]$Automated = $false
   )
-  $ReRunReg = [bool](Get-RegistryEntry -Name "ReRun")
+  if ($NoAuto) {
+    Write-Host "[!] -NoAuto detected!  Resetting Registry values for Automated and ReRun to false.." -ForegroundColor Green
+    Set-RegistryEntry -Name "ReRun" -Value $false
+    $ReRunReg = $false
+    $Automated = $false
+    $global:Automated = $false
+  }
+
+  $ReRunReg = Get-RegistryEntry -Name "ReRun"
   Write-Host "[.] Automated (param) : $Automated"
   Write-Host "[.] ReRun (Reg key) : $ReRunReg"
   if ($ReRunReg -eq $true) { $Automated = $true ; $ReRunReg = $false ; Set-RegistryEntry -Name "ReRun" -Value $false  }
   
-  if ($NoAuto) {
-    Write-Host "[!] -NoAuto detected!  Resetting Registry values for Automated and ReRun to false.." -ForegroundColor Green
-    Set-RegistryEntry -Name "ReRun" -Value $false
-    $AutomatedReg = $false
-    $ReRunReg = $false
-    $Automated = $false
-  }
-
   if ($Automated) {
     Write-Host "`n[!] Running in automated mode!`n"   -ForegroundColor Red
     $global:Automated = $true
   }
-  Set-RegistryEntry -Name "ReRun" -Value $false  # Set this to false each time launch occurs, we only set to $true if the script launches again
-
+  
   # Self-elevate the script if required
   if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
       Write-Output "`n[!] Not running under Admin context - Re-launching as admin!"
       if ([int](Get-CimInstance -Class Win32_OperatingSystem | Select-Object -ExpandProperty BuildNumber) -ge 6000) {
           $Command = "-File `"" + $MyInvocation.MyCommand.Path + "`" " + $MyInvocation.UnboundArguments
-          Set-RegistryEntry -Name "ReRun" -Value $true
+          if ($Automated) {
+            Set-RegistryEntry -Name "ReRun" -Value $true
+          }
           Start-Process -FilePath PowerShell.exe -Verb RunAs -ArgumentList $Command
           Set-Location $pwd
           Exit
@@ -232,7 +233,7 @@ function Get-RegistryEntry {
   $Reg = (Get-ItemProperty -Path $Path -ErrorAction SilentlyContinue)
   if (Test-Path -Path $Path -ErrorAction SilentlyContinue) {  # If the path exists, check if the property exists
     if (($Reg).PSObject.Properties.Name -contains $Name) {
-      Write-Verbose "Get-RegistryEntry: !! The property exists, return its value : $Path / $Name"
+      Write-Verbose "Get-RegistryEntry: !! The property exists, return its value : $Path / $Name  = $(($Reg).$Name)"
       return ($Reg).$Name
     } else {
       Write-Verbose "Get-RegistryEntry: !! (Get-ItemProperty -Path $Path).PSObject.Properties.Name -contains $Name)"
@@ -463,7 +464,7 @@ Function Update-Script {
     exit
   } else {
     Write-Host "[-] No update found for $($Version)."
-    return $false
+    #return $false
   }
 }
 
@@ -476,7 +477,7 @@ Function Update-QIDLists {
     Write-Host "[+] Updates found, reloading QIDLists.ps1 .."
     return $true
     #Read-QIDLists  # Doesn't work in this scope, do it below in global scope
-#    if ($Automated) {    # This isnt necessary here, just overwriting variables, not rerunning the script!
+#    if ($global:Automated) {    # This isnt necessary here, just overwriting variables, not rerunning the script!
 #      Set-RegistryEntry -Name "ReRun" -Value $true
 #    }
   } else {
@@ -1751,7 +1752,7 @@ $RemediationValues = @{ "Excel" = "Excel.exe"; "Graph" = "Graph.exe"; "Access" =
 ################################################################################################################## MAIN ############################################################################################################
 ################################################################################################################## MAIN ############################################################################################################
 
-$Automated = $global:Automated  # This shouldn't change anything
+#$Automated = $global:Automated  # This shouldn't change anything
 Init-Script -Automated $Automated
 
 $hostname = $env:COMPUTERNAME
@@ -3124,7 +3125,7 @@ foreach ($CurrentQID in $QIDs) {
           if (Get-RegistryEntry -Name "SMB1Auditing" -ne 1) {  # If our registry key is not set, turn on auditing for a month to see if its in use and dont do anything else yet (but give the option to if they want)
             Write-Host "[+] It appears we have not checked for SMB1 access here. Setting registry setting, enabling auditing for a month." -ForegroundColor Red
             (Set-SmbServerConfiguration -AuditSmb1Access $True -Force | Out-String) -Replace ("`n","")
-            Set-RegistryEntry -Name "SMB1Auditing" 1
+            Set-RegistryEntry -Name "SMB1Auditing" -Value 1
             Write-Host "[.] However, we will give you a chance to disable it now, if you prefer:" -ForegroundColor Yellow
           } else {  # If registry key IS set, we ran this last month or more, lets check logs for event 3000 and report
             # Would be really nice to know the last run date here also, for how many days back to check for these events, we'll just do 30 days for now
