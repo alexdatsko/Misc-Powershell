@@ -8,7 +8,7 @@ param (
   [switch] $Help                   # Allow -Help to display help for parameters
 )
 
-write-host "0global:Automated $global:Automated"
+write-host "0script:Automated $script:Automated"
 
 $AllHelp = "########################################################
 # Install-SecurityFixes.ps1
@@ -113,7 +113,7 @@ function Init-Script {
     Set-RegistryEntry -Name "ReRun" -Value $false
     $ReRunReg = $false
     $Automated = $false
-    $global:Automated = $false
+    $script:Automated = $false
   }
 
   $ReRunReg = Get-RegistryEntry -Name "ReRun"
@@ -183,12 +183,12 @@ function Get-YesNo {
          [string] $QID)
   
   $done = 0
-  if (-not $global:Automated) {    # Catch the global var or the registry entry
+  if (-not $script:Automated) {    # Catch the global var or the registry entry
     while ($done -eq 0) {
       $yesno = Read-Host  "`n[?] $text [y/N/a/s/?] "
       if ($yesno.ToUpper()[0] -eq 'Y') { return $true } 
       if ($yesno.ToUpper()[0] -eq 'N' -or $yesno -eq '') { return $false } 
-      if ($yesno.ToUpper()[0] -eq 'A') { $script:Automated = $true; $global:Automated = $true; Write-Host "[!] Enabling Automated mode! Ctrl-C to exit"; return $true } 
+      if ($yesno.ToUpper()[0] -eq 'A') { $script:Automated = $true; Write-Host "[!] Enabling Automated mode! Ctrl-C to exit"; return $true } 
       if ($yesno.ToUpper()[0] -eq '?') { Print-YesNoHelp } 
       if ($yesno.ToUpper()[0] -eq 'S') { 
           Write-Host "[i] Results: " -ForegroundColor Yellow
@@ -320,7 +320,7 @@ function Read-QIDLists {    # NOT USING!!!!
         &$scriptBlock
         foreach ($variableName in $scriptBlock.Variables.Keys) {
             # Define each variable in the global scope
-            #$global:$variableName = $scriptBlock.Variables[$variableName]  # Need to do this for all other vars, not ideal.. skipping this for now.
+            #$script:$variableName = $scriptBlock.Variables[$variableName]  # Need to do this for all other vars, not ideal.. skipping this for now.
         }
       } catch {
         Write-Output "`n`n[!] ERROR: Couldn't import $($QIDsListFile) !! Exiting"
@@ -440,10 +440,10 @@ function Update-ScriptFile {   # Need a copy of this, to re-run main script
 
 function Get-Vars {
   $vars = ""
-  if ($global:Automated) { $vars += " -Automated" }
-  if ($global:Verbose) { $vars += " -Verbose" }
-  if ($global:CSVFile) { $vars += " -CSVFile $global:CSVFile" }
-  if ($global:Help) { $vars += " -Help" }
+  if ($script:Automated) { $vars += " -Automated" }
+  if ($script:Verbose) { $vars += " -Verbose" }
+  if ($script:CSVFile) { $vars += " -CSVFile $script:CSVFile" }
+  if ($script:Help) { $vars += " -Help" }
   Write-Verbose "Get-Vars: Vars = '$Vars'"
   return $vars
 }
@@ -454,12 +454,12 @@ Function Update-Script {
   $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/Install-SecurityFixes.ps1"
   if (Update-ScriptFile -URL $url -FilenameTmp "$($tmp)\Install-SecurityFixes.ps1" -FilenamePerm "$($pwd)\Install-SecurityFixes.ps1" -VersionStr '$Version = *' -VersionToCheck $Version) {
     Write-Verbose "Automated: $Automated"
-    Write-Verbose "global:Automated: $global:Automated"
+    Write-Verbose "script:Automated: $script:Automated"
     Write-Host "[+] Update found, re-running script .."
     Stop-Transcript
     $Vars = Get-Vars
     Write-Verbose "Re-running script with Vars: '$Vars'"
-    if ($global:Automated) {
+    if ($script:Automated) {
       Write-Verbose "Script was run as automated, setting ReRun reg entry to true."
       Set-RegistryEntry -Name "ReRun" -Value $true
     }
@@ -481,7 +481,7 @@ Function Update-QIDLists {
     Write-Host "[+] Updates found, reloading QIDLists.ps1 .."
     return $true
     #Read-QIDLists  # Doesn't work in this scope, do it below in global scope
-#    if ($global:Automated) {    # This isnt necessary here, just overwriting variables, not rerunning the script!
+#    if ($script:Automated) {    # This isnt necessary here, just overwriting variables, not rerunning the script!
 #      Set-RegistryEntry -Name "ReRun" -Value $true
 #    }
   } else {
@@ -880,7 +880,7 @@ function Pick-File {    # Show a list of files with a number to the left of each
     $i += 1
   }
 
-  if ((-not $global:Automated) -and ($i -gt 1)) {
+  if ((-not $script:Automated) -and ($i -gt 1)) {
     Write-Host "[$i] EXIT" -ForegroundColor Blue
     $Selection = Read-Host "Select file to import, [Enter=0] ?"
     if ($Selection -eq $i) { Write-Host "[-] Exiting!" -ForegroundColor Gray; exit }
@@ -967,7 +967,7 @@ Function Add-VulnToQIDList {
     #$QIDsListFile = $ConfigFile  # Default to using the ConfigFile.. Probably want to split this out again.. but leave for now
     if (Get-YesNo "New vulnerability found: [QID$($QIDNum)] - [$($QIDName)] - Add?") {
       Write-Verbose "[v] Adding to variable in $($QIDsListFile): Variable: $($QIDVar)"
-      if ($global:Automated) { Write-Output "[QID$($QIDNum)] - [$($QIDName)] - Adding" }
+      if ($script:Automated) { Write-Output "[QID$($QIDNum)] - [$($QIDName)] - Adding" }
       $QIDLine = (Select-String  -Path $QIDsListFile -pattern $QIDVar).Line
       Write-Verbose "[v] Found match: $QIDLine"
       $QIDLineNew = "$QIDLine,$QIDNum"  | Select-Object -Unique  
@@ -1645,7 +1645,7 @@ Function Update-ViaNinite {
   taskkill.exe /f /im $(($KillProcess -split "\\")[-1]) # Works without a \ in $KillProcess either.
   Write-Host "[.] Waiting 5 seconds .."
   Start-Sleep 5 # Wait 5 seconds to make sure all processes are killed, could take longer.
-  if ($global:Automated) {
+  if ($script:Automated) {
     Write-Host "[.] Running the Ninite updater, this window will automatically be closed within $UpdateNiniteWait seconds"
     Start-Process -FilePath "$($tmp)\ninitechrome.exe" -NoNewWindow
     Write-Host "[.] Waiting $UpdateNiniteWait seconds .."
@@ -1667,7 +1667,7 @@ Function Update-Chrome {
   taskkill.exe /f /im chrome.exe
   Write-Host "[.] Waiting 5 seconds .."
   Start-Sleep 5 # Wait 5 seconds to make sure this is completed
-  if ($global:Automated) {
+  if ($script:Automated) {
     Write-Host "[.] Running the Ninite chrome updater, this window will automatically be closed within $UpdateBrowserWait seconds"
     Start-Process -FilePath "$($tmp)\ninitechrome.exe" -NoNewWindow
     Write-Host "[.] Waiting $UpdateBrowserWait seconds .."
@@ -1688,7 +1688,7 @@ Function Update-Firefox {
   taskkill.exe /f /im firefox.exe
   Write-Host "[.] Waiting 5 seconds .."
   Start-Sleep 5 # Wait 5 seconds to make sure this is completed
-  if ($global:Automated) {
+  if ($script:Automated) {
     Write-Host "[.] Running the Ninite firefox updater, this window will automatically be closed within $UpdateBrowserWait seconds"
     Start-Process -FilePath "$($tmp)\ninitefirefox.exe" -NoNewWindow
     Write-Host "[.] Waiting $UpdateBrowserWait seconds .."
@@ -1757,13 +1757,13 @@ $RemediationValues = @{ "Excel" = "Excel.exe"; "Graph" = "Graph.exe"; "Access" =
 ################################################################################################################## MAIN ############################################################################################################
 
     Write-Verbose "1Automated: $Automated"
-    Write-Verbose "1global:Automated: $global:Automated"
+    Write-Verbose "1script:Automated: $script:Automated"
 
-#$Automated = $global:Automated  # This shouldn't change anything
+#$Automated = $script:Automated  # This shouldn't change anything
 Init-Script -Automated $Automated
 
     Write-Verbose "2Automated: $Automated"
-    Write-Verbose "2global:Automated: $global:Automated"
+    Write-Verbose "2script:Automated: $script:Automated"
 
 $hostname = $env:COMPUTERNAME
 $datetime = Get-Date -Format "yyyy-MM-dd HH:mm:ss K"
@@ -1787,14 +1787,14 @@ if (([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDat
 }
 
     Write-Verbose "3Automated: $Automated"
-    Write-Verbose "3global:Automated: $global:Automated"
+    Write-Verbose "3script:Automated: $script:Automated"
 
 # These variables should be referenced globally:
 . "$($ConfigFile)"
 . "$($QIDsListFile)"
 
     Write-Verbose "4Automated: $Automated"
-    Write-Verbose "4global:Automated: $global:Automated"
+    Write-Verbose "4script:Automated: $script:Automated"
 
 # Check for newer version of script before anything..
 Update-Script  # CHECKS FOR SCRIPT UPDATES, UPDATES AND RERUNS IF NECESSARY
@@ -1803,7 +1803,7 @@ if (Update-QIDLists) {
  }
 
     Write-Verbose "5Automated: $Automated"
-    Write-Verbose "5global:Automated: $global:Automated"
+    Write-Verbose "5script:Automated: $script:Automated"
 
 # Lets check the Config first for $ServerName, as that is our default..
 if ($ServerName) {
@@ -1826,7 +1826,7 @@ if ($ServerName) {
     }    
   }
 } else {  # Can't ping $ServerName, lets see if there is a good location, or localhost?
-  if (-not $global:Automated) {
+  if (-not $script:Automated) {
     $ServerName = Read-Host "[!] Couldn't ping SERVER or '$($ServerName)' .. please enter the server name where we can find the .CSV file, or press enter to read it out of the current folder: "
     if (!($ServerName)) { 
       $ServerName = "$($env:computername)"
@@ -2087,7 +2087,7 @@ foreach ($CurrentQID in $QIDs) {
     Write-Verbose "-- This QID: $CurrentQID -- Type: $($CurrentQID.GetType())"
     $VulnDesc = (($Rows | Where-Object { $_.QID -eq $ThisQID }) | Select-Object -First 1)."Vulnerability Description"
     $Results = (($Rows | Where-Object { $_.QID -eq $ThisQID }) | Select-Object -First 1)."Results"
-    If ($global:Automated -eq $true) {
+    If ($script:Automated -eq $true) {
       Write-Verbose "[Running in Automated mode]"
     }
     switch ([int]$CurrentQID)
@@ -3163,7 +3163,7 @@ foreach ($CurrentQID in $QIDs) {
               Set-RegistryEntry -Name SMB1Auditing -Value 0
             }
           } # No matter what, we will give them the option to just run this
-          if (-not $global:Automated) {
+          if (-not $script:Automated) {
             if (Get-YesNo "NOTE: Disabling this may break things!!! `n`nRisks:`n  [ ] Old iCAT XP computers `n  [ ] Old copier/scanners (scan to SMB) `n  [ ] Other devices that need to access this computer over SMB1.`n`nIt may be safest to do some monitoring first, by turning on SMB v1 auditing (Set-SmbServerConfiguration -AuditSmb1Access `$True) and checking for Event 3000 in the ""Microsoft-Windows-SMBServer\Audit"" event log next month, and then identifying each client that attempts to connect with SMBv1.`n  I have turned on SMB1 auditing for you now, and the script can automatically check for clients next month and disable this if you aren't sure. `nAre you sure you want to continue removing SMB1? " -Results $Results) { 
               Write-Host "[.] Removing Feature for SMB 1.0:" -ForegroundColor Green
               # CAPTION INSTALLSTATE NAME SMB 1.0/CIFS File Sharing Support SMB Server version 1 is Enabled# 
@@ -3829,7 +3829,7 @@ Set-Location $oldpwd
 Set-RegistryEntry -Name "ReRun" -Value $false
 
 Stop-Transcript
-if (!($global:Automated)) {
+if (!($script:Automated)) {
   $null = Read-Host "--- Press enter to exit ---"
 }
 Write-Host "`n"
