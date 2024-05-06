@@ -39,7 +39,7 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.41"
+$Version = "0.38.40"
 # New in this version:   Fixes for -Automated / rerun reg key stuff..
 $VersionInfo = "v$($Version) - Last modified: 5/6/2024"
 
