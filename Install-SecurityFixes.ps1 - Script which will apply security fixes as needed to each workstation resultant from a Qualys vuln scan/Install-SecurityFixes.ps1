@@ -8,8 +8,6 @@ param (
   [switch] $Help                   # Allow -Help to display help for parameters
 )
 
-write-host "0script:Automated $script:Automated"
-
 $AllHelp = "########################################################
 # Install-SecurityFixes.ps1
 # Alex Datsko - alex.datsko@mmeconsulting.com
@@ -39,9 +37,9 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.40"
-# New in this version:   Fixes for -Automated / rerun reg key stuff..
-$VersionInfo = "v$($Version) - Last modified: 5/6/2024"
+$Version = "0.38.41"
+# New in this version:   Some minor cleanup of debugging stuff for -Automated, and returns where they aren't needed
+$VersionInfo = "v$($Version) - Last modified: 5/8/2024"
 
 #### VERSION ###################################################
 
@@ -117,8 +115,8 @@ function Init-Script {
   }
 
   $ReRunReg = Get-RegistryEntry -Name "ReRun"
-  Write-Host "[.] Automated (param) : $Automated"
-  Write-Host "[.] ReRun (Reg key) : $ReRunReg"
+  Write-Verbose "Init-Script: Automated (param) : $Automated"
+  Write-Verbose "Init-Script: ReRun (Reg key) : $ReRunReg"
   if ($ReRunReg -eq $true) { $Automated = $true ; $ReRunReg = $false ; Set-RegistryEntry -Name "ReRun" -Value $false  }
   
   if ($Automated) {
@@ -1435,28 +1433,24 @@ function Backup-BitlockerKeys {
     if (Test-Path "C:\Windows\System32\manage-bde.exe") {  # If this exists, bitlocker role is at least installed
       if ((Get-BitlockerVolume -MountPoint 'C:').VolumeStatus -eq "FullyDecrypted") {
         Write-Host "[!] $($BLV) not Bitlocker encrypted!"
-        return $false
-      } else {
+      } else {  # Not FullyDecrypted should mean its bitlockered..
         Write-Host "[!] Found C: Bitlockered."
-      }
-      $BLVs = (Get-BitLockerVolume).MountPoint
-      foreach ($BLV in $BLVs) { 
-        if (Get-BitLockerVolume -MountPoint $BLV -ErrorAction SilentlyContinue) {
-          try {
-            Write-Output "[.] Backing up Bitlocker Keys to AD.."
-            Backup-BitLockerKeyProtector -MountPoint $BLV -KeyProtectorId (Get-BitLockerVolume -MountPoint $BLV).KeyProtector[1].KeyProtectorId
-            return $true
-          } catch { 
-            Write-Output "[!] ERROR: Could not access BitlockerKeyProtector. Is drive $BLV encrypted? "
-            $BLVol = Get-BitLockerVolume
-            $BLVol | select MountPoint,CapacityGB,VolumeStatus
-            return $false
+        $BLVs = (Get-BitLockerVolume).MountPoint
+        foreach ($BLV in $BLVs) { 
+          if (Get-BitLockerVolume -MountPoint $BLV -ErrorAction SilentlyContinue) {
+            try {
+              Write-Host "[.] Backing up Bitlocker Keys to AD.."
+              Backup-BitLockerKeyProtector -MountPoint $BLV -KeyProtectorId (Get-BitLockerVolume -MountPoint $BLV).KeyProtector[1].KeyProtectorId
+            } catch { 
+              Write-Host "[!] ERROR: Could not access BitlockerKeyProtector. Is drive $BLV encrypted? "
+              $BLVol = Get-BitLockerVolume
+              $BLVol | select MountPoint,CapacityGB,VolumeStatus
+            }
           }
         }
       }
     } else {
       Write-Output "[-] Skipping backup of Bitlocker keys."
-      return $false
     }
   }
 }
@@ -1756,14 +1750,7 @@ $RemediationValues = @{ "Excel" = "Excel.exe"; "Graph" = "Graph.exe"; "Access" =
 ################################################################################################################## MAIN ############################################################################################################
 ################################################################################################################## MAIN ############################################################################################################
 
-    Write-Verbose "1Automated: $Automated"
-    Write-Verbose "1script:Automated: $script:Automated"
-
-#$Automated = $script:Automated  # This shouldn't change anything
 Init-Script -Automated $Automated
-
-    Write-Verbose "2Automated: $Automated"
-    Write-Verbose "2script:Automated: $script:Automated"
 
 $hostname = $env:COMPUTERNAME
 $datetime = Get-Date -Format "yyyy-MM-dd HH:mm:ss K"
