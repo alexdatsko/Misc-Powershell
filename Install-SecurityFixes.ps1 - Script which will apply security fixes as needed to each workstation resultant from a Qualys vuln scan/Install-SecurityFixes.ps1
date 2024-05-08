@@ -37,7 +37,7 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.41"
+$Version = "0.38.42"
 # New in this version:   Some minor cleanup of debugging stuff for -Automated, and returns where they aren't needed
 $VersionInfo = "v$($Version) - Last modified: 5/8/2024"
 
