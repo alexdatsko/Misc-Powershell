@@ -1403,8 +1403,8 @@ function Show-FileVersionComparison {
   param ([string]$Name, $Results)
 
   if ($Results -like "* Version is *") {
-    $EXEFiles = Parse-ResultsFile $Results
-    $EXEFileVersions = Parse-ResultsVersion $Results
+    $EXEFiles = @(Parse-ResultsFile $Results)
+    $EXEFileVersions = @(Parse-ResultsVersion $Results)
     Write-Verbose "Results: $Results"
     Write-Verbose "EXEFiles: $EXEFiles"
     Write-Verbose "EXEFileVersions: $EXEFileVersions"
