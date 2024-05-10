@@ -37,9 +37,9 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.42"
-# New in this version:   Some minor cleanup of debugging stuff for -Automated, and returns where they aren't needed
-$VersionInfo = "v$($Version) - Last modified: 5/8/2024"
+$Version = "0.38.43"
+# New in this version:   Chrome post-update check
+$VersionInfo = "v$($Version) - Last modified: 5/10/2024"
 
 #### VERSION ###################################################
 
@@ -1653,7 +1653,6 @@ Function Update-ViaNinite {
 }
 
 
-
 Function Update-Chrome {
   Write-Host "[.] Downloading newest Chrome update from Ninite.com .."
   Invoke-WebRequest -UserAgent $AgentString -Uri "https://ninite.com/chrome/ninite.exe" -OutFile "$($tmp)\ninitechrome.exe"
@@ -2416,9 +2415,16 @@ foreach ($CurrentQID in $QIDs) {
             $ChromeFileVersion = Get-FileVersion $ChromeFile
             if ($ChromeFileVersion) {
               Write-Verbose "Chrome version found : $ChromeFile - $ChromeFileVersion .. checking against $VulnDescChromeWinVersion"
-              if ([version]$ChromeFileVersion -lt [version]$VulnDescChromeWinVersion) {  # Fixed bug 3-28-24 - logic above is 'Prior to version' not 'Prior to or equals version'!!
+              if ([version]$ChromeFileVersion -lt [version]$VulnDescChromeWinVersion) {  # Fixed bug 3-28-24 - logic above is 'Prior to version' not 'Prior to or equals version'!! vuln desc is 'prior to version ...'
                 Write-Host "[!] Vulnerable version $ChromeFile found : $ChromeFileVersion < $VulnDescChromeWinVersion - Updating.."
                 Update-Chrome
+                #Post-update check
+                $ChromeFileVersion = Get-FileVersion $ChromeFile
+                if ([version]$ChromeFileVersion -lt [version]$VulnDescChromeWinVersion) { 
+                  Write-Host "[.] Post-update check: Chrome version found : $ChromeFileVersion <= $VulnDescChromeWinVersion - Needs attention still!" -ForegroundColor Red
+                } else {
+                  Write-Host "[.] Post-update check: Chrome version found : $ChromeFileVersion > $VulnDescChromeWinVersion - Good!" -ForegroundColor Green
+                }
               } else {
                 Write-Host "[+] Chrome patched version found : $ChromeFileVersion > $VulnDescChromeWinVersion - already patched!" -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..
               }
