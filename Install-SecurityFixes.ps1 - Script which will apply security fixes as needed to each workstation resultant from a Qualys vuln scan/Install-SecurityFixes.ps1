@@ -1672,7 +1672,7 @@ Function Update-ViaNinite {
     Start-Process -FilePath $OutFile -NoNewWindow
     Start-Sleep $UpdateNiniteWait # Wait X seconds to make sure the app has updated, usually 30-45s or so at least!! Longer for slower machines!
     Write-Host "[.] Killing the Ninite updater window, hopefully it is stuck at 'Done'"
-    taskkill.exe /f /im $(($KillProcess -split "\\")[-1])  # Grab filename from full path if given
+    taskkill.exe /f /im $(($Outfile -split "\\")[-1])  # Grab filename from full path if given
   }
 }
 
