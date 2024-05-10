@@ -1654,21 +1654,25 @@ Function Update-ViaNinite {
     [string]$UpdateString
   )
   Write-Host "[.] Updating to newest $UpdateString from Ninite.com .."
+  Write-Host "[.] Downloading $uri from Ninite, to: $OutFile .."
   Invoke-WebRequest -UserAgent $AgentString -Uri $Uri -OutFile $OutFile
-  Write-Host "[.] Killing all chrome browser windows .."
+  Write-Host "[.] Killing all $Updatetring processess ( $KillProcess ) .."
   taskkill.exe /f /im $(($KillProcess -split "\\")[-1]) # Works without a \ in $KillProcess either.
   Write-Host "[.] Waiting 5 seconds .."
   Start-Sleep 5 # Wait 5 seconds to make sure all processes are killed, could take longer.
   if ($script:Automated) {
     Write-Host "[.] Running the Ninite updater, this window will automatically be closed within $UpdateNiniteWait seconds"
-    Start-Process -FilePath "$($tmp)\ninitechrome.exe" -NoNewWindow
+    Start-Process -FilePath "$($OutFile)" -NoNewWindow
     Write-Host "[.] Waiting $UpdateNiniteWait seconds .."
     Start-Sleep $UpdateNiniteWait # Wait X seconds to make sure the app has updated, usually 30-45s or so at least!! Longer for slower machines!
     Write-Host "[.] Killing the Ninite updater window, hopefully it is stuck at 'Done'"
     taskkill.exe /f /im $(($KillProcess -split "\\")[-1])  # Grab filename from full path if given
   } else {
-    Write-Host "[.] Running the Ninite Chrome updater, please close this window by hitting DONE when complete!"
-    Start-Process -FilePath $OutFile -NoNewWindow -Wait
+    Write-Host "[.] Running the Ninite $Updatetring updater, please close this window by hitting DONE when complete! Otherwise, we will kill the proce after $UpdateNiniteWait seconds."
+    Start-Process -FilePath $OutFile -NoNewWindow
+    Start-Sleep $UpdateNiniteWait # Wait X seconds to make sure the app has updated, usually 30-45s or so at least!! Longer for slower machines!
+    Write-Host "[.] Killing the Ninite updater window, hopefully it is stuck at 'Done'"
+    taskkill.exe /f /im $(($KillProcess -split "\\")[-1])  # Grab filename from full path if given
   }
 }
 
