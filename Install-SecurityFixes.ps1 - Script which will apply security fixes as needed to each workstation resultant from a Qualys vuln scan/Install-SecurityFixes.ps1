@@ -38,7 +38,7 @@ $AllHelp = "########################################################
 
 # No comments after the version number on the next line- Will screw up updates!
 $Version = "0.38.44"
-# New in this version:   Chrome post-update checks, fix for QID 92030
+# New in this version:   QID 91850 fixes for office store app removal 
 $VersionInfo = "v$($Version) - Last modified: 5/10/2024"
 
 #### VERSION ###################################################
