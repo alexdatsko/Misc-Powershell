@@ -104,7 +104,7 @@ function Convert-CSVFile {
   Write-Host "[.] Populating new CSV file.. "
   if ($InFile -like "*Internal*") {  
     # Column order I want: "NetBIOS","IP","QID","Vulnerability Description","Severity","Fixed Date","Fixed Name","Fixed Note","Results","Solution","Threat","Impact","CVE ID","Last Detected"
-    Import-CSV $InFile | Select-Object "NetBIOS","IP","QID","Vulnerability Description","Severity","Fixed Date","Fixed Name","Fixed Note","Results","Solution","Threat","Impact","CVE ID","Last Detected" | Sort-Object "NetBIOS","Vulnerability Description" | Export-CSV $OutFile
+    Import-CSV $InFile | Select-Object "NetBIOS","IP","QID","Vulnerability Description","Severity","Fixed Date","Fixed Name","Fixed Note","Results","Solution","Threat","Impact","CVE ID","Last Detected","First Detected" | Sort-Object "NetBIOS","Vulnerability Description" | Export-CSV $OutFile
   }
   if ($InFile -like "*External*") {  
     # Column order I want: "IP","Computer Name (DNS)","Devices connected from IP addresses","IPs","Port","Protocol","QID","Vulnerability Description","Severity","Results","Solution","Threat","Impact"

@@ -37,8 +37,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.43"
-# New in this version:   Chrome post-update checks
+$Version = "0.38.44"
+# New in this version:   Chrome post-update checks, fix for QID 92030
 $VersionInfo = "v$($Version) - Last modified: 5/10/2024"
 
 #### VERSION ###################################################
@@ -3287,10 +3287,17 @@ foreach ($CurrentQID in $QIDs) {
         }
       }
       91850 {
-        # $Results = "Microsoft vulnerable Office app detected  Version     '18.2008.12711.0'#""
+        # $Results = "Microsoft vulnerable Office app detected  Version     '18.2008.12711.0'#""  
+        # Microsoft vulnerable Office app detected  Version     '17.10314.31700.1000'# 5/10/24
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft Office app Remote Code Execution (RCE) Vulnerability $AppxVersion" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "Office" -Version $AppxVersion -Results $Results # "18.2008.12711.0"
+          if ($Results -like "*Microsoft vulnerable Office app detected*") {
+            Write-Host "`n[!] This needs manual remediation:" -ForegroundColor Orange
+            Write-Host "  $Results" -ForegroundColor White
+
+          }
+          Remove-SpecificAppXPackage -Name "Microsoft.MicrosoftOfficeHub" -Version $AppxVersion -Results $Results  # 5/10/24
+          #Remove-SpecificAppXPackage -Name "Office" -Version "18.2008.12711.0" -Results $Results   # "18.2008.12711.0"   # Not sure what to do here, we will search out ANYthing with 'office' in the name, not good. specificity needed..
         }
       }
       91848 {
@@ -3471,6 +3478,7 @@ foreach ($CurrentQID in $QIDs) {
       }
       92030 { 
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
+        # Microsoft vulnerable Microsoft.VP9VideoExtensions detected  Version     '1.0.52781.0'#
         if (Get-YesNo "$_ Microsoft Raw Image Extension and VP9 Video Extension Information Disclosure Vulnerability" -Results $Results) {
           Remove-SpecificAppXPackage -Name "VP9VideoExtensions" -Version $AppxVersion -Results $Results # "1.0.52781.0"
         }
