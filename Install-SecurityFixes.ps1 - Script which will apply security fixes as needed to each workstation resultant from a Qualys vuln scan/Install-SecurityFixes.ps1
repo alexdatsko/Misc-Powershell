@@ -38,7 +38,7 @@ $AllHelp = "########################################################
 
 # No comments after the version number on the next line- Will screw up updates!
 $Version = "0.38.43"
-# New in this version:   Chrome post-update check
+# New in this version:   Chrome post-update checks
 $VersionInfo = "v$($Version) - Last modified: 5/10/2024"
 
 #### VERSION ###################################################
@@ -1472,6 +1472,26 @@ function Get-FileVersion {
   return $ThisVersion
 }
 
+function Get-ChromeVersion {
+ 
+  try {
+    if (Test-Path -Path "c:\program files (x86)\Google\Chrome\Application\Chrome.exe") {
+      $ThisVersion = (Get-Item $FileNameToTest -ErrorAction SilentlyContinue).VersionInfo.ProductVersion  # or FileVersion??
+    } else {
+      if (Test-Path -Path "c:\program files\Google\Chrome\Application\Chrome.exe") {
+        $ThisVersion = (Get-Item $FileNameToTest -ErrorAction SilentlyContinue).VersionInfo.ProductVersion  # or FileVersion??
+      } else {
+        Write-Host "! Chrome EXE file not found, or unknown error checking.. !" -ForegroundColor Red
+      }
+    }
+  } catch {
+    Write-Host "[!] Chrome EXE file not found, or unknown error checking.. !`n" -ForegroundColor Red
+    return $false
+  }
+  return $ThisVersion
+}
+
+
 function Find-Delimiter {
   param ([string]$CSVFilename)
 
@@ -2419,11 +2439,15 @@ foreach ($CurrentQID in $QIDs) {
                 Write-Host "[!] Vulnerable version $ChromeFile found : $ChromeFileVersion < $VulnDescChromeWinVersion - Updating.."
                 Update-Chrome
                 #Post-update check
-                $ChromeFileVersion = Get-FileVersion $ChromeFile
-                if ([version]$ChromeFileVersion -lt [version]$VulnDescChromeWinVersion) { 
-                  Write-Host "[.] Post-update check: Chrome version found : $ChromeFileVersion <= $VulnDescChromeWinVersion - Needs attention still!" -ForegroundColor Red
+                $ChromeFileVersion = Get-ChromeVersion
+                if ($ChromeFileVersion) {
+                  if ([version]$ChromeFileVersion -lt [version]$VulnDescChromeWinVersion) { 
+                    Write-Host "[.] Post-update check: Chrome version found : $ChromeFileVersion <= $VulnDescChromeWinVersion - Needs attention still!" -ForegroundColor Red
+                  } else {
+                    Write-Host "[.] Post-update check: Chrome version found : $ChromeFileVersion > $VulnDescChromeWinVersion - Good!" -ForegroundColor Green
+                  }
                 } else {
-                  Write-Host "[.] Post-update check: Chrome version found : $ChromeFileVersion > $VulnDescChromeWinVersion - Good!" -ForegroundColor Green
+                  Write-Host "[.] Post-update check: Chrome file missing, probably good if its been updated." -ForegroundColor Yellow
                 }
               } else {
                 Write-Host "[+] Chrome patched version found : $ChromeFileVersion > $VulnDescChromeWinVersion - already patched!" -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..
