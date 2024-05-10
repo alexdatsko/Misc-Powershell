@@ -2549,7 +2549,6 @@ foreach ($CurrentQID in $QIDs) {
         if (Get-YesNo "$_ Install newest Dropbox from Ninite? " -Results $Results) { 
             #  Dropbox - https://ninite.com/dropbox/ninite.exe
             Update-ViaNinite -Uri "https://ninite.com/dropbox/ninite.exe" -OutFile "$($tmp)\dropboxninite.exe" -KillProcess "Dropbox.exe" -UpdateString "Dropbox"
-            cmd /c "$($tmp)\dropboxninite.exe"
             $QIDsDropbox = 1
         } else { $QIDsDropbox = 1 }
       }
@@ -2595,15 +2594,7 @@ foreach ($CurrentQID in $QIDs) {
       }
       378839 {
         if (Get-YesNo "$_ Install newest 7-Zip from Ninite? " -Results $Results) { 
-          Invoke-WebRequest -UserAgent $AgentString -Uri "https://ninite.com/7-zip/ninite.exe" -OutFile "$($tmp)\7zninite.exe"
-
-          Start-Process -FilePath "$($tmp)\7zninite.exe" # -NoNewWindow
-          Write-Host "[.] Waiting $Update7zipWait seconds .."
-          Start-Sleep $Update7zipWait # Wait 30 seconds to make sure the app has updated, usually 30s or so at least!! Longer for slower machines!
-          Write-Host "[.] Killing the Ninite 7-zip updater window to close it!"
-          taskkill.exe /f /im ninite.exe
-          taskkill.exe /f /im 7zninite.exe
-          Write-Host "[!] Done!"
+          Update-ViaNinite -Uri "https://ninite.com/7-zip/ninite.exe" -OutFile "$($tmp)\7zninite.exe" -KillProcess "7zfm.exe"  -Updatetring "7-Zip" 
           $QIDs7zip = 1
         } else { $QIDs7zip = 1 }
       }
