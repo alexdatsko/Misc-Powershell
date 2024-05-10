@@ -38,7 +38,7 @@ $AllHelp = "########################################################
 
 # No comments after the version number on the next line- Will screw up updates!
 $Version = "0.38.44"
-# New in this version:   QID 91850 fixes for office store app removal 
+# New in this version:   QID 91850 fixes for office store app removal, Zoom client updates, parse-resultsfile, show-fileversioncomparison
 $VersionInfo = "v$($Version) - Last modified: 5/10/2024"
 
 #### VERSION ###################################################
@@ -1374,11 +1374,8 @@ function Parse-ResultsFile {
   Write-Verbose "Results: $Results"
   $splits = $Results -split 'Version is'
   foreach ($split in $splits) {
-    if ($split -match '%.*?\.exe') {
-      # Extract file path
-      $PathResults = $split -replace '#.*', '' -match '%.*?\.exe'
-      $PathFinal = $Matches[0] -replace '%windir%', $env:windir -replace '%systemroot%', $env:systemroot -replace '%systemdrive%', $env:systemdrive
-      $Paths += $PathFinal.Trim()
+    if ($split -like '*.exe*' -or $split -like '*.dll*') {  # may be more matching extensions here eventually..
+      $Paths += $split.Trim()
     }
   }
   return $Paths
@@ -1392,10 +1389,10 @@ function Parse-ResultsVersion {
   Write-Verbose "Results: $Results"
   $splits = $Results -split 'Version is'
   foreach ($split in $splits) {
-    if ($split -match '\d+(\.\d+)+') {
-      # Extracting version number
-      $VersionResults = $split -match '\d+(\.\d+)+'
-      $Versions += [version]$Matches[0]
+    if ($split -like "*.exe*" -or $split -like "*.dll*") {
+      #ignore, this is the filename
+    } else { # this should be the version
+      $Versions += $split.Trim().replace('#','')
     }
   }
   return $Versions
@@ -1408,6 +1405,9 @@ function Show-FileVersionComparison {
   if ($Results -like "* Version is *") {
     $EXEFiles = Parse-ResultsFile $Results
     $EXEFileVersions = Parse-ResultsVersion $Results
+    Write-Verbose "Results: $Results"
+    Write-Verbose "EXEFiles: $EXEFiles"
+    Write-Verbose "EXEFileVersions: $EXEFileVersions"
 
     for ($i = 0; $i -lt $EXEFiles.Length; $i++) {
       $EXEFile = $EXEFiles[$i]
@@ -2520,9 +2520,8 @@ foreach ($CurrentQID in $QIDs) {
       }      
       { ($QIDsZoom -contains $_) -or ($VulnDesc -like "*Zoom*" -and ($QIDsZoom -ne 1)) } {
         if (Get-YesNo "$_ Install newest Zoom Client from Ninite? " -Results $Results) { 
-            #  Zoom client - https://ninite.com/zoom/ninite.exe
-            Invoke-WebRequest -UserAgent $AgentString -Uri "https://ninite.com/zoom/ninite.exe" -OutFile "$($tmp)\ninite.exe"
-            cmd /c "$($tmp)\ninite.exe"
+            Update-ViaNinite "https://ninite.com/zoom/ninite.exe" -OutFile "$($tmp)\ninite.exe" -KillProcess 'ninite.exe' -UpdateString "Zoom client"
+
             #If Zoom folder is in another users AppData\Local folder, this will not work
             $FolderFound = $false
             foreach ($Result in $Results) {
@@ -2531,7 +2530,7 @@ foreach ($CurrentQID in $QIDs) {
               }
             }
             if ($FolderFound) { Remove-Folder (Parse-ResultsFolder -Results $Results) }
-            #Show-FileVersionComparison -Name "Zoom" -Results $Results
+            Show-FileVersionComparison -Name "Zoom" -Results $Results
             $QIDsZoom = 1
         } else { $QIDsZoom = 1 }
       }
@@ -3292,7 +3291,7 @@ foreach ($CurrentQID in $QIDs) {
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft Office app Remote Code Execution (RCE) Vulnerability $AppxVersion" -Results $Results) {
           if ($Results -like "*Microsoft vulnerable Office app detected*") {
-            Write-Host "`n[!] This needs manual remediation:" -ForegroundColor Orange
+            Write-Host "`n[!] This needs manual remediation:" -Foregroundcolor Red
             Write-Host "  $Results" -ForegroundColor White
 
           }
