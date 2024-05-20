@@ -37,8 +37,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.46"
-# New in this version:   Updated where to check for CSV files, checking hostname for default \data\secaud, or just unc path, for most recent 30d file, for hypervhost / non-domain joined etc
+$Version = "0.38.47"
+# New in this version:   Fixes for QID 105170,105171 I never finished, looks like.. Changed to use my routines in simpler Install-MMESecurityFixes.ps1 for Steve a while back
 $VersionInfo = "v$($Version) - Last modified: 5/20/2024"
 
 #### VERSION ###################################################
@@ -653,6 +653,39 @@ function Replace-PercentVars {
   $CheckFile = $CheckFile.replace("%windir%",(Resolve-Path -Path "${env:WinDir}").Path).trim()
   $CheckFile = $CheckFile.replace("%SYSTEMROOT%",(Resolve-Path -Path "${env:SYSTEMROOT}").Path).trim()
   return $CheckFile
+}
+
+function Check-Reg {
+  param (
+    $RegKey,
+    $RegName,
+    $RegType,
+    $RegValue,
+    $SettingName
+  )
+  $checkvar = "1" # Default to disabled
+  if ($RegKey -like "HKEY_LOCAL_MACHINE*") {
+    $RegKey=$RegKey.replace("HKEY_LOCAL_MACHINE","HKLM:")
+    Write-Verbose "[.] Replacing HKEY_LOCAL_MACHINE with HKLM: Result- $RegKey"
+  }
+  $ErrorActionPreference="SilentlyContinue"  # Workaround for this terminating error of not being able to find nonexisting reg values with Get-ItemProperty / Get-ItemPropertyValue
+  if (Get-ItemProperty -Path $RegKey -ErrorAction SilentlyContinue) { # if RegKey exists
+    Write-Verbose "$RegKey exists."
+    $RegValueVar = Get-ItemProperty -Path $RegKey | Select-Object -ExpandProperty $RegName  # if RegName doesn't exist.. This will not throw an error
+    if ($RegValueVar -eq $RegValue) {
+      Write-Host "[.] [$($SettingName)] - $($RegName) is Enabled, good." -ForegroundColor Green
+      $checkvar = 0
+    } else {
+      Write-Host "[!] [$($SettingName)] - $($RegName) is DISABLED." -ForegroundColor Red
+      $checkvar = 1
+    }
+    Write-Verbose "$RegKey = $RegValueVar" 
+  } else {
+    Write-Host "[!] [$($SettingName)] - $($RegName) is DISABLED!  $RegKey doesn't exist!" -ForegroundColor Red
+    $checkvar = 1
+  }
+  $ErrorActionPreference="Continue" # Set back to standard error termination setting
+  return $checkvar
 }
 
 function Check-ResultsForFiles {
@@ -2274,33 +2307,22 @@ foreach ($CurrentQID in $QIDs) {
       }
       { 105170,105171 -contains $_ } { 
         if (Get-YesNo "$_ - Windows Explorer Autoplay not Disabled ? " -Results $Results) {
-            $path = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer'
-            $path2 = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\policies\Explorer'
-            Write-Host "[.] Setting registry keys in:"
-            $path
-            $path2
-            if (!(Test-Path $path)) {
-              Write-Verbose "Creating $($path) as it was not found.."
-              $pathonly = Split-Path $path
-              $leaf = Split-Path $path -Leaf
-              New-Item -Path $pathonly -Leaf $leaf -Force
-            }
-            if (!(Test-Path $path2)) {
-              Write-Verbose "Creating $($path2) as it was not found.."
-              $path2only = Split-Path $path2 
-              $leaf2 = Split-Path $path2 -Leaf
-              New-Item $path2only -Force
-              New-Item -Path $path2only -Leaf $leaf2 -Force
-            }
-            Set-ItemProperty $path -Name NoDriveTypeAutorun -Type DWord -Value 0xFF
-            Set-ItemProperty $path -Name NoAutorun -Type DWord -Value 0x1
-            try {
-              $null = New-Item $path2 -Name NoDriveTypeAutorun -Type DWord -Value 0xFF -ErrorAction SilentlyContinue
-              $null = New-Item $path2 -Name NoAutorun -Type DWord -Value 0x1 -ErrorAction SilentlyContinue
-            } catch {} # Don't care if these fail, if they already exist..
-            Set-ItemProperty $path2 -Name NoDriveTypeAutorun -Type DWord -Value 0xFF
-            Set-ItemProperty $path2 -Name NoAutorun -Type DWord -Value 0x1
-            Write-Host "[!] Done!"
+          $check = @()
+          $check += Check-Reg -RegKey "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -RegName "NoDriveTypeAutoRun" -RegValue "255" -SettingName "Autoplay - Disabled (for computer)"
+          $check += Check-Reg -RegKey "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -RegName "NoAutoRun" -RegValue "1" -SettingName "Autoplay - Disabled (for computer)"
+          $check += Check-Reg -RegKey "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer"  -RegName "NoDriveTypeAutoRun" -RegValue "255" -SettingName "Autoplay - Disabled (for user)"
+          $check += Check-Reg -RegKey "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer"  -RegName "NoAutoRun" -RegValue "1" -SettingName "Autoplay - Disabled (for user)"
+          if ($check -contains 1) { 
+            Write-Host "[!] Making registry changes for [Autoplay - Disabled (for computer)]" -ForegroundColor Yellow
+            New-Item -Path "HKLM:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -Force | Out-Null
+            Set-ItemProperty -Path "HKLM:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -Name "NoDriveTypeAutorun" -Value 0xFF -Type DWord -Force
+            Set-ItemProperty -Path "HKLM:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -Name "NoAutorun" -Value 0x1 -Type DWord -Force
+            New-Item -Path "HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -Force | Out-Null
+            Set-ItemProperty -Path "HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -Name "NoDriveTypeAutorun" -Value 0xFF -Type DWord -Force
+            Set-ItemProperty -Path "HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -Name "NoAutorun" -Value 0x1 -Type DWord -Force
+          } else { 
+            Write-Host "[!] Looks like this has already been resolved."
+          }
         }
       }
       90044 {
