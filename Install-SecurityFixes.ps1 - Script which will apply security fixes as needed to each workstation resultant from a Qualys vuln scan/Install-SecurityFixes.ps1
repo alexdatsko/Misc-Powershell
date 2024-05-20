@@ -1798,24 +1798,15 @@ if (([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDat
   }
 }
 
-    Write-Verbose "3Automated: $Automated"
-    Write-Verbose "3script:Automated: $script:Automated"
-
 # These variables should be referenced globally:
 . "$($ConfigFile)"
 . "$($QIDsListFile)"
-
-    Write-Verbose "4Automated: $Automated"
-    Write-Verbose "4script:Automated: $script:Automated"
 
 # Check for newer version of script before anything..
 Update-Script  # CHECKS FOR SCRIPT UPDATES, UPDATES AND RERUNS IF NECESSARY
 if (Update-QIDLists) {         
  . "$($QIDsListFile)" 
  }
-
-    Write-Verbose "5Automated: $Automated"
-    Write-Verbose "5script:Automated: $script:Automated"
 
 # Lets check the Config first for $ServerName, as that is our default..
 if ($ServerName) {
@@ -1840,7 +1831,8 @@ if ($ServerName) {
 } else {  # Can't ping $ServerName, lets see if there is a good location, or localhost?
   if (-not $script:Automated) {
     $ServerName = Read-Host "[!] Couldn't ping SERVER or '$($ServerName)' .. please enter the server name (or UNC path) where we can find the .CSV file, or press enter to read it out of the current folder: "
-    if (!($ServerName)) { 
+    if ($ServerName -eq "") { 
+      Write-Verbose "No input found"
       $ServerName = "$($env:computername)"
       #$SecAudPath = "\\$($ServerName)\c$\temp\secaud"  # Change this?
       $SecAudPath = "c:\temp\secaud"  # for now..
@@ -1854,15 +1846,18 @@ if ($ServerName) {
       if ($ServerName -like "\\*") {
           # It's a UNC path, search for the file
           $path = $ServerName
+          Write-Verbose "UNC path detected - $path"
       } elseif ($ServerName -ne "") {
           # It's a hostname, construct the UNC path
           $path = "\\$ServerName\data\secaud"
+          Write-Verbose "Servername found, using - $path"
       } else {
-          # No input provided, use the current directory
+          # No input provided, use the current directory .. shouldnt get here due to logic above
           $path = "."
+          Write-Verbose "No input provided, using - $path"
       }
 
-      # Search for files modified within the last 30 days that match the pattern
+      Write-Host "[.] Searching for files modified within the last 30 days that match the pattern '*_Internal_*.csv' in path - $path"
       $dateLimit = (Get-Date).AddDays(-30)
       $files = Get-ChildItem -Path $path -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt $dateLimit }
 
@@ -1871,8 +1866,17 @@ if ($ServerName) {
           $CSVFilename = $files[0].FullName
           Write-Host "[+] Latest CSV File found: $CSVFilename" -ForegroundColor Green
       } else {
-          Write-Host "[-] No recent (within 30d) matching CSV files found in [ $SecAudPath ] "
-          Write-Host "[!] ERROR: Can't find a CSV to use, or the servername to check, and -Automated was specified.." -ForegroundColor Red
+          Write-Host "[-] No recent (within 30d) matching CSV files found in [ $path ] "
+          $files = Get-ChildItem -Path $path -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue 
+          if ($files) {
+            Write-Host "[-] List of files found MORE THAN 30 days old: " -ForegroundColor Yellow
+            $files
+          } else {
+            $files = Get-ChildItem -Path $path 
+            Write-Host "[-] No matching CSV Files found in $path"
+            $files
+          }
+          Write-Host "[!] ERROR: Can't find a CSV to use, or the servername to check.." -ForegroundColor Red
           exit
       }
     }
