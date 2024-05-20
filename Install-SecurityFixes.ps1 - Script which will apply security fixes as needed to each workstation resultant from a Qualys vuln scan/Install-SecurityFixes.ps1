@@ -935,6 +935,7 @@ function Find-LocalCSVFile {
 
 function Find-ServerCSVFile {
   param ([string]$Location)
+  $Servername = $script:Servername
   Write-Verbose "[Find-ServerCSVFile] Server Name: $Servername"
   Write-Verbose "[Find-ServerCSVFile] Location: $Location"
   if (Test-Connection -ComputerName $servername -Count 2 -Delay 1 -Quiet) {
@@ -1864,6 +1865,7 @@ if ($ServerName) {
       if ($files.Count -gt 0) {
           # Use the full path of the first found file
           $CSVFilename = $files[0].FullName
+          $CSVFile = $CSVFilename  # This needs to be set below as well
           Write-Host "[+] Latest CSV File found: $CSVFilename" -ForegroundColor Green
       } else {
           Write-Host "[-] No recent (within 30d) matching CSV files found in [ $path ] "
@@ -1908,16 +1910,20 @@ if (!(Test-Path $($tmp))) {
 $oldpwd=(Get-Location).Path
 Set-Location "$($tmp)"  # Cmd.exe cannot be run from a server share
 
-### Find CSV File name
+### Find CSV File name. 2024-05- This is dumb using 2 variables, I have added on to this so many times its terribly messy, but works. Ugh. Needs a rewrite/refactor SO badly.
 if (!($CSVFile -like "*.csv")) {  # Check for command line param -CSVFile
   $CSVFilename = Find-ServerCSVFile "$($ServerName)\$($CSVLocation)"
   if ($null -eq $CSVFilename) {
     $CSVFilename = Find-LocalCSVFile "." $OldPwd
   }
 } else {
-  Write-Verbose "Parameter found: -CSVFile $CSVFile"
-  Write-Verbose "Using: $($oldPwd)\$($CSVFile)"
-  $CSVFilename = "$($oldPwd)\$($CSVFile)"
+  if (!($CSVFilename)) {
+  Wr  ite-Verbose "Parameter found: -CSVFile $CSVFile"
+    Write-Verbose "Using: $($oldPwd)\$($CSVFile)"
+    $CSVFilename = "$($oldPwd)\$($CSVFile)"
+  } else {
+    Write-Verbose "Using: $($CSVFilename)"
+  }
 }
 # READ CSV
 if ($null -eq $CSVFilename) {
@@ -1938,7 +1944,7 @@ if ($null -eq $CSVFilename) {
     Write-Host "[X] Couldn't read CSV data from file : $CSVFilename " -ForegroundColor Red
     Exit
   } else {
-    Write-Host "[i] Read CSV data from : $CSVFilename " -ForegroundColor Cyan
+    Write-Host "[i] Read CSV data from : $CSVFilename - Good." -ForegroundColor Cyan
   }
 }
 
