@@ -3239,10 +3239,13 @@ foreach ($CurrentQID in $QIDs) {
             if ($smb1AccessEvents) { # we need to know the 3000 event 'Client Address' in it, and report this IP/hostname, move recursively thru the list for each address using SMB1
               Write-Host "[-] Found evidence of SMB1 client access in the event log:" -ForegroundColor Red
               foreach ($thisevent in $smb1AccessEvents) {  
-                $eventMessage = $thisevent.Message
-                $ipPattern = "\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}"
-                $clientIP = [regex]::Match($eventMessage, $ipPattern).Value
-                Write-Host "[-] Client IP Address: $clientIP" -ForegroundColor Red
+                  $eventMessage = $thisevent.Message
+                  $pattern = "Client Address: (.*)"
+                  $match = [regex]::Match($eventMessage, $pattern)
+                  if ($match.Success) {
+                      $clientIP = $match.Groups[1].Value # Capture only the group, not the entire match
+                      Write-Host "[-] Client IP Address: $clientIP" -ForegroundColor Red
+                  }
               }
               $smb1AccessEvent | Format-List
             } else {
