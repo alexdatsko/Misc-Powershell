@@ -2771,36 +2771,13 @@ foreach ($CurrentQID in $QIDs) {
           $QIDsDellCommandUpdate  = 1
         } else { $QIDsDellCommandUpdate  = 1 }
       }
-      { 110460 -eq $_ } {
-        if (Get-YesNo "$_ Check Office Security Update for March 2024 ? " -Results $Results) {
-          # Office ClicktoRun or Office 365 Suite MARCH 2024 Update is not installed   C:\Program Files (x86)\Microsoft Office\root\Office16\GRAPH.EXE  Version is  16.0.17328.20162#
+      { 110460 -eq $_ -or 110465 -eq $_ } {
+        if (Get-YesNo "$_ Check $VulnDesc ? " -Results $Results) {
+          # 110460 Office ClicktoRun or Office 365 Suite MARCH 2024 Update is not installed   C:\Program Files (x86)\Microsoft Office\root\Office16\GRAPH.EXE  Version is  16.0.17328.20162#
+          # 110465 Office ClicktoRun or Office 365 Suite MAY 2024 Update is not installed   C:\Program Files (x86)\Microsoft Office\root\Office16\GRAPH.EXE  Version is  16.0.17531.20140#
           $ResultsMissing = ($Results -split "is not installed")[0].trim()
           $ResultsVersion = ($Results -split "Version is")[1].trim().replace("#","")
-          $CheckEXE = Check-ResultsVersion -Results $Results
-          if (Test-Path $CheckEXE) {
-            $CheckEXEVersion = Get-FileVersion $CheckEXE
-            if ($CheckEXEVersion) {
-              Write-Verbose "EXE version found : $CheckEXE - $CheckEXEVersion .. checking against $ResultsVersion"
-              if ([version]$CheckEXEVersion -le [version]$ResultsVersion) {
-                Write-Host "[!] Vulnerable version $CheckEXE found : $CheckEXEVersion <= $ResultsVersion - Update missing: $ResultsMissing"
-              } else {
-                Write-Host "[+] EXE patched version found : $CheckEXEVersion > $VulnDescChromeWinVersion - already patched." -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..
-              }
-            } else {
-              Write-Host "[-] EXE Version not found, for $CheckEXE .." -ForegroundColor Yellow
-            }
-          } else {
-            Write-Host "[!] EXE no longer found: $CheckEXE - likely its already been updated. Let's check.."
-          }
-        }
-      }
-      { 110465 -eq $_ } {
-        if (Get-YesNo "$_ Check Microsoft Office Remote Code Execution (RCE) Vulnerability for May 2024 ? " -Results $Results) {
-          # Microsoft Office Remote Code Execution (RCE) Vulnerability for May 2024
-          # C:\Program Files (x86)\Microsoft Office\root\Office16\GRAPH.EXE  Version is  16.0.17531.20140#
-          $ResultsMissing = ($Results -split "is not installed")[0].trim()
-          $ResultsVersion = ($Results -split "Version is")[1].trim().replace("#","")
-          $CheckEXE = Check-ResultsVersion -Results $Results
+          $CheckEXE = Check-ResultsForVersion -Results $Results
           if (Test-Path $CheckEXE) {
             $CheckEXEVersion = Get-FileVersion $CheckEXE
             if ($CheckEXEVersion) {
