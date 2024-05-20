@@ -37,8 +37,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.47"
-# New in this version:   Fixes for QID 105170,105171 I never finished, looks like.. Changed to use my routines in simpler Install-MMESecurityFixes.ps1 for Steve a while back
+$Version = "0.38.48"
+# New in this version:   Fixes for backing up bitlocker keys
 $VersionInfo = "v$($Version) - Last modified: 5/20/2024"
 
 #### VERSION ###################################################
@@ -971,8 +971,8 @@ function Find-ServerCSVFile {
   $Servername = $script:Servername
   Write-Verbose "[Find-ServerCSVFile] Server Name: $Servername"
   Write-Verbose "[Find-ServerCSVFile] Location: $Location"
-  if (Test-Connection -ComputerName $servername -Count 2 -Delay 1 -Quiet) {
-    Write-Host "[!] Can't access '$($serverName)', skipping Find-ServerCSVFile!"
+  if (!(Test-Connection -ComputerName $servername -Count 2 -Delay 1 -Quiet)) {
+    Write-Verbose "[!] Can't access '$($serverName)', skipping Find-ServerCSVFile!"
     return $null
   }
   if (!($null -eq $Location)) { $Location = "data\secaud" }  # Default to \\$servername\data\secaud if can't read from config..
@@ -1470,15 +1470,15 @@ function Backup-BitlockerKeys {
       if ((Get-BitlockerVolume -MountPoint 'C:').VolumeStatus -eq "FullyDecrypted") {
         Write-Host "[!] $($BLV) not Bitlocker encrypted!"
       } else {  # Not FullyDecrypted should mean its bitlockered..
-        Write-Host "[!] Found C: Bitlockered."
-        $BLVs = (Get-BitLockerVolume).MountPoint
+        Write-Host "[!] Found C: Bitlockered, checking for other bitlockered drives."
+        $BLVs = (Get-BitLockerVolume).MountPoint | Where-Object { (Get-BitLockerVolume -MountPoint $_).VolumeStatus -eq 'FullyEncrypted' } | Sort
         foreach ($BLV in $BLVs) { 
           if (Get-BitLockerVolume -MountPoint $BLV -ErrorAction SilentlyContinue) {
             try {
-              Write-Host "[.] Backing up Bitlocker Keys to AD.."
-              Backup-BitLockerKeyProtector -MountPoint $BLV -KeyProtectorId (Get-BitLockerVolume -MountPoint $BLV).KeyProtector[1].KeyProtectorId
+              Write-Host "[.] Backing up Bitlocker Keys for $BLV to AD.."
+              Backup-BitLockerKeyProtector -MountPoint $BLV -KeyProtectorId (Get-BitLockerVolume -MountPoint $BLV).KeyProtector[1].KeyProtectorId -ErrorAction SilentlyContinue | Out-Null
             } catch { 
-              Write-Host "[!] ERROR: Could not access BitlockerKeyProtector. Is drive $BLV encrypted? "
+              Write-Host "[!] ERROR: Could not access BitlockerKeyProtector for $BLV !!"
               $BLVol = Get-BitLockerVolume
               $BLVol | select MountPoint,CapacityGB,VolumeStatus
             }
