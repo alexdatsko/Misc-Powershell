@@ -37,8 +37,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.45"
-# New in this version:   Rerun - added -QID to Get-Vars handling ($QID, $QIDSpecific)
+$Version = "0.38.46"
+# New in this version:   Updated where to check for CSV files, checking hostname for default \data\secaud, or just unc path, for most recent 30d file, for hypervhost / non-domain joined etc
 $VersionInfo = "v$($Version) - Last modified: 5/20/2024"
 
 #### VERSION ###################################################
@@ -1839,7 +1839,7 @@ if ($ServerName) {
   }
 } else {  # Can't ping $ServerName, lets see if there is a good location, or localhost?
   if (-not $script:Automated) {
-    $ServerName = Read-Host "[!] Couldn't ping SERVER or '$($ServerName)' .. please enter the server name where we can find the .CSV file, or press enter to read it out of the current folder: "
+    $ServerName = Read-Host "[!] Couldn't ping SERVER or '$($ServerName)' .. please enter the server name (or UNC path) where we can find the .CSV file, or press enter to read it out of the current folder: "
     if (!($ServerName)) { 
       $ServerName = "$($env:computername)"
       #$SecAudPath = "\\$($ServerName)\c$\temp\secaud"  # Change this?
@@ -1847,9 +1847,37 @@ if ($ServerName) {
       if (!(Test-Path $SecAudPath)) {
         New-Item -ItemType Directory -Path $SecAudPath
       }
+    } else {
+      $SecAudPath = $null
+
+      # Determine if the input is a UNC path or a hostname
+      if ($ServerName -like "\\*") {
+          # It's a UNC path, search for the file
+          $path = $ServerName
+      } elseif ($ServerName -ne "") {
+          # It's a hostname, construct the UNC path
+          $path = "\\$ServerName\data\secaud"
+      } else {
+          # No input provided, use the current directory
+          $path = "."
+      }
+
+      # Search for files modified within the last 30 days that match the pattern
+      $dateLimit = (Get-Date).AddDays(-30)
+      $files = Get-ChildItem -Path $path -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt $dateLimit }
+
+      if ($files.Count -gt 0) {
+          # Use the full path of the first found file
+          $SecAudPath = $files[0].FullName
+          Write-Host "[+] Latest CSV File found: $SecAudPath" -ForegroundColor Green
+      } else {
+          Write-Host "[-] No recent (within 30d) matching CSV files found in [ $SecAudPath ] "
+          Write-Host "[!] ERROR: Can't find a CSV to use, or the servername to check, and -Automated was specified.." -ForegroundColor Red
+          exit
+      }
     }
   } else { 
-    Write-Host "[!] ERROR: Can't find a CSV to use, or the servername to check, and -Automated was specified.." -ForegroundColor Red
+    Write-Host "[!] ERROR: Can't find a recent (within 30d) CSV to use, or the servername to check, and -Automated was specified.." -ForegroundColor Red
     exit
   }
 }
