@@ -2314,12 +2314,26 @@ foreach ($CurrentQID in $QIDs) {
           $check += Check-Reg -RegKey "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer"  -RegName "NoAutoRun" -RegValue "1" -SettingName "Autoplay - Disabled (for user)"
           if ($check -contains 1) { 
             Write-Host "[!] Making registry changes for [Autoplay - Disabled (for computer)]" -ForegroundColor Yellow
-            New-Item -Path "HKLM:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -Force | Out-Null
+            $HKLMPath = "HKLM:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer"
+            if (-not (Test-Path $HKLMPath)) {
+                New-Item -Path $HKLMPath -Force | Out-Null
+            }
             Set-ItemProperty -Path "HKLM:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -Name "NoDriveTypeAutorun" -Value 0xFF -Type DWord -Force
             Set-ItemProperty -Path "HKLM:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -Name "NoAutorun" -Value 0x1 -Type DWord -Force
-            New-Item -Path "HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -Force | Out-Null
+            $HKCUPath = "HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer"
+            if (-not (Test-Path $HKCUPath)) {
+                New-Item -Path $HKCUPath -Force | Out-Null
+            }
             Set-ItemProperty -Path "HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -Name "NoDriveTypeAutorun" -Value 0xFF -Type DWord -Force
             Set-ItemProperty -Path "HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -Name "NoAutorun" -Value 0x1 -Type DWord -Force
+            $check = @()
+            $check += Check-Reg -RegKey "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -RegName "NoDriveTypeAutoRun" -RegValue "255" -SettingName "Autoplay - Disabled (for computer)"
+            $check += Check-Reg -RegKey "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -RegName "NoAutoRun" -RegValue "1" -SettingName "Autoplay - Disabled (for computer)"
+            $check += Check-Reg -RegKey "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer"  -RegName "NoDriveTypeAutoRun" -RegValue "255" -SettingName "Autoplay - Disabled (for user)"
+            $check += Check-Reg -RegKey "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer"  -RegName "NoAutoRun" -RegValue "1" -SettingName "Autoplay - Disabled (for user)"
+            if (!($check)) {
+              Write-Host "[!] Looks like all settings are resolved."  
+            }
           } else { 
             Write-Host "[!] Looks like this has already been resolved."
           }

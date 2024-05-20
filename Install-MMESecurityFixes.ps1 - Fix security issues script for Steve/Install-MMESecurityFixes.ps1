@@ -22,6 +22,8 @@ v0.04 (Rev E) - 11-29-2023
 - Added WinVerifyTrust check and fix
 - SMB signing [checked for issues, looks clean]
 
+v0.05 (Rev F) - 05-20-2024
+ - fix for possibly removing default settings in Autoplay
 
  # Usage:
  #   ./Install-SecurityFixes.ps1 [-CheckOnly] [-Verbose]
@@ -155,10 +157,16 @@ function Check-NullSession {
 
 function Set-WindowsExplorerAutoplay {
   Write-Host "[!] Making registry changes for [Autoplay - Disabled (for computer)]" -ForegroundColor Yellow
-  New-Item -Path "HKLM:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -Force | Out-Null
+  $HKLMPath = "HKLM:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer"
+  if (-not (Test-Path $HKLMPath)) {
+      New-Item -Path $HKLMPath -Force | Out-Null
+  }
   Set-ItemProperty -Path "HKLM:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -Name "NoDriveTypeAutorun" -Value 0xFF -Type DWord -Force
   Set-ItemProperty -Path "HKLM:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -Name "NoAutorun" -Value 0x1 -Type DWord -Force
-  New-Item -Path "HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -Force | Out-Null
+  $HKCUPath = "HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer"
+  if (-not (Test-Path $HKCUPath)) {
+      New-Item -Path $HKCUPath -Force | Out-Null
+  }
   Set-ItemProperty -Path "HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -Name "NoDriveTypeAutorun" -Value 0xFF -Type DWord -Force
   Set-ItemProperty -Path "HKCU:SOFTWARE\Microsoft\Windows\CurrentVersion\policies\Explorer" -Name "NoAutorun" -Value 0x1 -Type DWord -Force
 }
