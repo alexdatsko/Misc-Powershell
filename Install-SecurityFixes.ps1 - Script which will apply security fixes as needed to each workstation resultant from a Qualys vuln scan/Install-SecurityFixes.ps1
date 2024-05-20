@@ -38,7 +38,7 @@ $AllHelp = "########################################################
 
 # No comments after the version number on the next line- Will screw up updates!
 $Version = "0.38.45"
-# New in this version:   Rerun - added -QID to Get-Vars handling ($QIDSpecific)
+# New in this version:   Rerun - added -QID to Get-Vars handling ($QID, $QIDSpecific)
 $VersionInfo = "v$($Version) - Last modified: 5/20/2024"
 
 #### VERSION ###################################################
@@ -442,6 +442,7 @@ function Get-Vars {
   if ($script:Verbose) { $vars += " -Verbose" }
   if ($script:CSVFile) { $vars += " -CSVFile $script:CSVFile" }
   if ($script:QIDSpecific) { $vars += " -QID $script:QIDSpecific" }
+  if ($script:QIDS) { $vars += " -QID $script:QID" }
   if ($script:Help) { $vars += " -Help" }
   Write-Verbose "Get-Vars: Vars = '$Vars'"
   return $vars
