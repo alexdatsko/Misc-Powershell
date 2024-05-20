@@ -37,8 +37,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.48"
-# New in this version:   Fixes for backing up bitlocker keys
+$Version = "0.38.49"
+# New in this version:   QID 110465 - check Microsoft Office Remote Code Execution (RCE) Vulnerability for May 2024
 $VersionInfo = "v$($Version) - Last modified: 5/20/2024"
 
 #### VERSION ###################################################
@@ -2794,6 +2794,31 @@ foreach ($CurrentQID in $QIDs) {
           }
         }
       }
+      { 110465 -eq $_ } {
+        if (Get-YesNo "$_ Check Microsoft Office Remote Code Execution (RCE) Vulnerability for May 2024 ? " -Results $Results) {
+          # Microsoft Office Remote Code Execution (RCE) Vulnerability for May 2024
+          # C:\Program Files (x86)\Microsoft Office\root\Office16\GRAPH.EXE  Version is  16.0.17531.20140#
+          $ResultsMissing = ($Results -split "is not installed")[0].trim()
+          $ResultsVersion = ($Results -split "Version is")[1].trim().replace("#","")
+          $CheckEXE = Check-ResultsVersion -Results $Results
+          if (Test-Path $CheckEXE) {
+            $CheckEXEVersion = Get-FileVersion $CheckEXE
+            if ($CheckEXEVersion) {
+              Write-Verbose "EXE version found : $CheckEXE - $CheckEXEVersion .. checking against $ResultsVersion"
+              if ([version]$CheckEXEVersion -le [version]$ResultsVersion) {
+                Write-Host "[!] Vulnerable version $CheckEXE found : $CheckEXEVersion <= $ResultsVersion - Update missing: $ResultsMissing"
+              } else {
+                Write-Host "[+] EXE patched version found : $CheckEXEVersion > $VulnDescChromeWinVersion - already patched." -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..
+              }
+            } else {
+              Write-Host "[-] EXE Version not found, for $CheckEXE .." -ForegroundColor Yellow
+            }
+          } else {
+            Write-Host "[!] EXE no longer found: $CheckEXE - likely its already been updated. Let's check.."
+          }
+        }
+      }
+      
       { 106069 -eq $_ } {
         if (Get-YesNo "$_ Remove EOL/Obsolete Software: Microsoft Access Database Engine 2010 Service Pack 2 ? " -Results $Results) { 
           $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Microsoft Access Database Engine 2010*'})
