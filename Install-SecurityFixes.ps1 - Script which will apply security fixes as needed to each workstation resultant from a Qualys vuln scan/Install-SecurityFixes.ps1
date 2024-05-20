@@ -1868,8 +1868,8 @@ if ($ServerName) {
 
       if ($files.Count -gt 0) {
           # Use the full path of the first found file
-          $SecAudPath = $files[0].FullName
-          Write-Host "[+] Latest CSV File found: $SecAudPath" -ForegroundColor Green
+          $CSVFilename = $files[0].FullName
+          Write-Host "[+] Latest CSV File found: $CSVFilename" -ForegroundColor Green
       } else {
           Write-Host "[-] No recent (within 30d) matching CSV files found in [ $SecAudPath ] "
           Write-Host "[!] ERROR: Can't find a CSV to use, or the servername to check, and -Automated was specified.." -ForegroundColor Red
