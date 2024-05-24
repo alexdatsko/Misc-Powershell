@@ -37,8 +37,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.49"
-# New in this version:   QID 110465 - check Microsoft Office Remote Code Execution (RCE) Vulnerability for May 2024
+$Version = "0.38.50"
+# New in this version:   Zoom - try to find multiple versions of same app installed
 $VersionInfo = "v$($Version) - Last modified: 5/20/2024"
 
 #### VERSION ###################################################
@@ -1144,6 +1144,24 @@ function Get-Products {
   $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like $ProductSearch})
   return $Products
 }
+
+function Check-MultipleVersionsInstalled  {
+  param (
+    [string]$Name,
+    [string]$Results
+  )
+  Write-Host "[.] Searching for multiple versions of $Name .."
+  $ProductsArray = Get-Products -ProductName $Name
+  if ($ProductsArray.Count -gt 1) {
+    if ($ProductsArray[0].IdentifyingNumber[0] -eq '{') {
+      Write-Host "[+] $ProductsArray.Name - $ProductsArray.IdentifyingNumber"  -ForegroundColor Yellow
+    }
+  } else {
+    Write-Host "[-] Only 1 app appears to be installed: "
+    $ProductsArray
+  }
+}
+
 
 function Remove-RegistryItem {
   param ([string]$Path)
@@ -2611,6 +2629,7 @@ foreach ($CurrentQID in $QIDs) {
             }
             if ($FolderFound) { Remove-Folder (Parse-ResultsFolder -Results $Results) }
             Show-FileVersionComparison -Name "Zoom" -Results $Results
+            Check-MultipleVersionsInstalled -Name "Zoom" -Results $Results
             $QIDsZoom = 1
         } else { $QIDsZoom = 1 }
       }
