@@ -3302,11 +3302,13 @@ foreach ($CurrentQID in $QIDs) {
         # Click To Run Office version can be removed, usually causes this - this is unfinished
 
         if (Get-YesNo "$_ Remove Microsoft Office Remote Code Execution Vulnerabilities (MS15-022) (Msores.dll) - ClickToRun office removal? " -Results $Results) { 
-          #$Products = Get-Products ""  
-          if ($Products -eq "yeahno") {
-              Remove-Software -Products $Products  -Results $Results
+          #$Products = Get-Products "Microsoft Office"    # This will select ANY version with that string in the name like the actual version installed alongside Click-To-Run..
+          $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like "Microsoft Office") }
+          if ($Products.Name -eq "Microsoft Office") {
+              Remove-Software -Products $Products -Results $Results
           } else {
-            Write-Host "[!] Product not found: '(MS Office click-to-run versions)' Please remove manually/update script !!`n" -ForegroundColor Red
+            Write-Host "[!] Product not found: (MS Office click-to-run version with 'Microsoft Office' in the name).. Please remove manually/update script !!`n" -ForegroundColor Red
+            appwiz.cpl
           }  
         }       
       }	
