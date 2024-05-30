@@ -3303,7 +3303,7 @@ foreach ($CurrentQID in $QIDs) {
 
         if (Get-YesNo "$_ Remove Microsoft Office Remote Code Execution Vulnerabilities (MS15-022) (Msores.dll) - ClickToRun office removal? " -Results $Results) { 
           #$Products = Get-Products "Microsoft Office"    # This will select ANY version with that string in the name like the actual version installed alongside Click-To-Run..
-          $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like "Microsoft Office" }
+          $Products = Get-WmiObject Win32_Product | Where-Object { $_.Name -like "Microsoft Office" }
           if ($Products.Name -eq "Microsoft Office") {
               if (Get-YesNo "[?] Remove $Products.Name - $Products.IdentifyingNumber") {
                 Remove-Software -Products $Products -Results $Results
