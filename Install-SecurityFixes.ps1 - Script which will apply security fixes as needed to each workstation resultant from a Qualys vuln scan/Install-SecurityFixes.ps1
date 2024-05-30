@@ -37,9 +37,9 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.50"
-# New in this version:   Zoom - try to find multiple versions of same app installed
-$VersionInfo = "v$($Version) - Last modified: 5/20/2024"
+$Version = "0.38.1"
+# New in this version:   110251 - fix for bad code
+$VersionInfo = "v$($Version) - Last modified: 5/30/2024"
 
 #### VERSION ###################################################
 
@@ -3303,9 +3303,11 @@ foreach ($CurrentQID in $QIDs) {
 
         if (Get-YesNo "$_ Remove Microsoft Office Remote Code Execution Vulnerabilities (MS15-022) (Msores.dll) - ClickToRun office removal? " -Results $Results) { 
           #$Products = Get-Products "Microsoft Office"    # This will select ANY version with that string in the name like the actual version installed alongside Click-To-Run..
-          $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like "Microsoft Office") }
+          $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like "Microsoft Office" }
           if ($Products.Name -eq "Microsoft Office") {
-              Remove-Software -Products $Products -Results $Results
+              if (Get-YesNo "[?] Remove $Products.Name - $Products.IdentifyingNumber") {
+                Remove-Software -Products $Products -Results $Results
+              }
           } else {
             Write-Host "[!] Product not found: (MS Office click-to-run version with 'Microsoft Office' in the name).. Please remove manually/update script !!`n" -ForegroundColor Red
             appwiz.cpl
