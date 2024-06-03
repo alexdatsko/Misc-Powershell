@@ -145,6 +145,8 @@ if ($Infile -like ".\*") {
 $curPath = ($pwd) # for now, this seems to work..
 if ($curPath -like "*Microsoft.Powershell.Core\FileSystem*") {
   $runPath = "\\$(($curPath -split "\\\\")[1])"   # Escaped \\\\ is \\
+} else {
+  $runPath = $curpath
 }
 
 Write-Verbose "runpath: $runpath"
