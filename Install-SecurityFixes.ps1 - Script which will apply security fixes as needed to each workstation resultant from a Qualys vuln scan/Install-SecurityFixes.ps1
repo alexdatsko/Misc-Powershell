@@ -37,9 +37,9 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.38.1"
-# New in this version:   110251 - fix for bad code
-$VersionInfo = "v$($Version) - Last modified: 5/30/2024"
+$Version = "0.39.01"
+# New in this version:   Weird, version modified to 38.1?  Fix for Teamviewer ..
+$VersionInfo = "v$($Version) - Last modified: 6/13/2024"
 
 #### VERSION ###################################################
 
@@ -1195,6 +1195,60 @@ function Remove-RegistryItem {
   } else {
     Write-Host "[.] Couldn't find Registry entry. Clean." -ForegroundColor Green
   }
+}
+
+function Set-RegistryValue {
+    param (
+        [string]$key,
+        [string]$name,
+        [string]$value
+    )
+
+    if (-not (Test-Path $key)) {
+        New-Item -Path $key -Force | Out-Null
+    }
+    Set-ItemProperty -Path $key -Name $name -Value $value
+}
+
+function Set-AdobeDefaults {
+  # This should set Adobe Reader DC to be the default application for PDF files.
+
+  # Define the Adobe Reader executable path
+  $adobePath = "C:\Program Files (x86)\Adobe\Acrobat Reader DC\Reader\AcroRd32.exe"
+
+  # Define the ProgID for Adobe Reader
+  $adobeProgID = "AcroExch.Document.DC"
+
+  # Step 1: Set the file association for .pdf files
+  $extension = ".pdf"
+
+  # Step 2: Update the UserChoice registry key for the current user
+  # Retrieve the SID of the current user
+  $user = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+  $sid = $user.Value
+
+  # Construct the UserChoice registry path
+  $regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$extension\UserChoice"
+
+  # Set the ProgID
+  Set-RegistryValue -key $regPath -name "ProgId" -value $adobeProgID
+
+  # Set the Hash (leave empty for simplicity)
+  $hash = ""
+  Set-RegistryValue -key $regPath -name "Hash" -value $hash
+
+  # Step 3: Update the DefaultProgram for the current user
+  $defaultProgramPath = "HKCU:\Software\Classes\$adobeProgID\shell\open\command"
+  Set-RegistryValue -key $defaultProgramPath -name "(default)" -value "`"$adobePath`" `%1"
+
+  # Output the results
+  Write-Output "File association for .pdf set to $adobeProgID"
+  Write-Output "Default program for $adobeProgID set to $adobePath `%1"
+  Write-Output "UserChoice registry updated for $extension"
+  
+  # Inform the user that the operation is complete
+  Write-Output "[!] Adobe Reader is now set as the default PDF application."
+
 }
 
 function Get-NewestAdobeReader {
