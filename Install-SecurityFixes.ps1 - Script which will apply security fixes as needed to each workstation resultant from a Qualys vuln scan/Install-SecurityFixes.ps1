@@ -38,7 +38,7 @@ $AllHelp = "########################################################
 
 # No comments after the version number on the next line- Will screw up updates!
 $Version = "0.39.02"
-# New in this version:   Weird, version modified to 38.1?  Fix for Teamviewer ..
+# New in this version:   92063	Microsoft 3D Builder Remote Code Execution (RCE) Vulnerability - September 2023
 $VersionInfo = "v$($Version) - Last modified: 8/2/2024"
 
 #### VERSION ###################################################
