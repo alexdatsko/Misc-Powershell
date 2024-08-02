@@ -5,7 +5,7 @@ param (
   [string] $CSVFile,               # Allow user to pick a CSV file on the commandline
   [int[]] $OnlyQIDs,               # Allow user to pick a list of QID(s) to remediate
   [int] $QID,                      # Allow user to pick one QID to remediate
-  [switch] $Help                   # Allow -Help to display help for parameters
+  [switch] $Help,                   # Allow -Help to display help for parameters
   [switch] $Update                 # Allow -Update to only update the script then exit
 )
 
@@ -40,8 +40,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.39.03"
-# New in this version:   92063	Microsoft 3D Builder Remote Code Execution (RCE) Vulnerability - September 2023 fix2
+$Version = "0.39.04"
+# New in this version:   92063	Microsoft 3D Builder Remote Code Execution (RCE) Vulnerability - September 2023 fix3
 $VersionInfo = "v$($Version) - Last modified: 8/2/2024"
 
 #### VERSION ###################################################
