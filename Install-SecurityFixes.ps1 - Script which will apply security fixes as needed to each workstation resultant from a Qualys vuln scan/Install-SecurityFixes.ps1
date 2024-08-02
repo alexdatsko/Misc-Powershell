@@ -6,6 +6,7 @@ param (
   [int[]] $OnlyQIDs,               # Allow user to pick a list of QID(s) to remediate
   [int] $QID,                      # Allow user to pick one QID to remediate
   [switch] $Help                   # Allow -Help to display help for parameters
+  [switch] $Update                 # Allow -Update to only update the script then exit
 )
 
 $AllHelp = "########################################################
@@ -19,6 +20,8 @@ $AllHelp = "########################################################
     This script takes an output of a Qualys scan in a CSV file, determines if the hostname is present in the file, and applies fixes as needed.
 .PARAMETER Help
     Displays help information for the script.
+.PARAMETER Update
+    Updates the script (if an update is available on github) and then exits.
 .PARAMETER CSVFile
     Specifies the path to the CSV file to use.
 .PARAMETER Automated
@@ -455,17 +458,22 @@ Function Update-Script {
   if (Update-ScriptFile -URL $url -FilenameTmp "$($tmp)\Install-SecurityFixes.ps1" -FilenamePerm "$($pwd)\Install-SecurityFixes.ps1" -VersionStr '$Version = *' -VersionToCheck $Version) {
     Write-Verbose "Automated: $Automated"
     Write-Verbose "script:Automated: $script:Automated"
-    Write-Host "[+] Update found, re-running script .."
-    Stop-Transcript
-    $Vars = Get-Vars
-    Write-Verbose "Re-running script with Vars: '$Vars'"
-    if ($script:Automated) {
-      Write-Verbose "Script was run as automated, setting ReRun reg entry to true."
-      Set-RegistryEntry -Name "ReRun" -Value $true
+    if ($script:Update) { 
+      Write-Host "[!] Script flag -Update mode only detected, exiting!"
+      exit
+    } else {
+      Write-Host "[+] Update found, re-running script .."
+      Stop-Transcript
+      $Vars = Get-Vars
+      Write-Verbose "Re-running script with Vars: '$Vars'"
+      if ($script:Automated) {
+        Write-Verbose "Script was run as automated, setting ReRun reg entry to true."
+        Set-RegistryEntry -Name "ReRun" -Value $true
+      }
+      . "$($pwd)\Install-SecurityFixes.ps1" $Vars  # Dot source and run from here once, then exit.
+      Stop-Transcript
+      exit
     }
-    . "$($pwd)\Install-SecurityFixes.ps1" $Vars  # Dot source and run from here once, then exit.
-    Stop-Transcript
-    exit
   } else {
     Write-Host "[-] No update found for $($Version)."
     #return $false
