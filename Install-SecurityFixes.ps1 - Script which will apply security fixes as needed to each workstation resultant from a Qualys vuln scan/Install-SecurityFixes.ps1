@@ -3651,7 +3651,7 @@ foreach ($CurrentQID in $QIDs) {
         }
       }
       92061 {  # Microsoft vulnerable Microsoft.Microsoft3DViewer detected  Version     '7.2105.4012.0'  Version     '7.2211.24012.0'  Version     '7.2107.7012.0'#
-        $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
+        $AppxVersion = ($results -split "Version")[1].replace("'","").replace('Vulnerable version of').replace("#","").trim()
         if (Get-YesNo "$_ Microsoft 3D Viewer Remote Code Execution (RCE) Vulnerability - September 2023" -Results $Results) {
           Remove-SpecificAppXPackage -Name "Microsoft3DViewer" -Version "7.2105.4012.0" -Results $Results 
           Remove-SpecificAppXPackage -Name "Microsoft3DViewer" -Version "7.2211.24012.0" -Results $Results 
