@@ -37,9 +37,9 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.39.01"
+$Version = "0.39.02"
 # New in this version:   Weird, version modified to 38.1?  Fix for Teamviewer ..
-$VersionInfo = "v$($Version) - Last modified: 6/13/2024"
+$VersionInfo = "v$($Version) - Last modified: 8/2/2024"
 
 #### VERSION ###################################################
 
@@ -3650,8 +3650,14 @@ foreach ($CurrentQID in $QIDs) {
           Remove-SpecificAppXPackage -Name "Microsoft3DViewer" -Version "7.2107.7012.0" -Results $Results 
         }
       }
+      92063 { # Vulnerable version of Microsoft 3D Builder detected  Version     '20.0.3.0'#
+        $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim() 
+        if (Get-YesNo "$_ Microsoft 3D Builder Remote Code Execution (RCE) Vulnerability - September 2023" -Results $Results) {
+          Remove-SpecificAppXPackage -Name "Microsoft 3D Builder" -Version $AppxVersion -Results $Results # "20.0.3.0" 
+        }
+      }  
       92049 { 
-        $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
+        $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()   #
         if (Get-YesNo "$_ Microsoft Windows Codecs Library HEVC Video Extensions Remote Code Execution (RCE) Vulnerability for August 2023" -Results $Results) {
           Remove-SpecificAppXPackage -Name "HEVCVideoExtension" -Version $AppxVersion -Results $Results # "2.0.61591.0" 
         }
