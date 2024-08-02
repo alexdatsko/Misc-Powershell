@@ -1627,11 +1627,13 @@ function Get-VersionResults {
   $appname = "??"  # For now, it appname isn't found, it will show that its returning junk when run with -Verbose
   if ($Results -like "*version is*") {   # Fuck you qualys, stay consistent with wording please..
     # %ProgramFiles(x86)%\Google\Chrome\Application\123.0.6312.59\chrome.dll file version is 123.0.6312.59#
-    $SplitResults = (($Results) -split "version is").trim()
+    $SplitResults = (($Results) -csplit "version is").trim()
   } else {
     # assuming its like this instead, outdated UWP app detection:
     # "Vulnerable Microsoft Paint 3D detected  Version     '6.2105.4017.0'  Version     '6.2203.1037.0'#"
-    $SplitResults = (($Results) -split "Version").trim()
+    # or:
+    # "Vulnerable version of Microsoft 3D Builder detected  Version     '20.0.3.0'#"
+    $SplitResults = (($Results) -csplit "Version").trim()
   }
   #UWP example
   # $Results = "Vulnerable Microsoft Paint 3D detected  Version     '6.2105.4017.0'  Version     '6.2203.1037.0'#"
@@ -1645,6 +1647,12 @@ function Get-VersionResults {
   # Splits to: 
   #    %ProgramFiles(x86)%\Google\Chrome\Application\123.0.6312.59\chrome.dll file
   #    123.0.6312.59#  
+
+  # 92063 example
+  # $Results = "Vulnerable version of Microsoft 3D Builder detected  Version     '20.0.3.0'#"
+  # Splits to:
+  # 
+
 
   Write-Verbose "Get-VersionResults - SplitResults : $splitresults"
   Foreach ($result in $SplitResults) {
@@ -1690,16 +1698,19 @@ function Remove-SpecificAppXPackage {
       Write-Verbose "AppName: $AppName"
       Write-Verbose "AppVersion: $AppVersion"
       if ($null -eq $Version -and ($VersionResults).count -lt 1) {
+        Write-Host "NOTE: Version param of Remove-SpecificAppxPackage is blank: [$($Version)] .. setting to VersionResults."
         $Version = $VersionResults
       }
+      Write-Verbose "VersionResults: $VersionResults"
+      Write-Verbose "Version: $Version"
       if ([System.Version]$AppVersion -le [System.Version]$Version) {    # VERSION CHECK
         Write-Host "[!] $($i): Vulnerable version of store app found : $AppName - [$($AppVersion)] <= [$($Version)]"  -ForegroundColor Red
         if (Get-YesNo "$AppName - $AppVersion <= $Version .  Remove? ") {  # Final check, in case there are issues getting $Version or $VersionResults ..
-          Write-Host "[.] Removing $AppName :" -ForegroundColor Yellow
+          Write-Host "[.] Removing $AppName :" -ForegroundColor Green
           try {
             $null = (Remove-AppxPackage -Package $AppName -ErrorAction SilentlyContinue)            # Remove
           } catch { } # Ignore errors..
-          Write-Host "[.] Removing $AppName -AllUsers :" -ForegroundColor Yellow
+          Write-Host "[.] Removing $AppName -AllUsers :" -ForegroundColor Green
           try {
             $null = (Remove-AppxPackage -Package $AppName -AllUsers -ErrorAction SilentlyContinue)  # Remove with -AllUsers, this may create an error because a 'user is logged-off'.. but shouldn't matter.
           } catch { } # Ignore errors..
@@ -3651,7 +3662,7 @@ foreach ($CurrentQID in $QIDs) {
         }
       }
       92061 {  # Microsoft vulnerable Microsoft.Microsoft3DViewer detected  Version     '7.2105.4012.0'  Version     '7.2211.24012.0'  Version     '7.2107.7012.0'#
-        $AppxVersion = ($results -split "Version")[1].replace("'","").replace('Vulnerable version of').replace("#","").trim()
+        $AppxVersion = ($results -csplit "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Microsoft 3D Viewer Remote Code Execution (RCE) Vulnerability - September 2023" -Results $Results) {
           Remove-SpecificAppXPackage -Name "Microsoft3DViewer" -Version "7.2105.4012.0" -Results $Results 
           Remove-SpecificAppXPackage -Name "Microsoft3DViewer" -Version "7.2211.24012.0" -Results $Results 
@@ -3659,7 +3670,7 @@ foreach ($CurrentQID in $QIDs) {
         }
       }
       92063 { # Vulnerable version of Microsoft 3D Builder detected  Version     '20.0.3.0'#
-        $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim() 
+        $AppxVersion = ($results -csplit "Version")[1].replace("'","").replace('Vulnerable version of','').replace("#","").trim() 
         if (Get-YesNo "$_ Microsoft 3D Builder Remote Code Execution (RCE) Vulnerability - September 2023" -Results $Results) {
           Remove-SpecificAppXPackage -Name "Microsoft.3DBuilder" -Version $AppxVersion -Results $Results # "20.0.3.0" 
         }
