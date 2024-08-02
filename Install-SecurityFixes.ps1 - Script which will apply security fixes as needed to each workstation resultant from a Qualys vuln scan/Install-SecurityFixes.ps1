@@ -37,8 +37,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.39.02"
-# New in this version:   92063	Microsoft 3D Builder Remote Code Execution (RCE) Vulnerability - September 2023
+$Version = "0.39.03"
+# New in this version:   92063	Microsoft 3D Builder Remote Code Execution (RCE) Vulnerability - September 2023 fix2
 $VersionInfo = "v$($Version) - Last modified: 8/2/2024"
 
 #### VERSION ###################################################
@@ -3653,7 +3653,7 @@ foreach ($CurrentQID in $QIDs) {
       92063 { # Vulnerable version of Microsoft 3D Builder detected  Version     '20.0.3.0'#
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim() 
         if (Get-YesNo "$_ Microsoft 3D Builder Remote Code Execution (RCE) Vulnerability - September 2023" -Results $Results) {
-          Remove-SpecificAppXPackage -Name "Microsoft 3D Builder" -Version $AppxVersion -Results $Results # "20.0.3.0" 
+          Remove-SpecificAppXPackage -Name "Microsoft.3DBuilder" -Version $AppxVersion -Results $Results # "20.0.3.0" 
         }
       }  
       92049 { 
