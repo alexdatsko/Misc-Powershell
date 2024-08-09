@@ -40,9 +40,9 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.39.04"
-# New in this version:   92063	Microsoft 3D Builder Remote Code Execution (RCE) Vulnerability - September 2023 fix3
-$VersionInfo = "v$($Version) - Last modified: 8/2/2024"
+$Version = "0.39.05"
+# New in this version:   110471	Microsoft Outlook Security Update for July 2024	3				Office ClicktoRun or Office 365 Suite JULY 2024 Update is not installed
+$VersionInfo = "v$($Version) - Last modified: 8/8/2024"
 
 #### VERSION ###################################################
 
@@ -3932,7 +3932,7 @@ foreach ($CurrentQID in $QIDs) {
       # Default - QID not found!  3-28-24 - Lets check for specific Results here. I don't know what the QID numbers will be, but for now, if there are specific KB's in the results, it is likely missing these patches
       #   But - lets check that those patches are not installed.
       Default {
-        if (($Results -like "*KB*" -or $Results -like "*GRAPH.EXE*") -and $Results -like "*is not installed*") {
+        if (($Results -like "*KB*" -or $Results -like "*GRAPH.EXE*" -or $Results -like 'Office ClicktoRun*' -or $Results -like 'Office 365 Suite*') -and $Results -like "*is not installed*") {
           if (Get-YesNo "(Default) $_ Check if KB is installed for $VulnDesc " -Results $Results) { 
             Write-Verbose "- Found $_ is related to a KB, contains 'KB' and 'is not installed'"
             # Lets check the file versioning stuff instead as it is a better source of truth if a patch is installed or not, thanks Microsoft
