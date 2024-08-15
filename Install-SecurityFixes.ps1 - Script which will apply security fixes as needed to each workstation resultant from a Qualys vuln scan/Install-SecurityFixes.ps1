@@ -40,9 +40,9 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.39.06"
-# New in this version:   DCU 5.4.0 - https://dl.dell.com/FOLDER11914075M/1/Dell-Command-Update-Application_6VFWW_WIN_5.4.0_A00.EXE
-$VersionInfo = "v$($Version) - Last modified: 8/8/2024"
+$Version = "0.39.07"
+# New in this version:   QID 379695 Irfanview
+$VersionInfo = "v$($Version) - Last modified: 8/15/2024"
 
 #### VERSION ###################################################
 
