@@ -40,8 +40,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.39.05"
-# New in this version:   110471	Microsoft Outlook Security Update for July 2024	3				Office ClicktoRun or Office 365 Suite JULY 2024 Update is not installed
+$Version = "0.39.06"
+# New in this version:   DCU 5.4.0 - https://dl.dell.com/FOLDER11914075M/1/Dell-Command-Update-Application_6VFWW_WIN_5.4.0_A00.EXE
 $VersionInfo = "v$($Version) - Last modified: 8/8/2024"
 
 #### VERSION ###################################################
@@ -57,7 +57,8 @@ if ($Help) {
 
 # ----------- Script specific vars:  ---------------
 $AgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.67 Safari/537.36"
-$DCUUrl = "https://dl.dell.com/FOLDER11201514M/1/Dell-Command-Update-Application_4R78G_WIN_5.2.0_A00.EXE"
+$OLE19x64Url = "https://go.microsoft.com/fwlink/?linkid=2278038"
+$DCUUrl = "https://dl.dell.com/FOLDER11914075M/1/Dell-Command-Update-Application_6VFWW_WIN_5.4.0_A00.EXE"
 $DCUFilename = ($DCUUrl -split "/")[-1]
 $DCUVersion = (($DCUUrl -split "_WIN_")[1] -split "_A0")[0]
 $CheckOptionalUpdates = $true                # Set this to false to ignore Optional Updates registry value
@@ -2689,6 +2690,15 @@ foreach ($CurrentQID in $QIDs) {
             $QIDsFirefox = 1
         } else { $QIDsFirefox = 1 }
       }      
+      { ($QIDsIrfanView -contains $_) -or ($VulnDesc -like "*IrfanView*" -and ($QIDsIrfanView -ne 1)) } {
+        if (Get-YesNo "$_ Install newest IrfanView from Ninite? " -Results $Results) { 
+            $IrfanviewUrl = "https://ninite.com/irfanview/ninite.exe"
+            Update-ViaNinite -Uri $IrfanviewUrl -Outfile "NiniteIrfanview.exe" -Killprocess "Irfanview.exe" -UpdateString "Irfanview"
+            $QIDsIrfanView = 1
+        } else { $QIDsIrfanView = 1 }
+      }      
+      
+
       { ($QIDsZoom -contains $_) -or ($VulnDesc -like "*Zoom*" -and ($QIDsZoom -ne 1)) } {
         if (Get-YesNo "$_ Install newest Zoom Client from Ninite? " -Results $Results) { 
             Update-ViaNinite "https://ninite.com/zoom/ninite.exe" -OutFile "$($tmp)\ninite.exe" -KillProcess 'ninite.exe' -UpdateString "Zoom client"
@@ -3238,6 +3248,11 @@ foreach ($CurrentQID in $QIDs) {
           # New version: Microsoft OLE DB Driver 18 for SQL Server version prior to 18.7.2.0
           # x86 installer: https://go.microsoft.com/fwlink/?linkid=2266858  https://download.microsoft.com/download/2/6/1/2613c841-cf12-4ba3-b0f8-50dcc195faa4/en-US/18.7.2.0/x86/msoledbsql.msi
           # x64 installer: https://go.microsoft.com/fwlink/?linkid=2266757  https://download.microsoft.com/download/2/6/1/2613c841-cf12-4ba3-b0f8-50dcc195faa4/en-US/18.7.2.0/x64/msoledbsql.msi
+          
+          # 8/15/24 - these just keep coming..
+          # %SYSTEMROOT%\System32\msoledbsql19.dll  Version is  19.3.2.0  %SYSTEMROOT%\SysWOW64\msoledbsql19.dll  Version is  19.3.2.0#
+          # 19.3.5.0 OLE DB x64 download : https://go.microsoft.com/fwlink/?linkid=2278038
+          # Added OLE DB vars
 
           if ($Results -like "*oledbsql*" -and $Results -like "*19*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2248728"; $LicenseTerms="IACCEPTMSOLEDBSQLLICENSETERMS=YES"; $OLEODBC="19.3.2 OLE"; $ProductCheck = "Microsoft OLE DB Driver" } else { #19.3.2 OLE
             if ($Results -like "*oledbsql*" -and $Results -like "*18*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2266757"; $LicenseTerms="IACCEPTMSOLEDBSQLLICENSETERMS=YES"; $OLEODBC="18.7.2 OLE"; $ProductCheck = "Microsoft OLE DB Driver"  } else { #18.7.2 OLE

@@ -34,6 +34,9 @@ $QIDsGhostScript = 371157
 $QIDsOffice2007 = 110330,110327,110325,110324,110323,110320
 $QIDsVLC = 379007,379008
 $QIDsMSTeams = 378941,378755
+$QIDsIrfanView = 379695
 $MicrosoftODBCOLEDB = 378931,379596
+
+
 
 Write-Output "[+] Done loading QID lists."

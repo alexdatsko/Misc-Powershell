@@ -67,7 +67,7 @@ foreach ($Line in $InterestingLines) {
     # Make sure you have a full registry backup of Component Based Servicing before you continue.. Let's remove entries of ALL the offending packages using this language..
     $Rest = $(($L -split("'") )[1])    
     $Package = $Rest.Substring(0,$Rest.Length - ($Rest.split(".")[4]).Length)
-
+    if ($Verbose) { "[+] Package found: $($Package)" }
     if ($Packages -notcontains $Package) { $Packages += $Package }
 }
 
