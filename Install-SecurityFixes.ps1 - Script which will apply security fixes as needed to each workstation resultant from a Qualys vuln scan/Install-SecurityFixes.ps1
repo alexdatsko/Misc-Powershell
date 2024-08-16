@@ -40,9 +40,9 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.39.07"
-# New in this version:   QID 379695 Irfanview
-$VersionInfo = "v$($Version) - Last modified: 8/15/2024"
+$Version = "0.39.08"
+# New in this version:   QID 110473, 474 and all other Microsoft Outlook Remote Code Execution (RCE) Vulnerability for *
+$VersionInfo = "v$($Version) - Last modified: 8/16/2024"
 
 #### VERSION ###################################################
 
@@ -699,8 +699,7 @@ function Check-Reg {
 
 function Check-ResultsForFiles {
     param(
-        [Parameter(Mandatory = $true)]
-        [string] $Results
+        [Parameter(Mandatory = $true)][string] $Results
     )
     
   # This returns MULTIPLE Filenames from $Results. 
@@ -2608,7 +2607,7 @@ foreach ($CurrentQID in $QIDs) {
             if ($ChromeFileVersion) {
               Write-Verbose "Chrome version found : $ChromeFile - $ChromeFileVersion .. checking against $VulnDescChromeWinVersion"
               if ([version]$ChromeFileVersion -lt [version]$VulnDescChromeWinVersion) {  # Fixed bug 3-28-24 - logic above is 'Prior to version' not 'Prior to or equals version'!! vuln desc is 'prior to version ...'
-                Write-Host "[!] Vulnerable version $ChromeFile found : $ChromeFileVersion < $VulnDescChromeWinVersion - Updating.."
+                Write-Host "[!] Vulnerable version $ChromeFile found : $ChromeFileVersion < $VulnDescChromeWinVersion - Updating.." -ForegroundColor Red
                 Update-Chrome
                 #Post-update check
                 $ChromeFileVersion = Get-ChromeVersion
@@ -2873,30 +2872,6 @@ foreach ($CurrentQID in $QIDs) {
           $QIDsDellCommandUpdate  = 1
         } else { $QIDsDellCommandUpdate  = 1 }
       }
-      { 110460 -eq $_ -or 110465 -eq $_ } {
-        if (Get-YesNo "$_ Check $VulnDesc ? " -Results $Results) {
-          # 110460 Office ClicktoRun or Office 365 Suite MARCH 2024 Update is not installed   C:\Program Files (x86)\Microsoft Office\root\Office16\GRAPH.EXE  Version is  16.0.17328.20162#
-          # 110465 Office ClicktoRun or Office 365 Suite MAY 2024 Update is not installed   C:\Program Files (x86)\Microsoft Office\root\Office16\GRAPH.EXE  Version is  16.0.17531.20140#
-          $ResultsMissing = ($Results -split "is not installed")[0].trim()
-          $ResultsVersion = ($Results -split "Version is")[1].trim().replace("#","")
-          $CheckEXE = Check-ResultsForVersion -Results $Results
-          if (Test-Path $CheckEXE) {
-            $CheckEXEVersion = Get-FileVersion $CheckEXE
-            if ($CheckEXEVersion) {
-              Write-Verbose "EXE version found : $CheckEXE - $CheckEXEVersion .. checking against $ResultsVersion"
-              if ([version]$CheckEXEVersion -le [version]$ResultsVersion) {
-                Write-Host "[!] Vulnerable version $CheckEXE found : $CheckEXEVersion <= $ResultsVersion - Update missing: $ResultsMissing"
-              } else {
-                Write-Host "[+] EXE patched version found : $CheckEXEVersion > $VulnDescChromeWinVersion - already patched." -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..
-              }
-            } else {
-              Write-Host "[-] EXE Version not found, for $CheckEXE .." -ForegroundColor Yellow
-            }
-          } else {
-            Write-Host "[!] EXE no longer found: $CheckEXE - likely its already been updated. Let's check.."
-          }
-        }
-      }
       
       { 106069 -eq $_ } {
         if (Get-YesNo "$_ Remove EOL/Obsolete Software: Microsoft Access Database Engine 2010 Service Pack 2 ? " -Results $Results) { 
@@ -3032,6 +3007,26 @@ foreach ($CurrentQID in $QIDs) {
           $TeamsURL=(IWR "https://teams.microsoft.com/desktopclient/installer/windows/x64").Content
           IWR $TeamsURL -OutFile "$($tmp)/teams.exe"
           . "$($tmp)/teams.exe"
+          Write-Host ""
+          Start-Sleep 10
+          $CheckEXEs = Check-ResultsForFiles -Results $Results
+          foreach ($CheckEXE in $CheckEXEs) {  # could return multiple results!
+            if (Test-Path $CheckEXE) {
+              $CheckEXEVersion = Get-FileVersion $CheckEXE
+              if ($CheckEXEVersion) {
+                Write-Verbose "EXE version found : $CheckEXE - $CheckEXEVersion .. checking against $ResultsVersion"
+                if ([version]$CheckEXEVersion -le [version]$ResultsVersion) {
+                  Write-Host "[!] Vulnerable version $CheckEXE found : $CheckEXEVersion <= $ResultsVersion - Update missing: $ResultsMissing"
+                } else {
+                  Write-Host "[+] EXE patched version found : $CheckEXEVersion > $VulnDescChromeWinVersion - already patched." -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..
+                }
+              } else {
+                Write-Host "[-] EXE Version not found, for $CheckEXE .." -ForegroundColor Yellow
+              }
+            } else {
+              Write-Host "[!] EXE no longer found: $CheckEXE - likely its already been updated. Let's check.."
+            }
+          }
         }
         $QIDsMSTeams = 1
       }
@@ -3495,6 +3490,37 @@ foreach ($CurrentQID in $QIDs) {
           ForEach ($AppxVersion in $AppxVersions) {
             Write-Host "[.] Removing Microsoft.DesktopAppInstaller version $AppxVersion .."
             Remove-SpecificAppXPackage -Name "Microsoft.DesktopAppInstaller" -Version $AppxVersion -Results $Results
+          }
+        }
+      }
+      { $Results -like '*Office ClicktoRun or Office 365 Suite*'} {
+        if (Get-YesNo "$_ Check $VulnDesc ? " -Results $Results) {
+          # 110460 Office ClicktoRun or Office 365 Suite MARCH 2024 Update is not installed   C:\Program Files (x86)\Microsoft Office\root\Office16\GRAPH.EXE  Version is  16.0.17328.20162#
+          # 110465 Office ClicktoRun or Office 365 Suite MAY 2024 Update is not installed   C:\Program Files (x86)\Microsoft Office\root\Office16\GRAPH.EXE  Version is  16.0.17531.20140#
+          # 110473	Microsoft Office Security Update for August 2024
+          # 110474	Microsoft Outlook Remote Code Execution (RCE) Vulnerability for August 2024
+
+          $ResultsMissing = ($Results -split "is not installed")[0].trim()
+          $ResultsVersion = ($Results -split "Version is")[1].trim().replace("#","")
+          $CheckEXE = Check-ResultsForVersion -Results $Results
+          if (Test-Path $CheckEXE) {
+            $CheckEXEVersion = Get-FileVersion $CheckEXE
+            if ($CheckEXEVersion) {
+              Write-Verbose "EXE version found : $CheckEXE - $CheckEXEVersion .. checking against $ResultsVersion"
+              if ([version]$CheckEXEVersion -le [version]$ResultsVersion) {
+                Write-Host "[!] Vulnerable version $CheckEXE found : $CheckEXEVersion <= $ResultsVersion - Update missing: $ResultsMissing" -ForegroundColor Red
+                cd "C:\Program Files\Common Files\Microsoft Shared\ClickToRun"
+                & OfficeC2RClient.exe /update user displaylevel=false forceappshutdown=true
+                Write-Host "[+] Attempting to patch with C:\Program Files\Common Files\Microsoft Shared\ClickToRun\OfficeC2RClient.exe /update user displaylevel=false forceappshutdown=true .."  -ForegroundColor Green
+                Write-Host "[+] Process has been started, will run in the background and should be patched within 20-30 seconds." -ForegroundColor Green
+              } else {
+                Write-Host "[+] EXE patched version found : $CheckEXEVersion > $VulnDescChromeWinVersion - already patched." -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..
+              }
+            } else {
+              Write-Host "[-] EXE Version not found, for $CheckEXE .." -ForegroundColor Yellow
+            }
+          } else {
+            Write-Host "[!] EXE no longer found: $CheckEXE - likely its already been updated. Let's check.."
           }
         }
       }
