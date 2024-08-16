@@ -40,8 +40,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.39.08"
-# New in this version:   QID 110473, 474 and all other Microsoft Outlook Remote Code Execution (RCE) Vulnerability for *
+$Version = "0.39.09"
+# New in this version:   QID 110473, 474 and all other Microsoft Outlook Remote Code Execution (RCE) Vulnerability for * - RECHECK
 $VersionInfo = "v$($Version) - Last modified: 8/16/2024"
 
 #### VERSION ###################################################
@@ -3512,7 +3512,7 @@ foreach ($CurrentQID in $QIDs) {
                 cd "C:\Program Files\Common Files\Microsoft Shared\ClickToRun"
                 & OfficeC2RClient.exe /update user displaylevel=false forceappshutdown=true
                 Write-Host "[+] Attempting to patch with C:\Program Files\Common Files\Microsoft Shared\ClickToRun\OfficeC2RClient.exe /update user displaylevel=false forceappshutdown=true .."  -ForegroundColor Green
-                Write-Host "[+] Process has been started, will run in the background and should be patched within 20-30 seconds." -ForegroundColor Green
+                Write-Host "[+] Process has been started, will run in the background and should be patched within 30-60 seconds." -ForegroundColor Green
               } else {
                 Write-Host "[+] EXE patched version found : $CheckEXEVersion > $VulnDescChromeWinVersion - already patched." -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..
               }
@@ -3520,7 +3520,19 @@ foreach ($CurrentQID in $QIDs) {
               Write-Host "[-] EXE Version not found, for $CheckEXE .." -ForegroundColor Yellow
             }
           } else {
-            Write-Host "[!] EXE no longer found: $CheckEXE - likely its already been updated. Let's check.."
+            Write-Host "[!] EXE no longer found: $CheckEXE - likely its already been updated. Let's test again.."
+            $CheckEXE = Check-ResultsForVersion -Results $Results
+            if (Test-Path $CheckEXE) {
+              $CheckEXEVersion = Get-FileVersion $CheckEXE
+              if ($CheckEXEVersion) {
+                Write-Verbose "EXE version found : $CheckEXE - $CheckEXEVersion .. checking against $ResultsVersion"
+                if ([version]$CheckEXEVersion -le [version]$ResultsVersion) {
+                  Write-Host "[!] Vulnerable version $CheckEXE still found : $CheckEXEVersion <= $ResultsVersion - Update missing: $ResultsMissing" -ForegroundColor Red
+                } else {
+                  Write-Host "[+] EXE patched version found : $CheckEXEVersion > $VulnDescChromeWinVersion - good!" -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..  
+                }  
+              }
+            }
           }
         }
       }
