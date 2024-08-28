@@ -46,9 +46,9 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.0"
-# New in this version:   Added ability to -skipQIDs
-$VersionInfo = "v$($Version) - Last modified: 8/16/2024"
+$Version = "0.40.01"
+# New in this version:   110473 110474 - Check-ResultsForVersion should be Check-ResultsForFile
+$VersionInfo = "v$($Version) - Last modified: 8/28/2024"
 
 #### VERSION ###################################################
 
@@ -863,7 +863,7 @@ function Check-ResultsForFile {  # 03-28-2024
   return $CheckFile
 }
 
-function Check-ResultsForVersion {  # 03-28-2024
+function Check-ResultsForVersion {  
   param( [Parameter(Mandatory=$true)]
     [string] $Results
   )
@@ -877,6 +877,10 @@ function Check-ResultsForVersion {  # 03-28-2024
   #  KB5034279 or KB5034278 is not installed  %windir%\Microsoft.NET\Framework64\v2.0.50727\System.dll Version is 2.0.50727.8970 %windir%\Microsoft.NET\Framework\v2.0.50727\System.dll Version is 2.0.50727.8970 %windir%\Microsoft.NET\Framework64\v4.0.30319\System.dll Version is 4.8.4654.0 %windir%\Microsoft.NET\Framework\v4.0.30319\System.dll Version is 4.8.4654.0#
   # 100419:
   #  HKLM\Software\Microsoft\Internet Explorer Version = 9.11.9600.21615 KB5034120 is not installed  %windir%\System32\mshtml.dll  Version is  11.0.9600.21615#
+  # 8-28-24:
+  #   110473 Office ClicktoRun or Office 365 Suite AUGUST 2024 Update is not installed   C:\Program Files (x86)\Microsoft Office\root\Office16\GRAPH.EXE  Version is  16.0.17830.20138#
+  #   110474 Office ClicktoRun or Office 365 Suite AUGUST 2024 Update is not installed   C:\Program Files (x86)\Microsoft Office\root\Office16\OUTLOOK.EXE  Version is  16.0.17830.20138#
+
   if ($Results -clike "*Version is*") {   # ack, -clike compares case also, -like does NOT, forgot about this.
     $CheckVersion = (($Results -split "Version is ")[1].trim() -split " ")[0].replace("#","").trim()
   } else {
@@ -3550,9 +3554,14 @@ foreach ($CurrentQID in $QIDs) {
           # 110473	Microsoft Office Security Update for August 2024
           # 110474	Microsoft Outlook Remote Code Execution (RCE) Vulnerability for August 2024
 
+          # 110473 Office ClicktoRun or Office 365 Suite AUGUST 2024 Update is not installed   C:\Program Files (x86)\Microsoft Office\root\Office16\GRAPH.EXE  Version is  16.0.17830.20138#
+          # 110474 Office ClicktoRun or Office 365 Suite AUGUST 2024 Update is not installed   C:\Program Files (x86)\Microsoft Office\root\Office16\OUTLOOK.EXE  Version is  16.0.17830.20138#
+          # Problem was $CheckEXE = Check-ResultsForVersion -Results $Results .... should be File
+
+
           $ResultsMissing = ($Results -split "is not installed")[0].trim()
           $ResultsVersion = ($Results -split "Version is")[1].trim().replace("#","")
-          $CheckEXE = Check-ResultsForVersion -Results $Results
+          $CheckEXE = Check-ResultsForFile -Results $Results
           if (Test-Path $CheckEXE) {
             $CheckEXEVersion = Get-FileVersion $CheckEXE
             if ($CheckEXEVersion) {
