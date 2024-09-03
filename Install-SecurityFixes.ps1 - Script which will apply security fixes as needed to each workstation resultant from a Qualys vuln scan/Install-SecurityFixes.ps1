@@ -46,9 +46,9 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.01"
-# New in this version:   110473 110474 - Check-ResultsForVersion should be Check-ResultsForFile
-$VersionInfo = "v$($Version) - Last modified: 8/28/2024"
+$Version = "0.40.02"
+# New in this version:   Fixed spaces in 'Wr   ite-Verbose' in Find CSV Filename (main)
+$VersionInfo = "v$($Version) - Last modified: 9/3/2024"
 
 #### VERSION ###################################################
 
@@ -2092,7 +2092,7 @@ if (!($CSVFile -like "*.csv")) {  # Check for command line param -CSVFile
   }
 } else {
   if (!($CSVFilename)) {
-  Wr  ite-Verbose "Parameter found: -CSVFile $CSVFile"
+    Write-Verbose "Parameter found: -CSVFile $CSVFile"
     Write-Verbose "Using: $($oldPwd)\$($CSVFile)"
     $CSVFilename = "$($oldPwd)\$($CSVFile)"
   } else {
