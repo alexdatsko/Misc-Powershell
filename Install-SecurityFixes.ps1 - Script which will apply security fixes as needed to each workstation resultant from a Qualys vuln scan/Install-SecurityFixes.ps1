@@ -890,10 +890,30 @@ function Check-ResultsForVersion {
       Write-Verbose "- unable to parse $Results !!"
     }
   }
-  Write-Verbose "CheckVersion : $CheckVersion"
+  Write-Verbose "Final Check-ResultsForVersion : $CheckVersion"
   return $CheckVersion
 }
 
+function Check-ResultsForKB {
+  param( [Parameter(Mandatory=$true)]
+    [string] $Results
+  )
+
+  $CheckKB = @()
+
+  if ($Results -clike "*KB*") {   # compares for uppercase KB only
+    $ResSplit = $Results.split(' ')
+    foreach ($result in $ResSplit) {
+      if ($result -like "KB*") {
+        $CheckKB += $result
+      }
+    }
+  } else {
+    Write-Host "[-] No 'KB' found in Results : $Results" 
+  }
+  Write-Verbose "Final Check-ResultsForKB : $CheckKB"
+  return $CheckKB
+}
 
 ################################################# CONFIG FUNCTIONS ###############################################
 
@@ -4069,6 +4089,7 @@ foreach ($CurrentQID in $QIDs) {
             # KB5033920 is not installed  %windir%\Microsoft.NET\Framework64\v4.0.30319\System.dll Version is 4.8.9172.0 %windir%\Microsoft.NET\Framework\v4.0.30319\System.dll Version is 4.8.9172.0 KB5034275 or KB5034274 or KB5034276 is not installed#"
             
             $ResultsVersion = Check-ResultsForVersion -Results $Results  # split everything after space, [version] cannot have a space in it.. Also should work for multiple versions, we will just check the first result.
+            $ResultsKB = Check-ResultsForKB -Results $Results
             Write-Verbose "ResultsVersion : $ResultsVersion"
             $CheckEXE = ((Check-ResultsForFile -Results $Results) -Replace "`r","" -Replace "`n","") # Get SINGLE EXE/DLL FileNames to check, from $Results  (Changed from multiple 5/2/24), fixed line endings 5/3/24
             Write-Verbose "CheckEXE: $CheckEXE"
@@ -4103,6 +4124,7 @@ foreach ($CurrentQID in $QIDs) {
                       $AlreadySetOptionalUpdates = $true
                     }
                   }
+                  $
 
                 } else {
                   Write-Host "[+] EXE/DLL patched version found : $CheckEXEVersion > $ResultsVersion - already patched." -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..
