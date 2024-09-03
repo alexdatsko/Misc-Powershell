@@ -46,8 +46,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.02"
-# New in this version:   Fixed spaces in 'Wr   ite-Verbose' in Find CSV Filename (main)
+$Version = "0.40.03"
+# New in this version:   Fixed small issue with -CSVFile and appended \\unc path - Fix 2, ugh ugly but whatever. 
 $VersionInfo = "v$($Version) - Last modified: 9/3/2024"
 
 #### VERSION ###################################################
@@ -1660,7 +1660,6 @@ function Get-ChromeVersion {
 
 function Find-Delimiter {
   param ([string]$CSVFilename)
-
   $line = Get-Content -Path $CSVFilename | Select-Object -First 1
   return ($line -split "Account Name")[1][0]
 } 
@@ -2082,7 +2081,7 @@ if (!(Test-Path $($tmp))) {
   }
 }
 $oldpwd=(Get-Location).Path
-Set-Location "$($tmp)"  # Cmd.exe cannot be run from a server share
+Set-Location "$($tmp)"  # Fix for Cmd.exe cannot be run from a server share..
 
 ### Find CSV File name. 2024-05- This is dumb using 2 variables, I have added on to this so many times its terribly messy, but works. Ugh. Needs a rewrite/refactor SO badly.
 if (!($CSVFile -like "*.csv")) {  # Check for command line param -CSVFile
@@ -2099,26 +2098,41 @@ if (!($CSVFile -like "*.csv")) {  # Check for command line param -CSVFile
     Write-Verbose "Using: $($CSVFilename)"
   }
 }
+
 # READ CSV
+  if (!(Test-Path $CSVFilename)) {  # Split path from file if it doesn't exist
+    if (!(Test-Path "$($oldpwd)\$(Split-Path $CSVFilename -leaf)")) {
+      Write-Host "[!] Error: Couldn't locate $CSVFilename or $($oldpwd)\$(Split-Path $CSVFilename -leaf) in $($oldpwd) !" -ForegroundColor Red
+      exit
+    } else {
+      $CSVFilename = Split-Path $CSVFilename -leaf
+    }
+  }
 if ($null -eq $CSVFilename) {
   Write-Host "[X] Couldn't find CSV file : $CSVFilename " -ForegroundColor Red
   Exit
 } else {
+  if ($CSVFilename -ne $(Split-Path $CSVFilename -leaf) -and $CSVFilename -like "*\\") {
+    Write-Verbose "Splitting path for $CSVFilename to $(Split-Path $CSVFilename -leaf)"
+    $CSVFilename = Split-Path $CSVFilename -leaf  # Lets just split the damn path off here if its part of a unc path \\
+  }
+  $CSVFullpath = "$($oldpwd)\$(Split-Path $CSVFilename -leaf)" # Lets look in the old folder for this, where it should be..
   try {
-    Write-Verbose "Finding delimeter for $CSVFilename"
-    $delimiter = Find-Delimiter $CSVFilename
-    Write-Host "[.] Importing data from $CSVFilename" -ForegroundColor Yellow
-    $CSVData = Import-CSV $CSVFilename -Delimiter $delimiter | Sort-Object "Vulnerability Description"
+    
+    Write-Verbose "Finding delimeter for $CSVFullPath"
+    $delimiter = Find-Delimiter $CSVFullPath
+    Write-Host "[.] Importing data from $CSVFullPath" -ForegroundColor Yellow
+    $CSVData = Import-CSV $CSVFullPath -Delimiter $delimiter | Sort-Object "Vulnerability Description"
   } catch {
-    Write-Host "[X] Couldn't open CSV file : $CSVFilename " -ForegroundColor Red
+    Write-Host "[X] Couldn't open CSV file : $CSVFullPath " -ForegroundColor Red
     Set-Location $pwd
     Exit
   }
   if (!($CSVData)) {
-    Write-Host "[X] Couldn't read CSV data from file : $CSVFilename " -ForegroundColor Red
+    Write-Host "[X] Couldn't read CSV data from file : $CSVFullPath " -ForegroundColor Red
     Exit
   } else {
-    Write-Host "[i] Read CSV data from : $CSVFilename - Good." -ForegroundColor Cyan
+    Write-Host "[i] Read CSV data from : $CSVFullPath - Good." -ForegroundColor Cyan
   }
 }
 
