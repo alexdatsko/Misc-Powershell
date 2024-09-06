@@ -3,6 +3,8 @@ param (
   $FromPath = "C:\Windows\Twain_32 - TSSCAN.dll",    # File to copy from
   $ToPath = "C:\Windows\Twain_32.dll",               # File to copy to (or folder name, file is more specific..)
   $LogFile = "c:\Temp\Copy-FileToFolder.log"
+  $trytimes = 36,          # This will try 36 times, which for 5m intervals, is 3 hours.
+  $tryseconds = 300       # Amount of time to sleep between tries, defaults to 300 = 5 minutes.
 )
 
 $info = ''###################################################################################################################################
@@ -16,9 +18,6 @@ $info = ''######################################################################
 #                    v0.2 - 9/5/24''
 
 $info
-
-$trytimes = 36          # This will try 36 times, which for 5m intervals, is 3 hours.
-$tryseconds = 300       # Amount of time to sleep between tries, defaults to 300 = 5 minutes.
 
 $DateTime = Get-Date -Format "yyyy-MM-dd"
 "`n$DateTime ------------------------------" | tee -append $LogFile
@@ -46,6 +45,17 @@ function Find-ProcessUsingDLL {
   }
 }
 
+function Find-ProcessInUse {
+  param($ProcessName)
+          $tasklist = (tasklist | findstr /i "$ProcessName")
+          if ($tasklist) {
+            $taskpids = foreach ($t in $tasklist) { ($t -split "\s+")[1].trim() }                                                                 
+          }
+          foreach ($taskpid in $taskpids) {
+            taskkill /f /pid $taskpid
+          }
+}
+
 function Copy-FileToLocation {
   param($FromPath, $ToPath, $LogFile)
   Write-Output "[.] Copying : $FromPath to $ToPath"
@@ -58,8 +68,12 @@ function Copy-FileToLocation {
       } catch {
         $exmsg = "[-] An error occurred during the copy operation: $_"
         Write-Output $exmsg | Tee -Append $LogFile
-        Write-Output "[.] Scanning for PIDs that are using $ToPath ...`n"
-        Find-ProcessUsingDLL $ToPath # -Kill
+        if ($ToPath -like '*.dll') {
+          Write-Output "[.] Scanning for PIDs that are using $ToPath ...`n"
+          Find-ProcessUsingDLL $ToPath -Kill
+        } else {
+          Find-ProcessInUse $ToPath -Kill
+        }
       }
       if ($ex -eq $null) { 
         Write-Output "[+] Completed!" | tee -append $LogFile 
