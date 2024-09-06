@@ -46,8 +46,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.05"
-# New in this version:   updated Remove-SoftwareByName to match/make quicker, also added /qn here for -automated, some cleanup, woot
+$Version = "0.40.06"
+# New in this version:   Fixed version check 110473 110474 - Office ClicktoRun or Office 365 Suite AUGUST 2024  - had a bad $chromevulnversion variable in status msg
 $VersionInfo = "v$($Version) - Last modified: 9/6/2024"
 
 #### VERSION ###################################################
@@ -3602,7 +3602,7 @@ foreach ($CurrentQID in $QIDs) {
                 Write-Host "[+] Attempting to patch with C:\Program Files\Common Files\Microsoft Shared\ClickToRun\OfficeC2RClient.exe /update user displaylevel=false forceappshutdown=true .."  -ForegroundColor Green
                 Write-Host "[+] Process has been started, will run in the background and should be patched within 30-60 seconds." -ForegroundColor Green
               } else {
-                Write-Host "[+] EXE patched version found : $CheckEXEVersion > $VulnDescChromeWinVersion - already patched." -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..
+                Write-Host "[+] EXE patched version found : $CheckEXEVersion > $ResultsVersion - already patched." -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..
               }
             } else {
               Write-Host "[-] EXE Version not found, for $CheckEXE .." -ForegroundColor Yellow
