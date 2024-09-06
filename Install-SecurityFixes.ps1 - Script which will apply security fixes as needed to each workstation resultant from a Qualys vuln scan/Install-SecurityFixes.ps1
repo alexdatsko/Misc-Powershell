@@ -2580,6 +2580,7 @@ foreach ($CurrentQID in $QIDs) {
             }
           }
         }
+        $QIDsGhostScript = 1
       }
       110330 {  
         if (Get-YesNo "$_ - Install Microsoft Office KB4092465? " -Results $Results -QID $ThisQID) {
