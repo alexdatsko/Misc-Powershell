@@ -46,9 +46,9 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.03"
-# New in this version:   Fixed small issue with -CSVFile and appended \\unc path - Fix 2, ugh ugly but whatever. 
-$VersionInfo = "v$($Version) - Last modified: 9/3/2024"
+$Version = "0.40.04"
+# New in this version:   Ghostscript 10.03.1 update
+$VersionInfo = "v$($Version) - Last modified: 9/6/2024"
 
 #### VERSION ###################################################
 
@@ -67,6 +67,7 @@ if ($Help) {
 $AgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.67 Safari/537.36"
 $OLE19x64Url = "https://go.microsoft.com/fwlink/?linkid=2278038"
 $DCUUrl = "https://dl.dell.com/FOLDER11914075M/1/Dell-Command-Update-Application_6VFWW_WIN_5.4.0_A00.EXE"
+$ghostscripturl = "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10031/gs10031w64.exe"
 $DCUFilename = ($DCUUrl -split "/")[-1]
 $DCUVersion = (($DCUUrl -split "_WIN_")[1] -split "_A0")[0]
 $CheckOptionalUpdates = $true                # Set this to false to ignore Optional Updates registry value
@@ -2562,7 +2563,7 @@ foreach ($CurrentQID in $QIDs) {
         # Install newest apps via Ninite
 
       { ($QIDsGhostScript -contains $_) -or ($VulnDesc -like "*GhostScript*" -and ($QIDsGhostScript -ne 1)) } {
-        if (Get-YesNo "$_ Install GhostScript 10.01.2 64bit? " -Results $Results -QID $ThisQID) {
+        if (Get-YesNo "$_ Install GhostScript 10.03.1 64bit? " -Results $Results -QID $ThisQID) {
           Write-Host "[.] Searching for old versions of GPL Ghostscript .."
           $Products = Search-Software "*Ghostscript" 
           if (Check-Products $Products) {
@@ -2571,19 +2572,19 @@ foreach ($CurrentQID in $QIDs) {
             Write-Host "[!] Ghostscript product not found under 'GPL Ghostscript*' : `n    Products: [ $Products ]`n" -ForegroundColor Red
           }              
 
-          $ghostscripturl = "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10012/gs10012w64.exe"
           Invoke-WebRequest -UserAgent $AgentString -Uri   $ghostscripturl -OutFile "$($tmp)\ghostscript.exe"
           cmd.exe /c "$($tmp)\ghostscript.exe /S"
           #Delete results file, i.e        "C:\Program Files (x86)\GPLGS\gsdll32.dll found#" as lots of times the installer does not clean this up.. may install the new one in a new location etc
-          #$FileToDelete=$results.split(' found')[0]
           $path = Split-Path -Path $results
           $sep=" found#"
           $fileName = ((Split-Path -Path $results -Leaf) -split $sep)[0]
           $FileToDelete="$($path)\$($filename)"
-          Write-Host "[.] Removing $($FileToDelete) .."
-          Remove-Item $FileToDelete -Force
           if (Test-Path $FileToDelete) {
-            Write-Output "[x] Could not delete $($FileToDelete), please remove manually!"
+            Write-Host "[.] Removing $($FileToDelete) .."
+            Remove-Item $FileToDelete -Force
+            if (Test-Path $FileToDelete) {
+              Write-Output "[x] Could not delete $($FileToDelete), please remove manually!"
+            }
           }
         }
       }
