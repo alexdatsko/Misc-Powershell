@@ -46,8 +46,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.04"
-# New in this version:   Ghostscript 10.03.1 update
+$Version = "0.40.05"
+# New in this version:   updated Remove-SoftwareByName to match/make quicker, also added /qn here for -automated, some cleanup, woot
 $VersionInfo = "v$($Version) - Last modified: 9/6/2024"
 
 #### VERSION ###################################################
@@ -1108,6 +1108,16 @@ Function Add-VulnToQIDList {
 
 ################################################# VULN REMED FUNCTIONS ###############################################
 
+function Test-IsType
+{
+    param(
+        [object]$InputObject,
+        [string]$TypeName
+    )
+
+    return $InputObject.PSTypeNames -contains $TypeName 
+}
+
 function Search-Software {
   param(
     [string]$SoftwareName)
@@ -1117,12 +1127,14 @@ function Search-Software {
   if ($Results) {
     return $Results
   } else {
-    $Results = Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* | Where-Object { $_.DisplayName -like $SearchString }
+    $Results = Get-ItemProperty "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*" | Where-Object { $_.DisplayName -like $SearchString }
     if ($Results) {
-      return $Results.DisplayName
-    } else {
-      return $null
+      if ($Results.UninstallString) {
+        return $Results.UninstallString
+      } # else we get the error below
     }
+    Write-Host "[!] No WMI entry, or registry uninstallstring found.. no way to uninstall this automatically it appears!" -ForegroundColor Red
+    return $null
   }
 }
 
@@ -1131,37 +1143,30 @@ function Remove-SoftwareByName {
       [string]$SoftwareName
   )
 
-  # Attempt to uninstall using Win32_Product
-  $wmiSoftware = (Get-WmiObject Win32_Product) | Where-Object { $_.Name -like "*$SoftwareName*" }
-  if ($wmiSoftware) {
-    foreach ($software in $wmiSoftware) {
-      if ($software.IdentifyingNumber.length -eq 38) {  # if it looks like it has a real GUID, probably real..
-        Write-Host "[-] Uninstalling $($software.Name)..." -ForegroundColor Yellow
-        $software.Uninstall()
+  # Attempt to uninstall using registry
+  $registrySoftware = Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* |
+                      Where-Object { $_.DisplayName -like "*$SoftwareName*" }
+  if ($registrySoftware) {
+    foreach ($software in $registrySoftware) {
+      if ($software.PSChildName.length -eq 36) {  # if it looks like it has a real GUID, probably real..
+        Write-Host "[-] Uninstalling $($software.DisplayName)..." -ForegroundColor Yellow
+        if ($software.UninstallString) {
+          $cmd,$args = ($software.UninstallString).split(' ')
+          Write-Verbose "Running: Start-Process -FilePath $cmd -ArgumentList ""$args /qn""  -Wait"
+          Start-Process -FilePath $cmd -ArgumentList "$args /qn" -Wait
+          Write-Verbose "Assuming everything went well.. "
+          return $true
+        }
+        else {
+          Write-Host "[.] Uninstall string not found for $($software.DisplayName)."
+          return $false
+        }
       }
     }
-  } else {
-      Write-Host "[.] Software '$SoftwareName' not found using Win32_Product."
-      
-      # Attempt to uninstall using registry
-      $registrySoftware = Get-ItemProperty HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\* |
-                          Where-Object { $_.DisplayName -like "*$SoftwareName*" }
-      if ($registrySoftware) {
-          foreach ($software in $registrySoftware) {
-            if ($software.PSChildName.length -eq 36) {  # if it looks like it has a real GUID, probably real..
-              Write-Host "[-] Uninstalling $($software.DisplayName)..." -ForegroundColor Yellow
-              if ($software.UninstallString) {
-                  Start-Process -FilePath $software.UninstallString -Wait
-              }
-              else {
-                  Write-Host "[.] Uninstall string not found for $($software.DisplayName)."
-              }
-            }
-          }
-      }
-      else {
-          Write-Host "[.] Software '$SoftwareName' not found in registry either."
-      }
+  }
+  else {
+    Write-Host "[.] Software '$SoftwareName' not found in registry either."
+    return $false
   }
 }
 
@@ -1170,6 +1175,15 @@ function Remove-Software {
   param ($Products,
          $Results)
   
+  if (Test-IsType $Products "System.String") {
+    Write-Verbose "String product name returned from registry vs GWMI.. Trying to remove via registry .."
+    $cmd = (($Products -split '.exe')[0]+'.exe' -replace '"','') # yuck. 
+    $args = (($Products -split '.exe')[1] -replace '"','') # Hacky af, idk what we might run into here yet..
+    Write-Verbose "Removing: Start-Process -FilePath $cmd -ArgumentList ""$args /qn""  -Wait"
+    Start-Process -FilePath $cmd -ArgumentList "$args /qn" -Wait
+    Write-Verbose "Assuming everything went well.. "
+    return $true
+  }
   foreach ($Product in $Products) { # Remove multiple products if passed.. This only works if found by 
     $Guid = $Product | Select-Object -ExpandProperty IdentifyingNumber
     $Name = $Product | Select-Object -ExpandProperty Name
@@ -1199,19 +1213,6 @@ function Remove-Software {
         }
     }
   }
-}
-
-Function Check-Products {
-  param ($Products)
-
-  $ProductsArray = @($Products)  # Ensure $Products is treated as an array
-
-  if ($ProductsArray.Count -gt 0) {
-    if ($ProductsArray[0].IdentifyingNumber[0] -eq '{') {
-      return $true
-    }
-  }
-  return $false
 }
 
 function Get-Products {
@@ -2353,30 +2354,15 @@ foreach ($CurrentQID in $QIDs) {
     If ($script:Automated -eq $true) {
       Write-Verbose "[Running in Automated mode]"
     }
-    switch ([int]$CurrentQID)
-    {
+    switch ([int]$CurrentQID) {
       { 379210,376023,376023,91539,372397,372069,376022 -contains $_ }  { 
         if (Get-YesNo "$_ Remove Dell SupportAssist ? " -Results $Results -QID $ThisQID) {
-
           $Products = Search-Software "*SupportAssist*" 
-          if (Check-Products $Products) {
+          if ($Products) {
             Remove-Software -Products $Products -Results $Results
           } else {
-            Write-Host "[!] Dell SupportAssist not found!" -ForegroundColor Red
+            Write-Host "[!] Dell SupportAssist not found!" -ForegroundColor Red            
           }     
-
-<#
-          $guid = (Get-Package | Where-Object{$_.Name -like "*SupportAssist*"})
-          if ($guid) {  ($guid | Select-Object -expand FastPackageReference).replace("}","").replace("{","")  }
-          msiexec /x $guid /qn /L*V "$($tmp)\SupportAssist.log" REBOOT=R
-
-          # This might require interaction, in which case run this:
-          msiexec /x $guid /L*V "$($tmp)\SupportAssist.log"
-
-          # Or:
-          # ([wmi]"\\$env:computername\root\cimv2:Win32_Product.$guid").uninstall()   
-
-#>
         }
       }
       105228 { 
@@ -2552,7 +2538,7 @@ foreach ($CurrentQID in $QIDs) {
             if ($Products) {
               Remove-Software -Products $Products -Results $Results
             } else {
-              Write-Host "[!] Guids not found: $Products !!`n" -ForegroundColor Red
+              Write-Host "[!] Software not found: $Products !!`n" -ForegroundColor Red
             } 
             # Try to delete from registry, if it exists
             Remove-RegistryItem $Path
@@ -2565,25 +2551,32 @@ foreach ($CurrentQID in $QIDs) {
       { ($QIDsGhostScript -contains $_) -or ($VulnDesc -like "*GhostScript*" -and ($QIDsGhostScript -ne 1)) } {
         if (Get-YesNo "$_ Install GhostScript 10.03.1 64bit? " -Results $Results -QID $ThisQID) {
           Write-Host "[.] Searching for old versions of GPL Ghostscript .."
-          $Products = Search-Software "*Ghostscript" 
-          if (Check-Products $Products) {
-            Remove-Software -Products $Products -Results $Results
+          $Products = Search-Software "*Ghostscript*" 
+          if ($Products) {
+            if ($Automated) {
+              Write-Host "This product CAN NOT be removed automatically anymore with 10.01 and > : You will need to remediate manually!!"
+            } else {
+              Remove-Software -Products $Products -Results $Results
+            }
           } else {
-            Write-Host "[!] Ghostscript product not found under 'GPL Ghostscript*' : `n    Products: [ $Products ]`n" -ForegroundColor Red
-          }              
-
-          Invoke-WebRequest -UserAgent $AgentString -Uri   $ghostscripturl -OutFile "$($tmp)\ghostscript.exe"
-          cmd.exe /c "$($tmp)\ghostscript.exe /S"
-          #Delete results file, i.e        "C:\Program Files (x86)\GPLGS\gsdll32.dll found#" as lots of times the installer does not clean this up.. may install the new one in a new location etc
-          $path = Split-Path -Path $results
-          $sep=" found#"
-          $fileName = ((Split-Path -Path $results -Leaf) -split $sep)[0]
-          $FileToDelete="$($path)\$($filename)"
-          if (Test-Path $FileToDelete) {
-            Write-Host "[.] Removing $($FileToDelete) .."
-            Remove-Item $FileToDelete -Force
+            Write-Host "[!] Ghostscript product not found under 'GPL Ghostscript*' : `n    Products: [ $Products ]`n" -ForegroundColor Red            
+          } 
+          if ($Automated) {
+            Write-Host "This product CAN NOT be installed automatically anymore with 10.01 and > : You will need to remediate manually!!"
+          } else {
+            Invoke-WebRequest -UserAgent $AgentString -Uri   $ghostscripturl -OutFile "$($tmp)\ghostscript.exe"
+            cmd.exe /c "$($tmp)\ghostscript.exe /S"
+            #Delete results file, i.e        "C:\Program Files (x86)\GPLGS\gsdll32.dll found#" as lots of times the installer does not clean this up.. may install the new one in a new location etc
+            $path = Split-Path -Path $results
+            $sep=" found#"
+            $fileName = ((Split-Path -Path $results -Leaf) -split $sep)[0]
+            $FileToDelete="$($path)\$($filename)"
             if (Test-Path $FileToDelete) {
-              Write-Output "[x] Could not delete $($FileToDelete), please remove manually!"
+              Write-Host "[.] Removing $($FileToDelete) .."
+              Remove-Item $FileToDelete -Force
+              if (Test-Path $FileToDelete) {
+                Write-Output "[x] Could not delete $($FileToDelete), please remove manually!"
+              }
             }
           }
         }
@@ -2823,7 +2816,7 @@ foreach ($CurrentQID in $QIDs) {
           #Remove any existing file before downloading..
           if (Test-Path $installerPath) { Remove-Item $InstallerPath -Force }
           Write-Host "[.] Checking for old versions of VLC to remove"
-          $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like '*VLC media player*'})
+          $Products = Search-Software "*VLC media player*"
           if ($Products) {
             Write-Verbose "Products : $Products"
             Remove-Software -Products $Products -Results $Results
