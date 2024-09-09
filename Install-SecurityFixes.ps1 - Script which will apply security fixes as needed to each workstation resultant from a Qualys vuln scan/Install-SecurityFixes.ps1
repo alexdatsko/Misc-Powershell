@@ -46,8 +46,9 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.06"
-# New in this version:   Fixed version check 110473 110474 - Office ClicktoRun or Office 365 Suite AUGUST 2024  - had a bad $chromevulnversion variable in status msg
+$Version = "0.40.08"
+# New in this version:   Removed $ from line 4128
+
 $VersionInfo = "v$($Version) - Last modified: 9/6/2024"
 
 #### VERSION ###################################################
@@ -2779,7 +2780,13 @@ foreach ($CurrentQID in $QIDs) {
             $QIDsIrfanView = 1
         } else { $QIDsIrfanView = 1 }
       }      
-      
+      { ($QIDsNotepadPP -contains $_) -or ($VulnDesc -like "Notepad++*" -and ($QIDsNotepadPP -ne 1)) } {
+        if (Get-YesNo "$_ Install newest Notepad++ from Ninite? " -Results $Results -QID $ThisQID) { 
+            $NotepadPPurl = "https://ninite.com/notepadplusplus/ninite.exe"
+            Update-ViaNinite -Uri $NotepadPPUrl -Outfile "NiniteNotepadPP.exe" -Killprocess "notepad++.exe" -UpdateString "Notepad++"
+            $QIDsNotepadPP = 1
+        } else { $QIDsNotepadPP = 1 }
+      }
 
       { ($QIDsZoom -contains $_) -or ($VulnDesc -like "*Zoom*" -and ($QIDsZoom -ne 1)) } {
         if (Get-YesNo "$_ Install newest Zoom Client from Ninite? " -Results $Results -QID $ThisQID) { 
@@ -4111,16 +4118,13 @@ foreach ($CurrentQID in $QIDs) {
                           Set-ItemProperty -Path $registryPath -Name $valueName -Value 1 -Type DWord
                           Write-Host "[+] The $registryPath value 'AllowOptionalContent' value has been set to 1." -ForegroundColor Green
                       }
-                    }
-                    else {
+                    } else {
                       New-Item -Path $registryPath -Force | Out-Null
                       New-ItemProperty -Path $registryPath -Name $valueName -Value 1 -PropertyType DWord -Force | Out-Null
                       Write-Host "The registry key $registryPath has been created and the 'AllowOptionalContent' value has been set to 1."
                       $AlreadySetOptionalUpdates = $true
                     }
                   }
-                  $
-
                 } else {
                   Write-Host "[+] EXE/DLL patched version found : $CheckEXEVersion > $ResultsVersion - already patched." -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..
                 }
