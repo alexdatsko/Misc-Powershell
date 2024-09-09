@@ -3448,8 +3448,10 @@ foreach ($CurrentQID in $QIDs) {
             }
           } # No matter what, we will give them the option to just run this
           if (-not $script:Automated) {
-            if (Get-YesNo "NOTE: Disabling this may break things!!! `n`nRisks:`n  [ ] Old iCAT XP computers `n  [ ] Old copier/scanners (scan to SMB) `n  [ ] Other devices that need to access this computer over SMB1.`n`nIt may be safest to do some monitoring first, by turning on SMB v1 auditing (Set-SmbServerConfiguration -AuditSmb1Access `$True) and checking for Event 3000 in the ""Microsoft-Windows-SMBServer\Audit"" event log next month, and then identifying each client that attempts to connect with SMBv1.`n  I have turned on SMB1 auditing for you now, and the script can automatically check for clients next month and disable this if you aren't sure. `nAre you sure you want to continue removing SMB1? " -Results $Results -QID $ThisQID) { 
-              Write-Host "[.] Removing Feature for SMB 1.0:" -ForegroundColor Green
+            if (Get-YesNo "NOTE: If you go further, disabling SMB1 may break things!!! `n`nRisks:`n  [ ] Old iCAT XP computers `n  [ ] Old copier/scanners (scan to SMB) `n  [ ] Other devices that need to access this computer over SMB1.`n`nAre you sure you want to continue " -Results $Results -QID $ThisQID) {  
+              # Write-Host "It may be safest to do some monitoring first, by turning on SMB v1 auditing (Set-SmbServerConfiguration -AuditSmb1Access `$True) and checking for Event 3000 in the ""Microsoft-Windows-SMBServer\Audit"" event log next month, and then identifying each client that attempts to connect with SMBv1."
+              # Write-Host "I have turned on SMB1 auditing for you now, and the script can automatically check for clients next month and disable this if you aren't sure."
+              Write-Host "`n[.] Removing Feature for SMB 1.0:" -ForegroundColor Green
               # CAPTION INSTALLSTATE NAME SMB 1.0/CIFS File Sharing Support SMB Server version 1 is Enabled# 
               Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart
               # HKLM\SYSTEM\CurrentControlSet\Services\mrxsmb10 Start = 2 SMB Client version 1 is Enabled#  # <-- This could show up also
