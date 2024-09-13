@@ -46,10 +46,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.08"
-# New in this version:   Removed $ from line 4128
+$Version = "0.40.09"
+# New in this version:   91764 - Microsoft Windows Codecs Library Web Media Extension Remote Code Execution Vulnerability, added fix for OfficeC2RClient.exe with start-process
 
-$VersionInfo = "v$($Version) - Last modified: 9/6/2024"
+$VersionInfo = "v$($Version) - Last modified: 9/13/2024"
 
 #### VERSION ###################################################
 
@@ -3606,10 +3606,12 @@ foreach ($CurrentQID in $QIDs) {
               Write-Verbose "EXE version found : $CheckEXE - $CheckEXEVersion .. checking against $ResultsVersion"
               if ([version]$CheckEXEVersion -le [version]$ResultsVersion) {
                 Write-Host "[!] Vulnerable version $CheckEXE found : $CheckEXEVersion <= $ResultsVersion - Update missing: $ResultsMissing" -ForegroundColor Red
-                cd "C:\Program Files\Common Files\Microsoft Shared\ClickToRun"
-                & OfficeC2RClient.exe /update user displaylevel=false forceappshutdown=true
-                Write-Host "[+] Attempting to patch with C:\Program Files\Common Files\Microsoft Shared\ClickToRun\OfficeC2RClient.exe /update user displaylevel=false forceappshutdown=true .."  -ForegroundColor Green
-                Write-Host "[+] Process has been started, will run in the background and should be patched within 30-60 seconds." -ForegroundColor Green
+                #sl "C:\Program Files\Common Files\Microsoft Shared\ClickToRun"
+                #& "OfficeC2RClient.exe" /update user displaylevel=false forceappshutdown=true
+                Write-Host "[+] Attempting to patch with C:\Program Files\Common Files\Microsoft Shared\ClickToRun\OfficeC2RClient.exe /update user displaylevel=false forceappshutdown=true .. This could take 30-60s"  -ForegroundColor Green
+                $args = "/update user displaylevel=false forceappshutdown=true"
+                Start-Process "C:\Program Files\Common Files\microsoft shared\ClickToRun\OfficeC2RClient.exe" -ArgumentList $args -Wait
+                Write-Host "[+] Done, should be patched." -ForegroundColor Green
               } else {
                 Write-Host "[+] EXE patched version found : $CheckEXEVersion > $ResultsVersion - already patched." -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..
               }
@@ -3759,6 +3761,13 @@ foreach ($CurrentQID in $QIDs) {
           Remove-SpecificAppXPackage -Name "HEVCVideoExtension" -Version $AppxVersion -Results $Results # "1.0.33232.0" 
         }
       }   
+     91764 { #91764 - Microsoft Windows Codecs Library Web Media Extension Remote Code Execution Vulnerability      
+        $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
+        if (Get-YesNo "$_ Microsoft Windows Codecs Library Web Media Extension Remote Code Execution Vulnerability " -Results $Results -QID $ThisQID) {
+          Remove-SpecificAppXPackage -Name "Microsoft.WebMediaExtensions" -Version $AppxVersion -Results $Results #   '1.0.20875.0'# 
+        }
+      }   
+
       91885 {
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft HEVC Video Extensions Remote Code Execution (RCE) Vulnerability for April 2022" -Results $Results -QID $ThisQID) {

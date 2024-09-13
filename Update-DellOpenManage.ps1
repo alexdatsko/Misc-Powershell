@@ -6,6 +6,7 @@ $info = "###############################################################
 # Alex Datsko MME Consulting 
 # v0.1 - 9/6/2024 - orig
 # v0.2 - 9/9/2024 - refactor finished, move to `$temp due to possible bad profiles, test version after
+# v0.3 - 9/9/2024 - Permission issues on some servers required a take ownership + icalcs of orig OMSA version folder..
 #
 "
 
@@ -108,32 +109,37 @@ function Update-OMSAVersion {
   }
 
   if (!($NoInstall)) {
-    Write-Host "[+] OMSA Version $OMSAVersion found. Updating to $OMSAPatchVersion" -ForegroundColor Yellow
+    Write-Host "`n[+] OMSA Version $OMSAVersion found. Updating to $OMSAPatchVersion" -ForegroundColor Yellow
   } else {
-    Write-Host "[+] OMSA Version $OMSAVersion found. Downloading $OMSAPatchVersion" -ForegroundColor Yellow
+    Write-Host "`n[+] OMSA Version $OMSAVersion found. Downloading $OMSAPatchVersion" -ForegroundColor Yellow
   }
   Write-Host "[.] First, downloading OMSA $OMSAOrigVersion for the missing .MSI ..." -ForegroundColor Yellow
-  Write-Host "Verbose:  Invoke-WebRequestWait -Uri ""$OMSAOrigUrl""  -UserAgent ""$AgentString"" -outfile ""$($tmp)\$($OMSAOrigFileName)"""
+  if ($Verbose) {
+    Write-Host "`n[Verbose]:  Invoke-WebRequestWait -Uri ""$OMSAOrigUrl""  -UserAgent ""$AgentString"" -outfile ""$($tmp)\$($OMSAOrigFileName)"""
+  }
   Invoke-WebRequestWait -Uri "$OMSAOrigUrl" -UserAgent "$AgentString" -outfile "$($tmp)\$($OMSAOrigFileName)"
   #Start-Process "$($tmp)\$($OMSAOrigFileName)" -ArgumentList @("-overwrite","-auto C:\OpenManage$($OMSAOrigVersion)") -Wait
   Copy-Item "$($tmp)\$($OMSAOrigFileName)" "$($tmp)\$($OMSAOrigFileName).zip"
   Expand-ArchiveWait -Filename "$($tmp)\$($OMSAOrigFileName).zip" -DestinationPath "C:\OpenManage$($OMSAOrigVersion)" -Force
-  Write-Host "[.] Downloading OMSA $OMSAPatchVersion patch ..."  -ForegroundColor Yellow
+  Write-Host "`n[.] Taking ownership of ""C:\OpenManage$($OMSAOrigVersion)"" for Administrators group w/ Takeown + Icacls..." -ForegroundColor Yellow
+  Start-Process "takeown.exe" -ArgumentList "/a /r /d Y /f ""C:\OpenManage$($OMSAOrigVersion)\*.*""" -Wait
+  Start-Process "icacls.exe" -ArgumentList """C:\OpenManage$($OMSAOrigVersion)"" /grant Administrators:(F) /t" -Wait
+  Write-Host "`n[.] Downloading OMSA $OMSAPatchVersion patch ..."  -ForegroundColor Yellow
   Invoke-WebRequestWait -Uri  "$OMSAPatchUrl"  -UserAgent "$AgentString" -outfile "$($tmp)\$($OMSAPatchFileName)"
   if (!($NoInstall)) {
-    Write-Host "[.] Installing OMSA $OMSAPatchVersion patch ..."  -ForegroundColor Yellow
+    Write-Host "`n[.] Installing OMSA $OMSAPatchVersion patch ..."  -ForegroundColor Yellow
     #Start-Process "msiexec.exe" "/update $($tmp)\$($OMSA11011FileName) /qn /quiet" # Doesn't work, fails
     $MSILocation = "C:\OpenManage$($OMSAOrigVersion)\windows\SystemsManagementx64\SysMgmtx64.msi"
-    $Arguments = "/i ""$($MSILocation)"" PATCH=$($tmp)\$($OMSAPatchFileName) /qb"
-    Write-Host "[.] Installing OMSA $OMSAPatchVersion patch using MSI : $MSILocation`n  and OMSAPatchFilename - $OMSAPatchFileName`n  Calling : Msiexec.exe $arguments"  -ForegroundColor Yellow
+    $Arguments = "/i ""$($MSILocation)"" PATCH=$($tmp)\$($OMSAPatchFileName) /qn /quiet"    # /qb can perform a UAC elevation prompt, but /qn cannot, it will just silent fail.
+    Write-Host "`n[.] Installing OMSA $OMSAPatchVersion patch using MSI : $MSILocation`n  and OMSAPatchFilename - $OMSAPatchFileName`n  Calling : Msiexec.exe $arguments"  -ForegroundColor Yellow
     Start-Process "msiexec.exe" -ArgumentList $Arguments -Wait
     
-    Write-Host "[.] Finished. Checking for new OMSA Version now..."
+    Write-Host "`n[.] Finished. Checking for new OMSA Version now..."
     $OMSAVersion = Search-SoftwareVersion "OpenManage" 
     if ($OMSAVersion -eq $OMSAPatchVersion) {
-      Write-Host "[!] Success! New OMSA Version : $OMSAVersion" -ForegroundColor Green
+      Write-Host "`n[!] Success! New OMSA Version : $OMSAVersion" -ForegroundColor Green
     } else {
-      Write-Host "[!] Failed! OMSA Version is still : $OMSAVersion" -ForegroundColor Red
+      Write-Host "`n[!] Failed! OMSA Version is still : $OMSAVersion" -ForegroundColor Red
     }
   }
 }
