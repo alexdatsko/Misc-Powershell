@@ -46,8 +46,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.11"
-# New in this version:  Replacing some cmd.exe commands with powershell
+$Version = "0.40.12"
+# New in this version:  Replacing some cmd.exe commands with powershell, take2
 
 $VersionInfo = "v$($Version) - Last modified: 9/13/2024"
 
@@ -2143,7 +2143,7 @@ if ($ServerName) {
     # Lets also check SERVER in case config is wrong?
     Write-Output "[.] Checking default location \\SERVER\Data\SecAud .."
     if (Test-Connection -ComputerName "SERVER" -Count 1 -Delay 1 -Quiet -ErrorAction SilentlyContinue) {
-      if (Get-Item "\\SERVER\Data\SecAud\Install-SecurityFixes.ps1") {
+      if (Get-Item "\\SERVER\Data\SecAud\Install-SecurityFixes.ps1" -ErrorAction SilentlyContinue) {
         $ServerName = "SERVER"
         $CSVLocation = "Data\SecAud"
         $SecAudPath = "\\$($ServerName)\$($CSVLocation)"
@@ -2519,9 +2519,11 @@ foreach ($CurrentQID in $QIDs) {
       }
       { $QIDsSpectreMeltdown -contains $_ } {
         if (Get-YesNo "$_ Fix spectre4/meltdown ? " -Results $Results -QID $ThisQID) {
-          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management' -Name 'FeatureSettingsOverride' -Value 72 -PropertyType DWord -Force
-          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management' -Name 'FeatureSettingsOverrideMask' -Value 3 -PropertyType DWord -Force
-          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization' -Name 'MinVmVersionForCpuBasedMitigations' -Value '1.0' -PropertyType String -Force
+          $out = @()
+          $out += (Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management' -Name 'FeatureSettingsOverride' -Value 72 -Force).PSPath
+          $out += (Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management' -Name 'FeatureSettingsOverrideMask' -Value 3 -Force).PSPath
+          $out += (Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization' -Name 'MinVmVersionForCpuBasedMitigations' -Value '1.0' -Force).PSPath
+          Foreach ($line in $out) { Write-Verbose $line }
           $QIDsSpectreMeltdown = 1
         } else { $QIDsSpectreMeltdown = 1 }
       }
@@ -2585,7 +2587,7 @@ foreach ($CurrentQID in $QIDs) {
       100413 {
         if (Get-YesNo "$_ CVE-2017-8529 - IE Feature_Enable_Print_Info_Disclosure fix ? " -Results $Results -QID $ThisQID) {
           New-Item -Path 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_ENABLE_PRINT_INFO_DISCLOSURE_FIX' -Force
-          Set-ItemProperty -Path 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_ENABLE_PRINT_INFO_DISCLOSURE_FIX' -Name 'iexplore.exe' -Value 1 -PropertyType DWord -Force
+          Set-ItemProperty -Path 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_ENABLE_PRINT_INFO_DISCLOSURE_FIX' -Name 'iexplore.exe' -Value 1 -Force
         }
       }
       { 91704 -contains $_ } {
@@ -2634,26 +2636,30 @@ foreach ($CurrentQID in $QIDs) {
       }
       90044 {
         if (Get-YesNo "$_ - Allowed SMB Null session ? " -Results $Results -QID $ThisQID) {
-          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'RestrictAnonymous' -Value 1 -PropertyType DWord -Force
-          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'RestrictAnonymousSAM' -Value 1 -PropertyType DWord -Force
-          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'EveryoneIncludesAnonymous' -Value 0 -PropertyType DWord -Force
+          $out = @()
+          $out += (New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'RestrictAnonymous' -Value 1 -PropertyType DWord -Force).PSPath
+          $out += (New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'RestrictAnonymousSAM' -Value 1 -PropertyType DWord -Force).PSPath
+          $out += (New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'EveryoneIncludesAnonymous' -Value 0 -PropertyType DWord -Force).PSPath
+          Foreach ($line in $out) { Write-Verbose $line }
         }
       }
       90007 {
         if (Get-YesNo "$_ - Enabled Cached Logon Credential ? " -Results $Results -QID $ThisQID) {
            Write-Host "[!] This is problematic at times, ignoring it in all environments for now. " -ForegroundColor Red
 # to fix vuln:
-#          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name 'CachedLogonsCount' -Value '0' -PropertyType String -Force
+#          New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name 'CachedLogonsCount' -Value '0' -PropertyType String -Force
 # to set back to defaults:
-#          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name 'CachedLogonsCount' -Value '10' -PropertyType String -Force
+#          New-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name 'CachedLogonsCount' -Value '10' -PropertyType String -Force
         }
       }
       90043 {
         if (Get-YesNo "$_ - SMB Signing Disabled / Not required (Both LanManWorkstation and LanManServer)) " -Results $Results -QID $ThisQID) {
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Services\LanManWorkstation\Parameters' -Name 'EnableSecuritySignature' -Value 1 -PropertyType DWord -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Services\LanManWorkstation\Parameters' -Name 'RequireSecuritySignature' -Value 1 -PropertyType DWord -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Services\LanManServer\Parameters' -Name 'EnableSecuritySignature' -Value 1 -PropertyType DWord -Force
-          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Services\LanManServer\Parameters' -Name 'RequireSecuritySignature' -Value 1 -PropertyType DWord -Force
+          $out = @()
+          $out += (New-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Services\LanManWorkstation\Parameters' -Name 'EnableSecuritySignature' -Value 1 -PropertyType DWord -Force).PSPath
+          $out += (New-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Services\LanManWorkstation\Parameters' -Name 'RequireSecuritySignature' -Value 1 -PropertyType DWord -Force).PSPath
+          $out += (New-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Services\LanManServer\Parameters' -Name 'EnableSecuritySignature' -Value 1 -PropertyType DWord -Force).PSPath
+          $out += (New-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Services\LanManServer\Parameters' -Name 'RequireSecuritySignature' -Value 1 -PropertyType DWord -Force).PSPath
+          Foreach ($line in $out) { Write-Verbose $line }
         }
       }
       91805 {
