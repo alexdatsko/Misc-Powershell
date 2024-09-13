@@ -46,8 +46,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.10"
-# New in this version:   Set up system to never go to sleep 
+$Version = "0.40.11"
+# New in this version:  Replacing some cmd.exe commands with powershell
 
 $VersionInfo = "v$($Version) - Last modified: 9/13/2024"
 
@@ -788,14 +788,14 @@ function Set-PowerSchemeSettings {
 	
 	$Scheme = Get-PowerScheme
 	If (($MonitorTimeoutAC -ne $null) -and ($MonitorTimeoutAC -ne "")) {
-		Write-Host "Setting monitor timeout on AC to"$MonitorTimeoutAC" minutes....." -NoNewline
+		Write-Host "[.] Setting monitor timeout on AC to"$MonitorTimeoutAC" minutes....." -NoNewline
 		$Switches = "/change" + [char]32 + "monitor-timeout-ac" + [char]32 + $MonitorTimeoutAC
 		$TestKey = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\" + $Scheme.GUID + "\7516b95f-f776-4464-8c53-06167f40cc99\3c0bc021-c8a8-4e07-a973-6b14cbcb2b7e"
 		$TestValue = $MonitorTimeoutAC
 		$PowerIndex = "ACSettingIndex"
 	}
 	If (($MonitorTimeoutDC -ne $null) -and ($MonitorTimeoutDC -ne "")) {
-		Write-Host "Setting monitor timeout on DC to"$MonitorTimeoutDC" minutes....." -NoNewline
+		Write-Host "[.] Setting monitor timeout on DC to"$MonitorTimeoutDC" minutes....." -NoNewline
 		$Switches = "/change" + [char]32 + "monitor-timeout-dc" + [char]32 + $MonitorTimeoutDC
 		$TestKey = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\" + $Scheme.GUID + "\7516b95f-f776-4464-8c53-06167f40cc99\3c0bc021-c8a8-4e07-a973-6b14cbcb2b7e"
 		$TestValue = $MonitorTimeoutDC
@@ -809,35 +809,35 @@ function Set-PowerSchemeSettings {
 		$PowerIndex = "ACSettingIndex"
 	}
 	If (($DiskTimeoutDC -ne $null) -and ($DiskTimeoutDC -ne "")) {
-		Write-Host "Setting disk timeout on DC to"$DiskTimeoutDC" minutes....." -NoNewline
+		Write-Host "[.] Setting disk timeout on DC to"$DiskTimeoutDC" minutes....." -NoNewline
 		$Switches = "/change" + [char]32 + "disk-timeout-dc" + [char]32 + $DiskTimeoutDC
 		$TestKey = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\" + $Scheme.GUID + "\0012ee47-9041-4b5d-9b77-535fba8b1442\6738e2c4-e8a5-4a42-b16a-e040e769756e"
 		$TestValue = $DiskTimeoutDC
 		$PowerIndex = "DCSettingIndex"
 	}
 	If (($StandbyTimeoutAC -ne $null) -and ($StandbyTimeoutAC -ne "")) {
-		Write-Host "Setting standby timeout on AC to"$StandbyTimeoutAC" minutes....." -NoNewline
+		Write-Host "[.] Setting standby timeout on AC to"$StandbyTimeoutAC" minutes....." -NoNewline
 		$Switches = "/change" + [char]32 + "standby-timeout-ac" + [char]32 + $StandbyTimeoutAC
 		$TestKey = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\" + $Scheme.GUID + "\238c9fa8-0aad-41ed-83f4-97be242c8f20\29f6c1db-86da-48c5-9fdb-f2b67b1f44da"
 		$TestValue = $StandbyTimeoutAC
 		$PowerIndex = "ACSettingIndex"
 	}
 	If (($StandbyTimeoutDC -ne $null) -and ($StandbyTimeoutDC -ne "")) {
-		Write-Host "Setting standby timeout on DC to"$StandbyTimeoutDC" minutes....." -NoNewline
+		Write-Host "[.] Setting standby timeout on DC to"$StandbyTimeoutDC" minutes....." -NoNewline
 		$Switches = "/change" + [char]32 + "standby-timeout-dc" + [char]32 + $StandbyTimeoutDC
 		$TestKey = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\" + $Scheme.GUID + "\238c9fa8-0aad-41ed-83f4-97be242c8f20\29f6c1db-86da-48c5-9fdb-f2b67b1f44da"
 		$TestValue = $StandbyTimeoutDC
 		$PowerIndex = "DCSettingIndex"
 	}
 	If (($HibernateTimeoutAC -ne $null) -and ($HibernateTimeoutAC -ne "")) {
-		Write-Host "Setting hibernate timeout on AC to"$HibernateTimeoutAC" minutes....." -NoNewline
+		Write-Host "[.] Setting hibernate timeout on AC to"$HibernateTimeoutAC" minutes....." -NoNewline
 		$Switches = "/change" + [char]32 + "hibernate-timeout-ac" + [char]32 + $HibernateTimeoutAC
 		$TestKey = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\" + $Scheme.GUID + "\238c9fa8-0aad-41ed-83f4-97be242c8f20\9d7815a6-7ee4-497e-8888-515a05f02364"
 		[int]$TestValue = $HibernateTimeoutAC
 		$PowerIndex = "ACSettingIndex"
 	}
 	If (($HibernateTimeoutDC -ne $null) -and ($HibernateTimeoutDC -ne "")) {
-		Write-Host "Setting hibernate timeout on DC to"$HibernateTimeoutDC" minutes....." -NoNewline
+		Write-Host "[.] Setting hibernate timeout on DC to"$HibernateTimeoutDC" minutes....." -NoNewline
 		$Switches = "/change" + [char]32 + "hibernate-timeout-dc" + [char]32 + $HibernateTimeoutDC
 		$TestKey = "Registry::HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Power\User\PowerSchemes\" + $Scheme.GUID + "\238c9fa8-0aad-41ed-83f4-97be242c8f20\9d7815a6-7ee4-497e-8888-515a05f02364"
 		$TestValue = $HibernateTimeoutDC
@@ -2519,11 +2519,10 @@ foreach ($CurrentQID in $QIDs) {
       }
       { $QIDsSpectreMeltdown -contains $_ } {
         if (Get-YesNo "$_ Fix spectre4/meltdown ? " -Results $Results -QID $ThisQID) {
-            cmd /c 'reg add "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v FeatureSettingsOverride /t REG_DWORD /d 72 /f'
-            cmd /c 'reg add "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" /v FeatureSettingsOverrideMask /t REG_DWORD /d 3 /f'
-            #cmd /c 'reg query "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization" '
-            cmd /c 'reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization" /v MinVmVersionForCpuBasedMitigations /t REG_SZ /d "1.0" /f'
-            $QIDsSpectreMeltdown = 1
+          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management' -Name 'FeatureSettingsOverride' -Value 72 -PropertyType DWord -Force
+          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management' -Name 'FeatureSettingsOverrideMask' -Value 3 -PropertyType DWord -Force
+          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization' -Name 'MinVmVersionForCpuBasedMitigations' -Value '1.0' -PropertyType String -Force
+          $QIDsSpectreMeltdown = 1
         } else { $QIDsSpectreMeltdown = 1 }
       }
       110414 {
@@ -2585,8 +2584,8 @@ foreach ($CurrentQID in $QIDs) {
       }
       100413 {
         if (Get-YesNo "$_ CVE-2017-8529 - IE Feature_Enable_Print_Info_Disclosure fix ? " -Results $Results -QID $ThisQID) {
-            cmd /c 'reg add "HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_ENABLE_PRINT_INFO_DISCLOSURE_FIX" /f'
-            cmd /c 'reg add "HKEY_LOCAL_MACHINE\SOFTWARE\WOW6432Node\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_ENABLE_PRINT_INFO_DISCLOSURE_FIX" /v iexplore.exe /t REG_DWORD /d 1 /f'
+          New-Item -Path 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_ENABLE_PRINT_INFO_DISCLOSURE_FIX' -Force
+          Set-ItemProperty -Path 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_ENABLE_PRINT_INFO_DISCLOSURE_FIX' -Name 'iexplore.exe' -Value 1 -PropertyType DWord -Force
         }
       }
       { 91704 -contains $_ } {
@@ -2635,24 +2634,26 @@ foreach ($CurrentQID in $QIDs) {
       }
       90044 {
         if (Get-YesNo "$_ - Allowed SMB Null session ? " -Results $Results -QID $ThisQID) {
-            cmd /c 'reg add "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Lsa" /v RestrictAnonymous /t REG_DWORD /d 1 /f'
-            cmd /c 'reg add "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Lsa" /v RestrictAnonymousSAM /t REG_DWORD /d 1 /f'
-            cmd /c 'reg add "HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Lsa" /v EveryoneIncludesAnonymous /t REG_DWORD /d 0 /f'
+          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'RestrictAnonymous' -Value 1 -PropertyType DWord -Force
+          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'RestrictAnonymousSAM' -Value 1 -PropertyType DWord -Force
+          Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'EveryoneIncludesAnonymous' -Value 0 -PropertyType DWord -Force
         }
       }
       90007 {
         if (Get-YesNo "$_ - Enabled Cached Logon Credential ? " -Results $Results -QID $ThisQID) {
-          cmd /c 'reg query "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v CachedLogonsCount'  
-          cmd /c 'reg add "HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v CachedLogonsCount /t REG_SZ /d 0 /f'
+           Write-Host "[!] This is problematic at times, ignoring it in all environments for now. " -ForegroundColor Red
+# to fix vuln:
+#          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name 'CachedLogonsCount' -Value '0' -PropertyType String -Force
+# to set back to defaults:
+#          Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon' -Name 'CachedLogonsCount' -Value '10' -PropertyType String -Force
         }
       }
       90043 {
         if (Get-YesNo "$_ - SMB Signing Disabled / Not required (Both LanManWorkstation and LanManServer)) " -Results $Results -QID $ThisQID) {
-            cmd /c 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManWorkstation\Parameters"  /v EnableSecuritySignature /t REG_DWORD /d 1 /f'
-            cmd /c 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManWorkstation\Parameters"  /v RequireSecuritySignature /t REG_DWORD /d 1 /f'
-            cmd /c 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters"  /v EnableSecuritySignature /t REG_DWORD /d 1 /f'
-            cmd /c 'reg add "HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\LanManServer\Parameters"  /v RequireSecuritySignature /t REG_DWORD /d 1 /f'
-
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Services\LanManWorkstation\Parameters' -Name 'EnableSecuritySignature' -Value 1 -PropertyType DWord -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Services\LanManWorkstation\Parameters' -Name 'RequireSecuritySignature' -Value 1 -PropertyType DWord -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Services\LanManServer\Parameters' -Name 'EnableSecuritySignature' -Value 1 -PropertyType DWord -Force
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Services\LanManServer\Parameters' -Name 'RequireSecuritySignature' -Value 1 -PropertyType DWord -Force
         }
       }
       91805 {
@@ -3002,6 +3003,7 @@ foreach ($CurrentQID in $QIDs) {
             #wget "https://download.oracle.com/java/18/latest/jdk-18_windows-x64_bin.msi" -OutFile "$($tmp)\java17.msi"
             #msiexec /i "$($tmp)\java18.msi" /qn /quiet /norestart
             . "c:\Program Files (x86)\Common Files\Java\Java Update\jucheck.exe"
+            # "C:\Program Files (x86)\Java\jre1.8.0_151" 
             $SoftwareInstalling.Add("Java")
             $QIDsOracleJava = 1
         } else { $QIDsOracleJava = 1 }
