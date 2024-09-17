@@ -46,10 +46,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.12"
-# New in this version:  Replacing some cmd.exe commands with powershell, take2
+$Version = "0.40.13"
+# New in this version:  Power settings should only be changed on workstations, updated Get-OSType calls to cast returned value as [int]..
 
-$VersionInfo = "v$($Version) - Last modified: 9/13/2024"
+$VersionInfo = "v$($Version) - Last modified: 9/17/2024"
 
 #### VERSION ###################################################
 
@@ -2211,7 +2211,7 @@ if ($ServerName) {
 }
 
 if (!$OnlyQIDs) {   # If we are not just trying a fix for one CSV, we will also see if we can install the Dell BIOS provider and set WOL to on, and backup Bitlocker keys to AD if possible
-  if (Get-OSType -eq 1) {
+  if ([int](Get-OSType) -eq 1) {
     Set-PowerSettingsNeverSleep  # Lets set this machine to never go to sleep, via registry. Disk, Sleep, and Hibernate time are set to 0.
     #Install-DellBiosProvider  # Will only run if value is set in Config
     #Set-DellBiosProviderDefaults # Will only run if value is set in Config  
