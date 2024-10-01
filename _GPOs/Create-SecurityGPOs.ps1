@@ -8,27 +8,33 @@ param (
 #$Verbose = $true 
 Write-Verbose "[!] Running as Verbose: $Verbose"
 
-<#
- #    ░██████╗░██████╗░░█████╗░░░░░░░████████╗░█████╗░░█████╗░██╗░░░░░░██████╗
- #    ██╔════╝░██╔══██╗██╔══██╗░░░░░░╚══██╔══╝██╔══██╗██╔══██╗██║░░░░░██╔════╝
- #    ██║░░██╗░██████╔╝██║░░██║█████╗░░░██║░░░██║░░██║██║░░██║██║░░░░░╚█████╗░
- #    ██║░░╚██╗██╔═══╝░██║░░██║╚════╝░░░██║░░░██║░░██║██║░░██║██║░░░░░░╚═══██╗
- #    ╚██████╔╝██║░░░░░╚█████╔╝░░░░░░░░░██║░░░╚█████╔╝╚█████╔╝███████╗██████╔╝
- #    ░╚═════╝░╚═╝░░░░░░╚════╝░░░░░░░░░░╚═╝░░░░╚════╝░░╚════╝░╚══════╝╚═════╝░
- #                 Alex Datsko - alexd@mmeconsulting.com - 2023
- #>
-
-# Security GPO Installer - aka 'GPO Tools'
+$info='''
+ 
+     ░██████╗░██████╗░░█████╗░░░░░░░████████╗░█████╗░░█████╗░██╗░░░░░░██████╗
+     ██╔════╝░██╔══██╗██╔══██╗░░░░░░╚══██╔══╝██╔══██╗██╔══██╗██║░░░░░██╔════╝
+     ██║░░██╗░██████╔╝██║░░██║█████╗░░░██║░░░██║░░██║██║░░██║██║░░░░░╚█████╗░
+     ██║░░╚██╗██╔═══╝░██║░░██║╚════╝░░░██║░░░██║░░██║██║░░██║██║░░░░░░╚═══██╗
+     ╚██████╔╝██║░░░░░╚█████╔╝░░░░░░░░░██║░░░╚█████╔╝╚█████╔╝███████╗██████╔╝
+     ░╚═════╝░╚═╝░░░░░░╚════╝░░░░░░░░░░╚═╝░░░░╚════╝░░╚════╝░╚══════╝╚═════╝░
+                   Alex Datsko - alexd@mmeconsulting.com - 2024
+ 
+# Security GPO Installer - aka GPO Tools
 # Alex Datsko - MME Consulting Inc. - alex.datsko@mmeconsulting.com
+'''
 
-$VersionMajor = "0.43"
-$VersionMinor = "b23-08-25"
-$Version = "$VersionLong $VersionShort"
+$VersionMajor = "0.50"
+$VersionMinor = "b2024-09-30"
+$Version = "$VersionMajor $VersionMinor"
 
 <#
 ##########
 # History
 ##########
+ 0.50 - Added extraction of most current PolicyDefinitions zip file, to central Policy store by default.
+        Added import of all WMI Filter MOF files
+        Fixed GPO list CSV import to also check BackupGPO folder, which is where Backup-AllGPOs.ps1 saves it..
+        Sorted GPOs by name in ascending format, filtered SEC* ones only so we can use a universal Mastering backup file
+        Got rid of Credential Caching completely, will not ask to install ever (unless uncommented)
  0.43 - Removed Security Group creation and modified script to not use them, they will not be maintained well over time and will cause confusion.
         Added Get-Yesno to main loop stuff for testing purposes etc.
         Added more Verbose text for bug fixing/reporting
@@ -64,7 +70,23 @@ $Version = "$VersionLong $VersionShort"
 # CSV File to import GPOs from
 $CSVFile = "GPOList.csv"
 # Set default location to install Policy definitions - Central policy store would be "c:\windows\Sysvol\domain\policies\policydefinitions"
-$PolicyDefFolder = "C:\Windows\PolicyDefinitions"
+#$PolicyDefFolder = "C:\Windows\PolicyDefinitions"
+$ADDomain = (Get-ADDomain).DNSRoot
+$CPolicyStore = "\\$($ADdomain)\SYSVOL\$($ADDomain)\policies\PolicyDefinitions"
+if (Test-Path -Path $CPolicyStore) {
+  Write-Output "[!] Central Policy store found at $CPolicyStore"
+  $PolicyStore=$CPolicyStore
+} else {
+  try { 
+    Write-Output "[!] Central Policy store not found, creating $CPolicyStore"
+    $null = New-Item -ItemType Directory $CPolicyStore -Force | Out-Null
+  } catch { }
+  $PolicyStore=$CPolicyStore
+#  Lets not use this, central is better as its replicated across all domain controllers
+#  $PolicyStore = "C:\Windows\PolicyDefinitions"
+#  Write-Output "[!] Using standard policy store, $PolicyStore"
+}
+$PolicyDefFolder = $PolicyStore
 # Path to directory where backed up GPO's are stored. Default = Current location
 $GPOPath = "$(Get-Location)\"
 # Words to ignore... can be lower case, compared in 
@@ -89,32 +111,40 @@ function Show-Logo {
   param (
     $Version
   )
-    Write-Host @"
-
-    ░██████╗░██████╗░░█████╗░░░░░░░████████╗░█████╗░░█████╗░██╗░░░░░░██████╗
-    ██╔════╝░██╔══██╗██╔══██╗░░░░░░╚══██╔══╝██╔══██╗██╔══██╗██║░░░░░██╔════╝
-    ██║░░██╗░██████╔╝██║░░██║█████╗░░░██║░░░██║░░██║██║░░██║██║░░░░░╚█████╗░
-    ██║░░╚██╗██╔═══╝░██║░░██║╚════╝░░░██║░░░██║░░██║██║░░██║██║░░░░░░╚═══██╗
-    ╚██████╔╝██║░░░░░╚█████╔╝░░░░░░░░░██║░░░╚█████╔╝╚█████╔╝███████╗██████╔╝
-    ░╚═════╝░╚═╝░░░░░░╚════╝░░░░░░░░░░╚═╝░░░░╚════╝░░╚════╝░╚══════╝╚═════╝░
-"@
-For ($i=0; $i -le 39-([math]::round($Version.length / 2)); $i++) { Write-Host " " -NoNewLine }
-Write-Host $Version"
-                Alex Datsko - alexd@mmeconsulting.com - 2023
-
-"
-
+    $info
+    "# Date: $date Time: $Time Version: $Version"
 }
 
 ###################################################
 function Get-YesNo {
   param ([string]$prompt)
+  
+  while ($true) {
+    $yesno = (Read-Host "[?] $prompt [Y]").toUpper()
+    if (($yesno -eq "Y") -or ($yesno -eq "")) {
+      return $true
+    } else {
+      if ($yesno -eq "N") {
+        return $false
+      } else {
+        Write-Host "[!] Error, select Y or Enter for Yes, No for No" -ForegroundColor Red
+      }
 
-  $yesno = (Read-Host "[?] $prompt [Y]").toUpper()
-  if (($yesno -eq "Y") -or ($yesno -eq "")) {
-    return $true
-  } 
-  return $false
+    }
+  }
+}
+
+###################################################
+function Get-YesNoList {
+  param ([string]$prompt)
+
+  while ($true) {
+    $yesno = (Read-Host "[?] $prompt [Y]").toUpper()
+    if (($yesno -eq "Y") -or ($yesno -eq "") -or ($yesno -eq "L") -or ($yesno -eq "N")) {
+      return $yesno
+    } 
+    Write-Host "[!] Error, select Y or Enter for Yes, No for No, or L to list" -ForegroundColor Red
+  }
 }
 
 ###################################################
@@ -191,10 +221,12 @@ function Get-CSVFile {
   }
   while (!$CSVWorking) {
     if (!(Test-Path $CSVFile)) {
-      Write-Host "[!] CSV File not found : $($Pwd)\$($CSVFile)"
-      $CSVFile = Read-Host "[?] Please enter the path to the list of GPOs to import ?"
+      if (!(Test-Path "BackupGPO\$($CSVFile)")) {
+        Write-Host "[!] CSV File not found : $($Pwd)\$($CSVFile) or $($Pwd)\BackupGPO\$($CSVFile)  !"
+        $CSVFile = Read-Host "[?] Please enter the path to the list of GPOs to import : "
+      } else { $GPOs = Import-Csv -Path "BackupGPO\$($CSVFile)" }
     }
-    $GPOs = Import-Csv -Path $CSVFile
+    $GPOs = Import-Csv -Path "$CSVFile"
     if ($GPOs) { $CSVWorking = $true } else {
       Write-Host "[!] Not able to read GPOs from $CSVFile !"
       Exit
@@ -788,7 +820,8 @@ function Create-MasteredGPO {       # Mega loop for installing each GPO, per GPO
   }
 
   if ($TargetName -like "*Credential Caching - Disable*") {
-    if (Get-YesNo "Add the Credential Cachine - Disabled GPO? ") {
+    <# # Lets not bother with this, ever for now..
+    if (Get-YesNo "Add the Credential Caching - Disabled GPO? ") {
       Write-Host "[!] Detected Credential Caching GPO, Lets pick the OU it applies to.." -ForegroundColor White
       $WorkstationOU = Pick-OU
       if ($WorkstationOU) {
@@ -801,11 +834,12 @@ function Create-MasteredGPO {       # Mega loop for installing each GPO, per GPO
       }
     } else {
       Write-Host "[!] Note : will need to mention No again below" -ForegroundColor Yellow
-    }
+    }#>
   }
 
   if ($TargetName -like "SEC - CC - Credential Caching - Enable*") {
-    if (Get-YesNo "Add the Credential Cachine - Enabled GPO? ") {
+    <# # Lets not bother with this, ever for now..
+    if (Get-YesNo "Add the Credential Caching - Enabled GPO? ") {
       Write-Host "[!] Detected Credential Caching GPO, searching for Security Group 'Cached Credentials Enabled' .." -ForegroundColor White
       if ($OrgNamePath) {
           $DomainString = $OrgNamePath
@@ -817,7 +851,8 @@ function Create-MasteredGPO {       # Mega loop for installing each GPO, per GPO
       $GPO | Set-GPPermission -TargetName $CachedCredentialsGroupSAM -TargetType Group  -PermissionLevel GpoApply
     } else {
       Write-Host "[!] Note : will need to mention No again below" -ForegroundColor Yellow
-    }
+    } 
+    #>
   }
   
   ## Link to multiple OUs ##
@@ -965,83 +1000,55 @@ function Install-PolicyDefinitions {
     [string]$PolicyDefFolder
   )
 
-  $Done = $false
-  if (!($PolicyDefFolder)) {
-    # Pick whether or not to do Central policy store?
-    while (!($Done)) {
-      $choice = (Read-Host "`n[?] Enter (1) to use C:\Windows\PolicyDefinitions, or (2) for Central Policy store location ($($env:systemroot)\SYSVOL\domain\policies\PolicyDefinitions) ").toUpper()
-      if ($choice -eq '1') {
-        $PolicyDefFolder = "$($env:systemroot)\PolicyDefinitions" 
-        $Done = $true
-      } else {
-        if ($choice -eq '2') {
-          $PolicyDefFolder = "C:\Windows\SYSVOL\domain\policies\PolicyDefinitions" 
-          if (!(Test-Path -Path $PolicyDefFolder)) {
-            Write-Host "[.] Creating $($PolicyDefFolder) .."
-            New-Item -ItemType Directory $PolicyDefFolder -Force | Out-Null
+  $yesno = Get-YesNoList "Would you like to install the latest PolicyDefinitions to $($PolicyDefFolder) "
+  if (($yesno -eq "Y") -or ($yesno -eq "")) {
+    if (!(Test-Path ".\PolicyDefinitions")) {  # If it was not backed up to folder but to zip file instead..
+      Write-Host "[.] Checking for PolicyDefinitions backup file..."
+      $PolicyStoreZip = Check-PolicyDefinitionsBackupFile $pwd
+      if ($PolicyStoreZip -like "*PolicyStore-*.zip") {
+          Write-Verbose "PolicyStore Zip backup found: $PolicyStoreZip"
+          # Test and see if Central PoliciesStore already exists?
+          $PolicyStoreParent = "$($env:systemroot)\SYSVOL\domain\policies" # Since the archive was created with the PolicyDefinitions folder inside
+          $PolicyStoreLocation = "$($PolicyStoreParent)\PolicyDefinitions"  # PolicyDefinitions will not exist, but policies will.
+          $SkipPolicyStore = $false
+          Write-Host "[.] Checking for existing Policy store definitions such as AcrobatReaderDC.admx .."
+          if (Test-Path "$($PolicyStoreLocation)\AcrobatReaderDC.admx") {  # Check the Central policy store for existing policy defs  # THIS COULD BE PROBLEMATIC? We should overwrite anyway
+            $SkipPolicyStore = "$($PolicyStoreLocation)"
           }
-          $Done = $true
-        } else {
-          # If neither 1 or 2, pick the default policy store b
-          Write-Host "`n[!] Please pick 1 or 2."
-        }
-      }
-    }
-    Write-Host "[.] Using $PolicyDefFolder"
-  }
-  
-  $yesno = ""
-  while (($yesno -ne "Y") -and ($yesno -ne "N")) {
-      $yesno = (Read-Host "`n[?] Would you like to install the latest PolicyDefinitions to $($PolicyDefFolder) ? [y=yes,n=No,L=List] ").toUpper()
-      if (($yesno -eq "L") -or ($yesno -eq "")) {
-        if (!(Test-Path ".\PolicyDefinitions")) {  # If it was not backed up to folder but to zip file..
-          Write-Host "[.] Checking for PolicyDefinitions backup file..."
-          $PolicyStoreZip = (Get-ChildItem -Path "$($GPOPath)" -Filter *.zip) | where {$_.Name -like 'PolicyStore*'}
-          if ($PolicyStoreZip -like "PolicyStore-*.zip") {
-              Write-Verbose "PolicyStore Zip backup found: $PolicyStoreZip"
-              # Test and see if Central PoliciesStore already exists?
-              $PolicyStoreParent = "$($env:systemroot)\SYSVOL\domain\policies" # Since the archive was created with the PolicyDefinitions folder inside
-              $PolicyStoreLocation = "$($PolicyStoreParent)\PolicyDefinitions"  # PolicyDefinitions will not exist, but policies will.
-              $SkipPolicyStore = $false
-              if (Test-Path "$($PolicyStoreLocation)\AcrobatReaderDC.admx") {  # Check the Central policy store
-                $SkipPolicyStore = "$($PolicyStoreLocation)"
-              }
-              if (Test-Path "$($env:systemroot)\PolicyDefinitions\AcrobatReaderDC.admx") {  # Check the default policy store
-                $SkipPolicyStore = "$($env:systemroot)\PolicyDefinitions"
-              }
-              if (!($SkipPolicyStore)) {
-                  $inp = Read-Host "Create and restore to new Central policy store? [Y/n] "
-                  if ($inp.ToUpper() -eq 'Y' -or $inp -eq "") { 
-                    if (!(Test-Path -Path $PolicyStoreLocation)) {
-                      Write-Host "[.] Creating Policy Store location.. $PolicyStoreLocation"
-                      New-Item -ItemType Directory -Path $PolicyStoreLocation  -Force
-                      if (!(Test-Path -Path $PolicyStoreLocation)) {
-                        Write-Host "[!] Error, couldn't create $PolicyStoreLocation !! Exiting.."
-                        Exit
-                      }
-                    }
-                    Expand-Archive -Path "$($GPOPath)\$($PolicyStoreZip)" -DestinationPath "$PolicyStoreParent" -Force # -Verbose
-                  } else {
-                    $inp = Read-Host "Restore to default policy store $($env:systemroot)\PolicyDefinitions? [Y/n] "
-                    if ($inp.ToUpper() -eq 'Y' -or $inp -eq "") {
-                      $ADDomain = (Get-ADDomain).DNSRoot
-                      $PolicyStoreLocation = "$($env:systemroot)\PolicyDefinitions"
-                      Expand-Archive -Path "$($GPOPath)\$($PolicyStoreZip)" -DestinationPath "$PolicyStoreLocation" -Force # -Verbose
-                    }
+          if (Test-Path "$($env:systemroot)\PolicyDefinitions\AcrobatReaderDC.admx") {  # Check the default policy store  # THIS COULD BE PROBLEMATIC? We should overwrite anyway
+            $SkipPolicyStore = "$($env:systemroot)\PolicyDefinitions"
+          }
+          if (!($SkipPolicyStore)) {
+              if (Get-YesNo "Current definitions not found. Unzip and restore to new Central policy store? [Y/n] ") {
+                if (!(Test-Path -Path $PolicyStoreLocation)) {
+                  Write-Host "[.] Creating Central Policy Store location.. $PolicyStoreLocation"
+                  New-Item -ItemType Directory -Path $PolicyStoreLocation  -Force
+                  if (!(Test-Path -Path $PolicyStoreLocation)) {
+                    Write-Host "[!] Error, couldn't create $PolicyStoreLocation !! Exiting.."
+                    Exit
                   }
-                  Write-Host "[+] PolicyStore backup extracted to $PolicyStoreLocation"
+                }
+                $null = Expand-Archive -Path "$($PolicyStoreZip)" -DestinationPath "$PolicyStoreParent" -Force # -Verbose
               } else {
-                Write-Host "[!] Skipping Policy store backup extraction, Policy store items such as Adobe AcrobatReaderDC.admx found in $($SkipPolicyStore) !"
+                if (Get-YesNo "Restore to default policy store $($env:systemroot)\PolicyDefinitions [Y/n] ") {
+                  $PolicyStoreLocation = "$($env:systemroot)\PolicyDefinitions"
+                  Expand-Archive -Path "$($PolicyStoreZip)" -DestinationPath "$PolicyStoreLocation" -Force # -Verbose
+                }
               }
+              Write-Host "[+] PolicyStore backup extracted to $PolicyStoreLocation"
           } else {
-            Write-Host "[-] PolicyStore backup not found."
+            Write-Host "[!] Skipping Policy store backup extraction, Policy store items such as Adobe AcrobatReaderDC.admx found in $($SkipPolicyStore) !"
           }
-
-        }
-        if (Test-Path ".\PolicyDefinitions") {
-          GCI ".\PolicyDefinitions"
-        }
+      } else {
+        Write-Host "[-] PolicyStore backup not found."
       }
+
+    }
+    if (Test-Path ".\PolicyDefinitions") {
+      GCI ".\PolicyDefinitions"
+    }
+  }
+<#  # This was for the folder, not the zip file..
       if ($yesno -eq "Y") {
         $pwd = Get-Location
         Write-Host "[.] Making backup of current policy definitions in $($PolicyDefFolder), saving as $($pwd)\PolicyDef-$($date).zip ..."
@@ -1063,7 +1070,7 @@ function Install-PolicyDefinitions {
         Write-Host "[!] Skipping PolicyDefinitions installation.  NOTE: Some policies will not show properly if the policy definitions are not installed properly!"
         Write-Host "    To install, the raw admx file(s) must be installed in $($PolicyDefFolder), and the ADML files must be in $($PoliceDefFolder)\en-US. No other folders are necessary!`n"
       }
-  }
+  }#>
 }
 
 function Install-WMIFilters {
@@ -1073,7 +1080,7 @@ function Install-WMIFilters {
   $yesno=""
   $MofFiles = GCI $WMIFilterFolder
   while (($yesno -ne "Y") -and ($yesno -ne "N")) {
-      $yesno = (Read-Host "`n[?] Would you like to install the latest WMI Filters ? [y=yes,n=No,L=List] ").toUpper()
+      $yesno = Get-YesNoList "Would you like to install the latest WMI Filters "
       if (($yesno -eq "L") -or ($yesno -eq "")) {
         $MofFiles
       }
@@ -1125,48 +1132,42 @@ Function Test-GPOBackup {
   }
 }
 
-function Compare-BackupToPath {
-  # Path to the folder to compare
-  param ([string]$folderPath,
-         [string]$zipPath)
-<#
-  # Compare the contents of the folder and the zip file
-  $compareResult = Compare-Object $(Get-ChildItem $folderPath -Recurse | Select-Object FullName) $(Expand-Archive $zipPath -PassThru | Select-Object FullName) -Property FullName -IncludeEqual
-  if ($CompareResult.Count -ne 0) { 
-    return $True  # need to extract, there are differences
-  } else {
-    return $False
-  }
-#>
-  return $true   # For now, this will take too long and code above doesn't work. Need to extract to temporary folder etc, more like:
+function Check-PolicyDefinitionsBackupFile {
+  # Search for ZIP file in folders
+  param ([string]$folderPath)
 
-  <#
+  $testpath = "$($folderpath)\PolicyStore-*.zip"
+  $test = GCI $testpath | Sort-Object -Descending -Property LastWriteTime | select -First 1
+  if ($test) { return $test }
   
-  Import-Module Microsoft.PowerShell.Archive
-  $tempFolderPath = "$env:temp"
-  Expand-Archive -Path $zipFilePath -DestinationPath $tempFolderPath
-  $diff = Compare-Object (Get-ChildItem $tempFolderPath -Recurse) (Get-ChildItem $folderPath -Recurse) -Property Name, Length -PassThru
+  $testpath = "$($folderpath)\BackupGPO\PolicyStore-*.zip"
+  $test = GCI $testpath | Sort-Object -Descending -Property LastWriteTime | select -First 1
+  if ($test) { return $test }
+}
 
-  if ($diff) {
-      Remove-Item -Path $folderPath -Recurse -Force
-      Move-Item -Path $tempFolderPath\* -Destination $folderPath
-  }
 
-  Remove-Item -Path $tempFolderPath -Recurse -Force
- 
-  #>
+function Check-GPOBackupFile {
+  # Search for ZIP file in folders
+  param ([string]$folderPath)
+
+  $testpath = "$($folderpath)\BackupGPO-*.zip"
+  $test = GCI $testpath | Sort-Object -Descending -Property LastWriteTime | select -First 1
+  if ($test) { return $test }
+  
+  $testpath = "$($folderpath)\BackupGPO\BackupGPO-*.zip"
+  $test = GCI $testpath | Sort-Object -Descending -Property LastWriteTime | select -First 1
+  if ($test) { return $test }
 }
 
 Function Extract-GPOBackup {
   param ($BackupFile)
-  if (Compare-BackupToPath $GPOPath $BackupFile) {
-    Write-Host "[.] Found newest backup file $($BackupFile), extracting ..."
-    Expand-Archive -Path $BackupFile -DestinationPath $pwd -Force # -Verbose
-    if (!(Test-Path -Path "$GPOPath")) { 
-      Write-Host "[!] Failed! $GPOPath not found.. Some error happened extracting $BackupFile to $GPOPath " 
-      Exit 
-    }     
-  }
+  
+  Write-Host "[.] Found newest backup file $($BackupFile), extracting ..."
+  Expand-Archive -Path $BackupFile -DestinationPath $pwd -Force # -Verbose
+  if (!(Test-Path -Path "$GPOPath\BackupGPO")) { 
+    Write-Host "[!] Failed! $($GPOPath)\BackupGPO not found.. Some error happened extracting $BackupFile to $GPOPath" 
+    Exit 
+  }     
 }
 
 Function Check-GPOExists {
@@ -1205,9 +1206,9 @@ Show-Logo $Version
 if ($Update) {
   Update-NewGPOsOnly
 }
-<#
+
 Test-PreviousGPOBackup
-$BackupFile = Test-GPOBackup
+$BackupFile = Check-GPOBackupFile -folderPath $pwd
 if ($BackupFile) {
   Extract-GPOBackup $BackupFile
   $GPOPath = "$($pwd)\BackupGPO"  # Set new 'root' path as needed
@@ -1219,7 +1220,7 @@ if ($BackupFile) {
   Write-Host "[!] No Backup files found! Exiting."
   Exit
 }
-#>
+
 
 $FunctionalLevel = Check-DomainFunctionalLevel
 Enable-ADRecycleBin $FunctionalLevel
@@ -1228,15 +1229,20 @@ if (Get-YesNo "Backup Existing GPOs?") {
   Backup-ExistingGPOs
 }
 
-if (Get-YesNo "Install PolicyDefinitions?") {
+if (Get-YesNo "Install all PolicyDefinitions?") {
   $PolicyStore = Check-CentralPolicyStore 
   Install-PolicyDefinitions $PolicyStore
 }
 
+if (Get-YesNo "Install all WMI Filters?") {
+  Install-WMIFilters
+}
+
+
 Write-Host "`r`n[!] Creating necessary OU's and groups as needed: "
 $OrgNamePath = Check-OrgName 
 
-<# # Create MME Standard Security Groups - Disabled as of 08-25-2023
+<# # Create MME Standard Security Groups - Disabled as of 08-25-2023, no longer needed..
 $AutoplaySecGrp = Create-SecurityGroup -Name $AutoplayGroup -SAMAccountName $AutoplayGroupSAM -Path $OrgNamePath
 $ServerSecGrp = Create-SecurityGroup -Name $ServerGroup -SAMAccountName $ServerGroupSAM -Path $OrgNamePath
 $CachedCredentialsEnabledSecGrp = Create-SecurityGroup -Name $CachedCredentialsGroup -SAMAccountName $CachedCredentialsGroupSAM -Path $OrgNamePath
@@ -1244,10 +1250,14 @@ $CachedCredentialsEnabledSecGrp = Create-SecurityGroup -Name $CachedCredentialsG
 
 Write-Host "[!] Importing GPO List from CSV .."
 $CSVFile = Get-CSVFile
-$GPOs = Import-Csv -Path $CSVFile
+$GPOs = Import-Csv -Path $CSVFile | Sort-Object -Property @{Expression = "DisplayName"; Ascending = $True}
 Write-Host "[!] Importing GPOs .."
 ForEach ($GPO in $GPOs) {
-  Create-MasteredGPO $GPO.BackupId $GPO.DisplayName $GPO.Description
+  if ($GPO.DisplayName -like "SEC*") {
+    Create-MasteredGPO $GPO.BackupId $GPO.DisplayName $GPO.Description
+  } else {
+    Write-Verbose "Ignoring $GPO.DisplayName"
+  }
 }
 
 Write-Host "[!] Finished adding all policies." -ForegroundColor Yellow

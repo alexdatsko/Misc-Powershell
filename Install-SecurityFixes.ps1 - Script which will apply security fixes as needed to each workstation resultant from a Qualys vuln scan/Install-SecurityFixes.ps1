@@ -46,10 +46,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.13"
-# New in this version:  Power settings should only be changed on workstations, updated Get-OSType calls to cast returned value as [int]..
+$Version = "0.40.14"
+# New in this version:  Update-ViaNinite slight update
 
-$VersionInfo = "v$($Version) - Last modified: 9/17/2024"
+$VersionInfo = "v$($Version) - Last modified: 9/19/2024"
 
 #### VERSION ###################################################
 
@@ -1987,17 +1987,17 @@ Function Update-ViaNinite {
   Start-Sleep 5 # Wait 5 seconds to make sure all processes are killed, could take longer.
   if ($script:Automated) {
     Write-Host "[.] Running the Ninite updater, this window will automatically be closed within $UpdateNiniteWait seconds"
-    Start-Process -FilePath "$($OutFile)" -NoNewWindow
+    Start-Process -FilePath "$($OutFile)" -NoNewWindow  # -Wait   # This will wait forever for ninite
     Write-Host "[.] Waiting $UpdateNiniteWait seconds .."
     Start-Sleep $UpdateNiniteWait # Wait X seconds to make sure the app has updated, usually 30-45s or so at least!! Longer for slower machines!
     Write-Host "[.] Killing the Ninite updater window, hopefully it is stuck at 'Done'"
-    taskkill.exe /f /im $(($KillProcess -split "\\")[-1])  # Grab filename from full path if given
+    taskkill.exe /f /im $(($OutFile -split "\\")[-1])  # Grab filename from full path if given
   } else {
     Write-Host "[.] Running the Ninite $Updatetring updater, please close this window by hitting DONE when complete! Otherwise, we will kill the proce after $UpdateNiniteWait seconds."
-    Start-Process -FilePath $OutFile -NoNewWindow
-    Start-Sleep $UpdateNiniteWait # Wait X seconds to make sure the app has updated, usually 30-45s or so at least!! Longer for slower machines!
-    Write-Host "[.] Killing the Ninite updater window, hopefully it is stuck at 'Done'"
-    taskkill.exe /f /im $(($Outfile -split "\\")[-1])  # Grab filename from full path if given
+    Start-Process -FilePath $OutFile -NoNewWindow -Wait
+    #Start-Sleep $UpdateNiniteWait # Wait X seconds to make sure the app has updated, usually 30-45s or so at least!! Longer for slower machines!
+    #Write-Host "[.] Killing the Ninite updater window, hopefully it is stuck at 'Done'"
+    #taskkill.exe /f /im $(($Outfile -split "\\")[-1])  # Grab filename from full path if given
   }
 }
 
