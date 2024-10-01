@@ -1073,22 +1073,65 @@ function Install-PolicyDefinitions {
   }#>
 }
 
+function Import-WmiFiltersFromCSV {
+  param (
+    [string]$CsvPath
+  )
+
+  if (!(Test-Path $CsvPath)) {
+    Write-Error "[!] CSV file not found: $CsvPath"
+    return
+  }
+
+  $ImportedFilters = Import-Csv -Path $CsvPath
+
+  foreach ($Filter in $ImportedFilters) {
+    Write-Host "[.] Importing WMI Filter: $($Filter.Name)"
+    
+    $WmiFilterContainer = "CN=SOM,CN=WMIPolicy,CN=System,$DomainDistinguishedName"
+    $WmiFilterName = $Filter.Name
+
+    # Check if the WMI filter already exists
+    $existingFilter = Get-ADObject -Filter {(objectClass -eq "msWMI-Som") -and (Name -eq $WmiFilterName)} -SearchBase $WmiFilterContainer -Properties msWMI-ID
+
+    if ($existingFilter) {
+      Write-Warning "[!] WMI Filter '$WmiFilterName' already exists. Skipping creation."
+      continue
+    }
+
+    # Prepare the attributes for the new WMI filter
+    $attributes = @{
+        'msWMI-Name'   = $Filter.Name
+        'msWMI-Parm1'  = $Filter.Description
+        'msWMI-Parm2'  = $Filter.Query
+        'msWMI-Author' = $Filter.Author
+        'msWMI-ID'     = "{$($Filter.Id)}"
+    }
+
+    # Create the new WMI filter
+    try {
+      New-ADObject -Name $WmiFilterName -Type "msWMI-Som" -Path $WmiFilterContainer -OtherAttributes $attributes
+      Write-Host "[+] Successfully created WMI Filter: $WmiFilterName" -ForegroundColor Green
+    }
+    catch {
+      Write-Error "[-] Failed to create WMI Filter '$WmiFilterName': $_"
+    }
+  }
+}
+
 function Install-WMIFilters {
   param (
-    [string]$WMIFilterFolder
+    [string]$WMIFilterFile = "$($GPOPath)\WmiFilters.csv"
   )
   $yesno=""
   $MofFiles = GCI $WMIFilterFolder
   while (($yesno -ne "Y") -and ($yesno -ne "N")) {
       $yesno = Get-YesNoList "Would you like to install the latest WMI Filters "
-      if (($yesno -eq "L") -or ($yesno -eq "")) {
+      if (($yesno -eq "L")) {
         $MofFiles
       }
-      if ($yesno -eq "Y") {
-        foreach ($MofFile in $MofFiles) {
-          Write-Output "[.] Installing $($WMIFilterFolder)\$($MofFile.Name) .."
-          mofcomp.exe -N:root\Policy $($WMIFilterFolder)\$($MofFile.Name)
-        }
+      if ($yesno -eq "Y" -or ($yesno -eq "")) {
+        Import-WmiFiltersFromCSV -CsvPath $WMIFilterFile
       } 
       if ($yesno -eq "N") {
         Write-Host "[!] Skipping WMI Filter MOF file installation.  NOTE: Some policies will not be filtered properly if these do not exist already!"
@@ -1202,6 +1245,7 @@ Function Update-NewGPOsOnly {
 # MAIN 
 
 Show-Logo $Version
+$GPOPath = "$($pwd)\BackupGPO"  # Set new 'root' path as needed
 
 if ($Update) {
   Update-NewGPOsOnly
@@ -1211,7 +1255,6 @@ Test-PreviousGPOBackup
 $BackupFile = Check-GPOBackupFile -folderPath $pwd
 if ($BackupFile) {
   Extract-GPOBackup $BackupFile
-  $GPOPath = "$($pwd)\BackupGPO"  # Set new 'root' path as needed
   if (Test-Path "$($GPOPath)\GPOList.csv") {
     Write-Host "[!] Found $($GPOPath)\GPOList.csv, changing location to $GPOPath"
     Set-Location $GPOPath
@@ -1221,7 +1264,6 @@ if ($BackupFile) {
   Exit
 }
 
-
 $FunctionalLevel = Check-DomainFunctionalLevel
 Enable-ADRecycleBin $FunctionalLevel
 
@@ -1229,24 +1271,14 @@ if (Get-YesNo "Backup Existing GPOs?") {
   Backup-ExistingGPOs
 }
 
-if (Get-YesNo "Install all PolicyDefinitions?") {
-  $PolicyStore = Check-CentralPolicyStore 
-  Install-PolicyDefinitions $PolicyStore
-}
+$PolicyStore = Check-CentralPolicyStore 
+Install-PolicyDefinitions $PolicyStore
 
-if (Get-YesNo "Install all WMI Filters?") {
-  Install-WMIFilters
-}
+Install-WMIFilters "$($GPOPath)\WMIFilters.csv"
 
+$OrgNamePath = Check-OrgName
 
-Write-Host "`r`n[!] Creating necessary OU's and groups as needed: "
-$OrgNamePath = Check-OrgName 
-
-<# # Create MME Standard Security Groups - Disabled as of 08-25-2023, no longer needed..
-$AutoplaySecGrp = Create-SecurityGroup -Name $AutoplayGroup -SAMAccountName $AutoplayGroupSAM -Path $OrgNamePath
-$ServerSecGrp = Create-SecurityGroup -Name $ServerGroup -SAMAccountName $ServerGroupSAM -Path $OrgNamePath
-$CachedCredentialsEnabledSecGrp = Create-SecurityGroup -Name $CachedCredentialsGroup -SAMAccountName $CachedCredentialsGroupSAM -Path $OrgNamePath
-#>
+#Write-Host "`r`n[!] Creating necessary OU's and groups as needed: "
 
 Write-Host "[!] Importing GPO List from CSV .."
 $CSVFile = Get-CSVFile
