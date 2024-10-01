@@ -1207,7 +1207,7 @@ Function Extract-GPOBackup {
   
   Write-Host "[.] Found newest backup file $($BackupFile), extracting ..."
   Expand-Archive -Path $BackupFile -DestinationPath $pwd -Force # -Verbose
-  if (!(Test-Path -Path "$GPOPath\BackupGPO")) { 
+  if (!(Test-Path -Path "$($GPOPath)\BackupGPO")) { 
     Write-Host "[!] Failed! $($GPOPath)\BackupGPO not found.. Some error happened extracting $BackupFile to $GPOPath" 
     Exit 
   }     
@@ -1245,7 +1245,6 @@ Function Update-NewGPOsOnly {
 # MAIN 
 
 Show-Logo $Version
-$GPOPath = "$($pwd)\BackupGPO"  # Set new 'root' path as needed
 
 if ($Update) {
   Update-NewGPOsOnly
@@ -1255,6 +1254,7 @@ Test-PreviousGPOBackup
 $BackupFile = Check-GPOBackupFile -folderPath $pwd
 if ($BackupFile) {
   Extract-GPOBackup $BackupFile
+  $GPOPath = "$($pwd)\BackupGPO"  # Set new 'root' path as needed, usually C:\Temp\BackupGPO
   if (Test-Path "$($GPOPath)\GPOList.csv") {
     Write-Host "[!] Found $($GPOPath)\GPOList.csv, changing location to $GPOPath"
     Set-Location $GPOPath
