@@ -1075,7 +1075,8 @@ function Install-PolicyDefinitions {
 
 function Import-WmiFiltersFromCSV {
   param (
-    [string]$CsvPath
+    [string]$CsvPath,
+    [string]$DomainDistinguishedName = (Get-ADDomain).DistinguishedName
   )
 
   if (!(Test-Path $CsvPath)) {
