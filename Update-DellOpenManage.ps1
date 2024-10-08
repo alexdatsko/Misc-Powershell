@@ -123,7 +123,7 @@ function Update-OMSAVersion {
   Expand-ArchiveWait -Filename "$($tmp)\$($OMSAOrigFileName).zip" -DestinationPath "C:\OpenManage$($OMSAOrigVersion)" -Force
   Write-Host "`n[.] Taking ownership of ""C:\OpenManage$($OMSAOrigVersion)"" for Administrators group w/ Takeown + Icacls..." -ForegroundColor Yellow
   Start-Process "takeown.exe" -ArgumentList "/a /r /d Y /f ""C:\OpenManage$($OMSAOrigVersion)\*.*""" -Wait
-  Start-Process "icacls.exe" -ArgumentList """C:\OpenManage$($OMSAOrigVersion)"" /grant Administrators:(F) /t" -Wait
+  Start-Process "icacls.exe" -ArgumentList """C:\OpenManage$($OMSAOrigVersion)"" /grant Administrators:(F) /t" -Wait 
   Write-Host "`n[.] Downloading OMSA $OMSAPatchVersion patch ..."  -ForegroundColor Yellow
   Invoke-WebRequestWait -Uri  "$OMSAPatchUrl"  -UserAgent "$AgentString" -outfile "$($tmp)\$($OMSAPatchFileName)"
   if (!($NoInstall)) {

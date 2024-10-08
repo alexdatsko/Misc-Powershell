@@ -18,6 +18,7 @@ $info = ''######################################################################
 #                    v0.2 - 9/5/24 - kill process if dll in use by an app, try for 3 hours
 #                    v0.3 - 9/12/24 - logging to c:\Scripts\Logs
 #                    v0.4 - 9/23/24 - Logging fixes, testing if files exist, etc''
+#                    v0.5 - 10/7/24 - Added Fix-FilePermissions to try to take ownership from TrustedInstaller and fix permissions so we can revert the file.
 
 $info
 
@@ -49,6 +50,33 @@ function Find-ProcessUsingDLL {
    # return $returnPids # Probably unnecessary..
   }
 }
+#Find-ProcessUsingDLL "C:\windows\twain_32.dll" 
+#Find-ProcessUsingDLL "C:\windows\twain_32.dll" -Kill $true
+
+function Fix-FilePermissions {
+  param (
+    [string] $dllPath
+  )
+
+  if (Test-Path $dllPath) { # Take ownership and set Administrators to full control:
+    $currentOwner = Get-Acl $dllPath | Select-Object -ExpandProperty Owner
+    if ($currentOwner -ne "Administrator" -and $currentOwner -ne "Administrators") {
+      try {
+        Take-Ownership -Path $dllPath -Recurse -Force
+      } catch {
+        "[!] Issue changing ownership of '$dllPath' from $($currentOwner)! Error: $_" | Tee -Append $LogFile
+      }
+    }
+
+    try {
+      Set-Acl $dllPath -AccessRule @{Identity = "Administrators"; Rights = "FullControl"; InheritanceFlags = "ContainerInherit, ObjectInherit"}
+    } catch {
+      "[!] Issue changing permissions on '$dllPath' from $($currentOwner)! Error: $_"  | Tee -Append $LogFile
+    }
+  } else {
+    "[!] The file '$dllPath' does not exist."  | Tee -Append $LogFile
+  }
+}
 
 function Copy-FileToLocation {
   param($FromPath, $ToPath, $LogFile) 
@@ -63,8 +91,10 @@ function Copy-FileToLocation {
       } catch {
         $exmsg = "[-] An error occurred during the copy operation: $_"
         $exmsg | Tee -Append $LogFile
+        "[.] Trying to fix file permissions on $ToPath in case there are issues here:" | tee -append $LogFile 
+        Fix-FilePermissions $ToPath
         "[.] Scanning for PIDs that are using $ToPath ...`n" | Tee -Append $LogFile
-        Find-ProcessUsingDLL $ToPath # -Kill
+        Find-ProcessUsingDLL $ToPath -Kill
       }
       if ($exmsg -eq $null) { 
         "[+] Completed!" | tee -append $LogFile 

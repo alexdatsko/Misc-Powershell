@@ -63,7 +63,12 @@ function Create-WatchguardUser {
 
 function Download-WatchguardSoftware {
   param (
-    [string]$tmp = "."
+    [string]$tmp = ".",
+    [string]$SysvolSoftwareLocal,
+    [string]$WG_SSO_Client_Filename,
+    [string]$WG_SSO_Client_URL,
+    [string]$WG_SSO_Agent_Filename,
+    [string]$WG_SSO_Agent_URL
   )
   $outfile = "$($tmp)\$($WG_SSO_Client_Filename)"
   Write-Host "[.] Downloading WG SSO Client from $WG_SSO_Client_URL to $outfile ..."
@@ -73,16 +78,24 @@ function Download-WatchguardSoftware {
     $null = New-Item -Itemtype Directory $SysvolSoftwareLocal -Force | Out-Null
   } catch { Write-Error "[!] Error creating folder $SysvolSoftwareLocal : $_ " ; exit }
   try {
-    Write-Host "[.] Moving WG SSO Client to: $SysvolSoftwareLocal ..."
-    Move-Item -Path "$outfile" -Destination "$SysvolSoftwareLocal"
+    if (!(test-path "$($SysvolSoftwareLocal)\$(Split-Path $outfile -leaf)")) {
+      Write-Host "[.] Moving WG SSO Client to: $($SysvolSoftwareLocal)\$(Split-Path $outfile -leaf) ..."
+      Move-Item -Path "$outfile" -Destination "$SysvolSoftwareLocal"
+    } else {
+      Write-Host "[+] SSO Client installer already exists at: '$($SysvolSoftwareLocal)\$($outfile)'" -ForegroundColor Green
+    }
   } catch { Write-Error "[!] Error moving file: $_ " ; exit }
   $outfile = "$($tmp)\$($WG_SSO_Agent_Filename)"
-  Write-Host "[.] Downloading WG SSO Agent from $WG_SSO_Agent_URL to $outfile ..."
-  Invoke-WebRequest -Uri "$WG_SSO_Agent_URL" -UserAgent "$UserAgent" -outfile $outfile
-  if (-not (Test-Path "$outfile")) {
-    Write-Host "[.] Error downloading WG SSO Agent `n  From $WG_SSO_Agent_URL `n  To: ""$outfile"" ... `n  $_" 
-    return $false
-  } else { return $true }
+  if (!(test-path "$($tmp)\$($outfile)")) {
+    Write-Host "[.] Downloading WG SSO Agent from $WG_SSO_Agent_URL to $outfile ..."
+    Invoke-WebRequest -Uri "$WG_SSO_Agent_URL" -UserAgent "$UserAgent" -outfile $outfile
+    if (-not (Test-Path "$outfile")) {
+      Write-Host "[.] Error downloading WG SSO Agent `n  From $WG_SSO_Agent_URL `n  To: ""$outfile"" ... `n  $_" 
+      return $false
+    } else { return $true }
+  } else {
+    Write-Host "[+] SSO Auth Gateway installer already exists at: '$($tmp)\$($outfile)'" -ForegroundColor Green
+  }
 }
 
 function Install-WatchguardSSOAgent {
@@ -188,16 +201,22 @@ function Reconfigure-WatchguardSSOAgent {
     [string] $tmp = ".",
     [Parameter(Mandatory)] [string] $wgpw,
     [string] $ADInfos = "C:\Program Files (x86)\WatchGuard\WatchGuard Authentication Gateway\AdInfos.xml",
-    [string]$ADDomain = "$((Get-ADDomain).DNSRoot)",
-    [string]$ADDomainDN = "$((Get-ADDomain).DistinguishedName)"
+    [string]$ADDomain = "$((Get-ADDomain).DNSRoot)",   # mme-demo.local 
+    [string]$ADDomainDN = "$((Get-ADDomain).DistinguishedName)"   # MMEDEMO
   )
-  Write-Host "`n[.] Reconfiguring Watchguard Auth Gateway (SSO Agent) config file.."  -ForegroundColor Yellow
-#  Write-Host "> Domain User Name: $wgusername"
-#  Write-Host "> Password: $wgpw"
-#  Write-Host "> AD Domain Name: $ADDomain"
-#  Write-Host "> AD NetBIOS Name: $ADDomainNetBios"
-#  Write-Host "> AD Distinguished Name: $ADDomainDN"
+  Write-Host "`n[.] Reconfiguring Watchguard Auth Gateway (SSO Agent) manually.."  -ForegroundColor Yellow
 
+  Write-Host "> Login with : admin / readwrite"
+  Write-Host "> Domain User Name: $wgusername"
+  Write-Host "> Password: $wgpw"
+  Write-Host "> AD Domain Name: $ADDomain"
+  Write-Host "> AD NetBIOS Name: $ADDomainNetBios"
+  Write-Host "> AD Distinguished Name: $ADDomainDN"
+
+  Start-Process "c:\Program Files (X86)\Watchguard\\Watchguard Authentication Gateway\SSOGUITool.exe" -Wait
+  Return $true
+
+  Write-Host "`n[.] Reconfiguring Watchguard Auth Gateway (SSO Agent) config file.."  -ForegroundColor Yellow
   $xmlContent = Get-Content $AdInfos
   [xml]$xml = $xmlContent
   $cipherValue = $xml.EncryptedData.CipherData.CipherValue
@@ -211,7 +230,7 @@ function Reconfigure-WatchguardSSOAgent {
   Write-Host "Fix the file.."
   Pause
 
-  $decryptedText | get-Content "AdInfos.xml.tmp"
+  $decryptedText = get-Content "AdInfos.xml.tmp" 
 
   $encryptedCipherValue = Encrypt-ADInfoXML -PlainText $decryptedText -Key $key -thisIV $thisIV
   $encryptedCipherValue | Set-Content $AdInfos
@@ -231,51 +250,73 @@ function Reconfigure-WatchguardSSOAgent {
 
 function Restore-WatchguardClientGPO {
   param (
-    [string]$GPOPath = "BackupGPO",
+    [string]$GPOPath = "BackupGPO", # Directory for the Watchguard GPO backup
+    [string]$GPOBackupFile = "$(gci BackupGPO*.zip)",
+    [string]$GPOBackupDest = ".",  # This will create $GPOPath "BackupGPO" folder in $pwd.
     [string]$ADDomain = "$((Get-ADDomain).DNSRoot)",
     [string]$ADDomainDN = "$((Get-ADDomain).DistinguishedName)"
   )
+  if (Test-Path $GPOPath) { Remove-Item "$($GPOBackupDest)\$($GPOPath)" -Force -Recurse -ErrorAction SilentlyContinue }  # Remove this folder if it exists.. re-extract.
+  try {
+    Expand-Archive -Path $GPOBackupFile -Destination $GPOBackupDest -Force -ErrorAction Continue
+  } catch { 
+    Write-Host "[!] There was a problem extracting '$GPOBackupFile' to '$GPOBackupDest' !!! - `n  Error: $_" -ForegroundColor Red
+    return $false
+  }
   Import-Module GroupPolicy
-  $GPOFolders = (gci $GPOPath -Directory).Name
-  Write-Host "[.] Searching $GPOPath for folders like __Watchguard .."
+  $GPOFolders = (gci "$($GPOBackupDest)\$($GPOPath)" -Directory).Name
+  Write-Host "[.] Searching $GPOPath for folders like '*Watchguard - SSO Client*' .."
   Write-Verbose "$GPOFolders"
   ForEach ($GPOFolder in $GPOFolders) {
     if ($GPOFolder -like "*Watchguard - SSO Client*") {
       $GPOName = ("$($GPOFolder.Split('{')[0])").Split('__')[0]
       $GPOBackupId = ("{$($GPOFolder.Split('{')[-1])").ToUpper()
       Write-Host "[.] Processing '$GPOName' .. `n[.] Renaming folder '$($GPOFolder)' to '$($GPOBackupId)'"
-      Rename-Item "$($GPOPath)\$($GPOFolder)" "$($GPOPath)\$($GPOBackupId)" -Force
+      $NewGPOPath = "$($GPOPath)\$($GPOBackupId)"
+      Write-Host "[+] New GPO Path: $NewGPOPath" -ForegroundColor Yellow
+      Rename-Item -Path "$($GPOPath)\$($GPOFolder)" "$GPOBackupId" -Force
       # Re-Path the software installation policy
-      $BackupFile = "$($GPOFolder)\Backup.xml"
-      Write-Host "[.] Modifying $BackupFile .."
-      # <DSAttributeMultiString bkp:DSAttrName="msiFileList"><DSValue><![CDATA[0:\\mme-demo.local\SYSVOL\MME-DEMO.local\Software\WG-Authentication-Client_12_7.msi]]>
-      $SysvolGenericFile = "mme-demo.local"
-      $lines = Get-Content $BackupFile
-      Write-Host "[.] Renaming to $($BackupFile).old .."
-      Rename-Item $BackupFile "$($BackupFile).old"
-      "" | Set-Content $BackupFile
-      foreach ($line in $lines) {
-        if ($line -like "*mme-demo.local*") {
-          (($line -replace "mme-demo.local",$ADDomain) -replace "MME-DEMO.local",$ADDomain) | out-file $BackupFile
-        } else {
-          if ($line -like "*dc=mme-demo,dc=local*") {
-            (($line -replace "dc=mme-demo,dc=local",$ADDomainDN) -replace "dc=MME=DEMO,dc=local",$ADDomainDN) | out-file $BackupFile
-          } else {           
-            $line | out-file $BackupFile
+      
+      $BackupFile = "$($NewGPOPath)\Backup.xml"
+      if (Test-Path $BackupFile) {
+        Write-Host "[.] Modifying $($BackupFile) .."
+        # <DSAttributeMultiString bkp:DSAttrName="msiFileList"><DSValue><![CDATA[0:\\mme-demo.local\SYSVOL\MME-DEMO.local\Software\WG-Authentication-Client_12_7.msi]]>
+        $SysvolGenericFile = "mme-demo.local"
+        $lines = Get-Content $($BackupFile)
+        Write-Host "[.] Renaming to $(Split-Path $BackupFile -Leaf).old .."
+        Rename-Item $BackupFile "$(Split-Path $BackupFile -Leaf).old"
+        Write-Host "[.] Reconfiguring $($BackupFile) .."
+        "" | Set-Content $BackupFile  # overwrite file since its loaded into $lines
+        foreach ($line in $lines) {
+          if ($line -like "*mme-demo.local*") {
+            (($line -replace "mme-demo.local",$ADDomain) -replace "MME-DEMO.local",$ADDomain) | out-file $BackupFile -Append
+          } else {
+            if ($line -like "*dc=mme-demo,dc=local*") {
+              (($line -replace "dc=mme-demo,dc=local",$ADDomainDN) -replace "dc=MME=DEMO,dc=local",$ADDomainDN) | out-file $BackupFile -Append
+            } else {           
+              $line | out-file $BackupFile -Append
+            }
+            # Server.MME-DEMO.local could exist but I think this is  fine to leave currently. 
           }
-          # Server.MME-DEMO.local could exist but I think this is  fine to leave currently.
         }
-      }
-      $GPO = Import-GPO -Path "$GPOPath" -BackupId "$GPOBackupId" -TargetName "$GPOName" -CreateIfNeeded
-      Write-Host "[+] Added $($GPO.DisplayName)"
+        Write-Host "[+] Reconfigured $($BackupFile)."
 
-      $gpoLink = "$($ADDomainDN)"
-      Write-Host "[.] Linking GPO to domain '$gpoLink'."
-      New-GPLink -Name $GPOName -Target $gpoLink -Enforced $false
-      Write-Host "[+] Software installation policy added to GPO '$gpoName' Completed." -ForegroundColor Green
+        Write-Host "[.] Adding $($GPO.DisplayName) to GPOs"
+        $GPO = Import-GPO -Path "$($NewGPOPath)" -BackupId "$GPOBackupId" -TargetName "$GPOName" -CreateIfNeeded
+        Write-Host "[+] Added $($GPO.DisplayName)"
+
+        $gpoLink = "$($ADDomainDN)"
+        Write-Host "[.] Linking GPO to domain- '$gpoLink'"
+        New-GPLink -Name "$GPOName" -Target $gpoLink
+        Write-Host "[+] Software installation policy added to GPO '$gpoName' Completed." -ForegroundColor Green
+      }  else  { 
+        Write-Host "[-] Script error importing GPO '$gpoName'" -ForegroundColor Red
+        return $false
+      }
+
     }
   }
-
+  return $true
 
 }
 
@@ -332,15 +373,27 @@ $wgpw = Read-Host '[?] Enter the WGauth domain user password: '
 
 Create-WatchguardUser -wgpw $wgpw
 
-Download-WatchguardSoftware -tmp $tmp
+Download-WatchguardSoftware -tmp $tmp `
+  -SysvolSoftwareLocal $SysvolSoftwareLocal `
+  -WG_SSO_Client_Filename $WG_SSO_Client_Filename `
+  -WG_SSO_Client_URL $WG_SSO_Client_URL `
+  -WG_SSO_Agent_Filename $WG_SSO_Agent_Filename `
+  -WG_SSO_Agent_Url $WG_SSO_Agent_URL `
 
-Restore-WatchguardClientGPO -tmp $tmp -GPOPath $pwd
+if (Restore-WatchguardClientGPO -tmp $tmp) {
+  Write-Host "[+] WG SSO Client GPO Installation complete, please reboot all hosts to complete process." -ForegroundColor Green
+} else {
+  Write-Host "[!] Error installing GPO, please do this manually:" -ForegroundColor Red
+  gpmc.msc
+}
 
 if (!($NoInstall)) {
   Install-WatchguardSSOAgent -tmp $tmp -wgpw $wgpw
 }
 
-Reconfigure-WatchguardSSOAgent -wgpw $wgpw -tmp $tmp  # Not working...
+#Reconfigure-WatchguardSSOAgent -wgpw $wgpw -tmp $tmp  # Not working...
+Write-Host "[!] Reconfigure Watchguard SSO Auth Gateway manually."
+
 
 $wgpw = ""
 

@@ -46,10 +46,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.14"
-# New in this version:  Update-ViaNinite slight update
+$Version = "0.40.15"
+# New in this version:  Spectre/Meltdown4 more verbose logging, cleanup
 
-$VersionInfo = "v$($Version) - Last modified: 9/19/2024"
+$VersionInfo = "v$($Version) - Last modified: 10/4/2024"
 
 #### VERSION ###################################################
 
@@ -2520,10 +2520,16 @@ foreach ($CurrentQID in $QIDs) {
       { $QIDsSpectreMeltdown -contains $_ } {
         if (Get-YesNo "$_ Fix spectre4/meltdown ? " -Results $Results -QID $ThisQID) {
           $out = @()
-          $out += (Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management' -Name 'FeatureSettingsOverride' -Value 72 -Force).PSPath
-          $out += (Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management' -Name 'FeatureSettingsOverrideMask' -Value 3 -Force).PSPath
-          $out += (Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization' -Name 'MinVmVersionForCpuBasedMitigations' -Value '1.0' -Force).PSPath
-          Foreach ($line in $out) { Write-Verbose $line }
+          if ($(Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management').FeatureSettingsOverride -ne 72) {
+            $out += "Set $((Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management' -Name 'FeatureSettingsOverride' -Value 72 -Force).PSPath) to 72"
+          } else { $out += "[.] FeatureSettingsOverride already set correctly to 72.." }
+          if ($(Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management').FeatureSettingsOverrideMask -ne 3) {
+            $out += "Set $((Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management' -Name 'FeatureSettingsOverrideMask' -Value 3 -Force).PSPath) to 3"
+          } else { $out += "[.] FeatureSettingsOverrideMask already set correctly to 3.." }
+          if ($(Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization').MinVmVersionForCpuBasedMitigations -ne '1.0') {
+            $out += "Set $((Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization' -Name 'MinVmVersionForCpuBasedMitigations' -Value '1.0' -Force).PSPath) to '1.0'"
+          } else { $out += "[.] Virtualization\MinVmVersionForCpuBasedMitigation already set correctly to '1.0'.." }
+          Foreach ($line in $out) { if ($line) { Write-Verbose $line } }
           $QIDsSpectreMeltdown = 1
         } else { $QIDsSpectreMeltdown = 1 }
       }
