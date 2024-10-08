@@ -204,7 +204,8 @@ function Reconfigure-WatchguardSSOAgent {
     [string]$ADDomain = "$((Get-ADDomain).DNSRoot)",   # mme-demo.local 
     [string]$ADDomainDN = "$((Get-ADDomain).DistinguishedName)"   # MMEDEMO
   )
-  Write-Host "`n[.] Reconfiguring Watchguard Auth Gateway (SSO Agent) manually.."  -ForegroundColor Yellow
+  
+  Write-Host "`n[.] Reconfigure Watchguard Auth Gateway (SSO Agent) manually..`n"  -ForegroundColor Yellow
 
   Write-Host "> Login with : admin / readwrite"
   Write-Host "> Domain User Name: $wgusername"
@@ -218,7 +219,7 @@ function Reconfigure-WatchguardSSOAgent {
 
   Write-Host "`n[.] Reconfiguring Watchguard Auth Gateway (SSO Agent) config file.."  -ForegroundColor Yellow
   $xmlContent = Get-Content $AdInfos
-  [xml]$xml = $xmlContent
+  [xml]$xml = $xmlContentping 
   $cipherValue = $xml.EncryptedData.CipherData.CipherValue
   $key = "DD822F06" 
   $ThisIV = "29884f25"

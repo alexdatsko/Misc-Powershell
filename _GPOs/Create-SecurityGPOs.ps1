@@ -1,8 +1,10 @@
 ﻿[cmdletbinding()]  # For verbose, debug etc
 param (
   [switch] $Automated = $false,    # this allows us to run without supervision and apply all changes (could be dangerous!)
+  [switch] $GUI = $true,           # this allows us to fall back to the commandline option and not use the GUI
   [switch] $Update = $false,       # This allows us to run through the GPOs that are NOT installed and install them. Any older versions would need to be removed manually.
-  [switch] $Help                   # Allow -Help to display help for parameters
+  [switch] $Help,                  # Allow -Help to display help for parameters
+  [switch] $Test                   # Used for Testing purposes only
 )
 
 #$Verbose = $true 
@@ -22,14 +24,16 @@ $info='''
 # Alex Datsko - MME Consulting Inc. - alex.datsko@mmeconsulting.com
 '''
 
-$VersionMajor = "0.50"
-$VersionMinor = "b2024-09-30"
+$VersionMajor = "0.90"
+$VersionMinor = "b2024-10-08"
 $Version = "$VersionMajor $VersionMinor"
 
 <#
 ##########
 # History
 ##########
+ 0.90 - Added default to GUI option
+        Fixed export/import of WMI filters
  0.50 - Added extraction of most current PolicyDefinitions zip file, to central Policy store by default.
         Added import of all WMI Filter MOF files
         Fixed GPO list CSV import to also check BackupGPO folder, which is where Backup-AllGPOs.ps1 saves it..
@@ -119,56 +123,194 @@ function Show-Logo {
 function Get-YesNo {
   param ([string]$prompt)
   
-  while ($true) {
-    $yesno = (Read-Host "[?] $prompt [Y]").toUpper()
-    if (($yesno -eq "Y") -or ($yesno -eq "")) {
-      return $true
-    } else {
-      if ($yesno -eq "N") {
-        return $false
-      } else {
-        Write-Host "[!] Error, select Y or Enter for Yes, No for No" -ForegroundColor Red
-      }
+  if ($GUI) {
+    $window = New-Object System.Windows.Forms.Form
+    $window.Width = 300
+    $window.Height = 150
+    $window.Text = "Confirmation"
 
+    $label = New-Object System.Windows.Forms.Label
+    $label.Text = "[?] $prompt [Y]"
+    $label.AutoSize = $true
+    $label.Location = 20, 20
+
+    $yesButton = New-Object System.Windows.Forms.Button
+    $yesButton.Text = "Yes"
+    $yesButton.Location = 20, 50
+    $yesButton.Width = 75
+    $yesButton.Add_Click({
+        $window.Close()
+        return $true
+    })
+
+    $noButton = New-Object System.Windows.Forms.Button
+    $noButton.Text = "No"
+    $noButton.Location = 100, 50
+    $noButton.Width = 75
+    $noButton.Add_Click({
+        $window.Close()
+        return $false
+    })
+
+    $window.Controls.Add($label)
+    $window.Controls.Add($yesButton)
+    $window.Controls.Add($noButton)
+    $window.ShowDialog()
+  } else {
+    while ($true) {
+      $yesno = (Read-Host "[?] $prompt [Y]").toUpper()
+      if (($yesno -eq "Y") -or ($yesno -eq "")) {
+        return $true
+      } else {
+        if ($yesno -eq "N") {
+          return $false
+        } else {
+          Write-Host "[!] Error, select Y or Enter for Yes, No for No" -ForegroundColor Red
+        }
+      }
     }
   }
 }
 
 ###################################################
 function Get-YesNoList {
-  param ([string]$prompt)
+  param (
+    [string]$prompt,
+    $listitems
+  )
 
-  while ($true) {
-    $yesno = (Read-Host "[?] $prompt [Y]").toUpper()
-    if (($yesno -eq "Y") -or ($yesno -eq "") -or ($yesno -eq "L") -or ($yesno -eq "N")) {
-      return $yesno
-    } 
-    Write-Host "[!] Error, select Y or Enter for Yes, No for No, or L to list" -ForegroundColor Red
+  if ($GUI) {
+    $window = New-Object System.Windows.Forms.Form
+    $window.Width = 300
+    $window.Height = 150
+    $window.Text = "Confirmation"
+
+    $label = New-Object System.Windows.Forms.Label
+    $label.Text = "[?] $prompt [Y]"
+    $label.AutoSize = $true
+    $label.Location = 20, 20
+
+    $yesButton = New-Object System.Windows.Forms.Button
+    $yesButton.Text = "Yes"
+    $yesButton.Location = 20, 50
+    $yesButton.Width = 75
+    $yesButton.Add_Click({
+        $window.Close()
+        return "Y"
+    })
+
+    $noButton = New-Object System.Windows.Forms.Button
+    $noButton.Text = "No"
+    $noButton.Location = 100, 50
+    $noButton.Width = 75
+    $noButton.Add_Click({
+        $window.Close()
+        return "N"
+    })
+
+    $listButton = New-Object System.Windows.Forms.Button
+    $listButton.Text = "List"
+    $listButton.Location = 180, 50
+    $listButton.Width = 75
+    $listButton.Add_Click({
+        $window.Close()
+        return "L"
+    })
+
+    $window.Controls.Add($label)
+    $window.Controls.Add($yesButton)
+    $window.Controls.Add($noButton)
+    $window.Controls.Add($listButton)
+    $window.ShowDialog()
+  } else {
+    while ($true) {
+      $yesno = (Read-Host "[?] $prompt [Y]").toUpper()
+      if (($yesno -eq "Y") -or ($yesno -eq "") -or ($yesno -eq "L") -or ($yesno -eq "N")) {
+        return $yesno
+      } 
+      Write-Host "[!] Error, select Y or Enter for Yes, No for No, or L to list" -ForegroundColor Red
+    }
   }
 }
 
 ###################################################
 function Get-YesNoOther {
   param ([string]$prompt)
+  if ($GUI) {
+    $window = New-Object System.Windows.Forms.Form
+    $window.Width = 300
+    $window.Height = 150
+    $window.Text = "Confirmation"
 
-  $yesno=" "
-  While ("YNO?" -notcontains $yesno) {
-    $yesno = (Read-Host "[?] $prompt [Y/n/o/?=help]").toUpper()
-    if (($yesno -eq "Y") -or ($yesno -eq "")) {
-      return "Y"
-    } 
-    if ($yesno -eq "N") {
-      return "N"
-    } 
-    if ($yesno -eq "O") {
-      return "O"
-    } 
-    if ($yesno -eq "?") {
-      Write-Host "[!] Help: `n  Y=Yes, N=No, O=Link to other OU, ?=This text"
-      return "?"
-    } 
+    $label = New-Object System.Windows.Forms.Label
+    $label.Text = "[?] $prompt [Y/n/o/?=help]"
+    $label.AutoSize = $true
+    $label.Location = 20, 20
+
+    $yesButton = New-Object System.Windows.Forms.Button
+    $yesButton.Text = "Yes"
+    $yesButton.Location = 20, 50
+    $yesButton.Width = 75
+    $yesButton.Add_Click({
+        $yesno = "Y"
+        $window.Close()
+    })
+
+    $noButton = New-Object System.Windows.Forms.Button
+    $noButton.Text = "No"
+    $noButton.Location = 100, 50
+    $noButton.Width = 75
+    $noButton.Add_Click({
+        $yesno = "N"
+        $window.Close()
+    })
+
+    $otherButton = New-Object System.Windows.Forms.Button
+    $otherButton.Text = "Other"
+    $otherButton.Location = 180, 50
+    $otherButton.Width = 75
+    $otherButton.Add_Click({
+        $yesno = "O"
+        $window.Close()
+    })
+
+    $window.Controls.Add($label)
+    $window.Controls.Add($yesButton)
+    $window.Controls.Add($noButton)
+    $window.Controls.Add($otherButton)
+    $window.ShowDialog()
+
+    if ($yesno -eq "Y") {
+        return $true
+    } elseif ($yesno -eq "N") {
+        return $false
+    } elseif ($yesno -eq "O") {
+        return "O"
+    } else {
+        Write-Host "[!] Error, select Y or Enter for Yes, No for No, or L to list" -ForegroundColor Red
+    }
+
+  } else {
+    $yesno=" "
+    While ("YNO?" -notcontains $yesno) {
+      $yesno = (Read-Host "[?] $prompt [Y/n/o/?=help]").toUpper()
+      if (($yesno -eq "Y") -or ($yesno -eq "")) {
+        return "Y"
+      } 
+      if ($yesno -eq "N") {
+        return "N"
+      } 
+      if ($yesno -eq "O") {
+        return "O"
+      } 
+      if ($yesno -eq "?") {
+        Write-Host "[!] Help: `n  Y=Yes, N=No, O=Link to other OU, ?=This text"
+        return "?"
+      } 
+    }
   }
 }
+
 
 ##################################################
 function Compare-Strings {
@@ -237,32 +379,70 @@ function Get-CSVFile {
 
 
 ###################################################
+function Pick-GUI {
+  param(
+    $Options,
+    $Type = "OU"
+  )
+  
+  Write-Verbose "$Options"
+  [System.Reflection.Assembly]::LoadWithPartialName("System.Windows.Forms") | Out-Null  # PS 7+ method to load
+  $yPos = 20 # Starting position for buttons
+  foreach ($Option in $Options) {
+    $button = New-Object System.Windows.Forms.Button
+    $button.Text = "$($Option.Name)"
+    $button.Location = New-Object System.Drawing.Size(20, $yPos)
+    $button.Width = 200
+    $button.AutoSize = $true
+    $button.Add_Click({ if ($Type = "OU") { return $($Option.DistinguishedName) } else { return $($Option.Name) } })
+    # Add button to the form (implicitly creates a new form if it doesn't exist)
+    $button.Parent
+    $yPos += 30 # Adjust vertical spacing
+  }
+
+  if ($button) {
+    if ($button.Parent) {
+      $button.Parent.ShowDialog()
+    } else {
+      Write-Host "[!] No Options found!"  
+    }
+  } else {
+    Write-Host "[!] No Options found!"
+  }
+}
+
 function Pick-OU {
   param(
-     $OUList )
+     $OUList = (Get-ADOrganizationalUnit -filter *)
+  )
 
   $done=0
   while (!($done)) {
-    try { # Have user pick from a list of OU's
-      if (!($OUList)) { 
-        #Write-Verbose "[x] No OU list supplied, Choosing from all OUs.." 
-        $OUList = (Get-ADOrganizationalUnit -filter *)    
-      }
-    } catch { 
-      Write-Error "`r`n(Get-ADOrganizationalUnit -filter *) error listing domains!`r`n"
-      Exit
-    } 
-
-    #Write-Verbose "(List of OUs)" 
     $i = 0
+    $Options = @()
     foreach ($OU in $OUList) {
-    Write-Host "$i : [$($OU.Name)] - $($OU.DistinguishedName)"
-    $i += 1
+      if ($GUI) {
+        Write-Verbose "Creating Options from OUList : $($OU.Name)" 
+        $option = New-Object PSObject
+        $option | Add-Member -MemberType NoteProperty -Name Number -Value [int]$i
+        $option | Add-Member -MemberType NoteProperty -Name Name -Value "$($OU.Name)"
+        $option | Add-Member -MemberType NoteProperty -Name DistinguishedName -Value "$($OU.DistinguishedName)"
+        $option
+        $Options += $option
+      } else {
+        Write-Host "$i : [$($OU.Name)] - $($OU.DistinguishedName)" 
+      }
+      $i += 1
     }
     $maxopt = $i
-    Write-Host "$maxopt : <Done>"
-    $input = Read-Host "Please pick the OU to apply to [$maxopt] "
-    $choice = [int]$input
+    $Options
+    if ($GUI) {
+      $input = Pick-GUI -Options $Options -Type "OU"
+    } else {
+      Write-Host "$maxopt : <Done>"
+      $input = Read-Host "Please pick the OU to apply to [0-$($maxopt)] "
+    }
+    $choice = [int](($input).Number)
     Write-Verbose "Choice: $choice"
     if ($input -eq "") { $choice = [int]$i }  #If no input, do nothing.
     #Write-Host "Input : $input `r`nChoice : $choice" 
@@ -941,10 +1121,10 @@ function Test-ADRecycleBin
 ###################################################
 function Enable-ADRecycleBin { 
   param (
-         $FunctionalLevel
-         )
- $Domain=$(Get-ADDomainController | select-Object -expand Domain)
-
+    $FunctionalLevel,
+    $Domain = $(Get-ADDomainController | select-Object -expand Domain)
+  )
+ 
   if ($FunctionalLevel -gt 2008) {
     if (!(Test-ADRecycleBin)) {
         $yesno = (Read-Host "Do you want to enable the AD Recycle bin on $($Domain) [Y]").toUpper()
@@ -1247,6 +1427,10 @@ Function Update-NewGPOsOnly {
 
 Show-Logo $Version
 
+if ($Test) {
+  Write-Host "$(Pick-OU)"
+}
+
 if ($Update) {
   Update-NewGPOsOnly
 }
@@ -1265,8 +1449,7 @@ if ($BackupFile) {
   Exit
 }
 
-$FunctionalLevel = Check-DomainFunctionalLevel
-Enable-ADRecycleBin $FunctionalLevel
+Enable-ADRecycleBin -FunctionalLevel (Check-DomainFunctionalLevel)
 
 if (Get-YesNo "Backup Existing GPOs?") {
   Backup-ExistingGPOs

@@ -1,6 +1,7 @@
 $DC_ServiceList = @("NSI","RpcSs","TcpIp","Dhcp","Eventlog","DNS","NTDS")
+$partOfDomain = (gwmi win32_computersystem).partofdomain
 $MachineType = ''
-Write-Output "`n`n[o] --- NLA FIX --- `nv0.3 - Set Firewallprofile after`n"
+Write-Output "`n`n[o] --- NLA FIX --- `nv0.4 - Fix Firewallprofile after`n"
 Write-Output "[.] Checking Machine type.."
 $osInfo = Get-CimInstance -ClassName Win32_OperatingSystem
 if ($osInfo.ProductType -eq 1) { $MachineType = 'Workstation' }
@@ -61,10 +62,11 @@ if ((Get-Service nlasvc).Status -eq 'Stopped') {
     Write-Output "[!] Cannot fix, either you are not running as admin, or server needs a reboot possibly."
   }
 }
-if ($MachineType -eq 'DC') {
+if ($partOfDomain -eq $true) {
+  Write-Output "`n[!] Detected domain joined machine.."
   Start-Sleep 1
   $NetProfile = (Get-NetConnectionProfile).NetworkCategory
-  Write-Output "[.] Setting Firewall profile to DomainAuthenticated, currently $($NetProfile):"
+  Write-Output "`n[.] Setting Firewall profile to DomainAuthenticated, currently $($NetProfile):"
   Get-NetConnectionProfile | Set-NetConnectionProfile -NetworkCategory DomainAuthenticated
   Start-Sleep 1
   $NetProfile = (Get-NetConnectionProfile).NetworkCategory
@@ -76,10 +78,11 @@ if ($MachineType -eq 'DC') {
     Write-Output "[!] Set profile to: $($NetProfile)"
   }
 } else {
+  Write-Output "`n[!] Detected non-domain joined machine.. if this is incorrect please contact AlexD"
   Start-Sleep 1
   $NetProfile = (Get-NetConnectionProfile).NetworkCategory
   Write-Output "[.] Setting Firewall profile to Private, currently $($NetProfile):"
-  Get-NetConnectionProfile | Set-NetConnectionProfile -NetworkCategory Private
+  Get-NetConnectionProfile | Set-NetConnectionProfile -NetworkCategory Private | Out-Null 
   Start-Sleep 1
   $NetProfile = (Get-NetConnectionProfile).NetworkCategory
   if ($NetProfile -ne 'Private') {

@@ -32,4 +32,12 @@ $datetime = "$date $time"
 $tmp = $env:temp
 
 Start-Transcript
+
+
+################################################################### FUNCTIONS
+
+IWR $EAGLEi_Login_URL
+
+################################################################### MAIN
+
 Stop-Transcript
