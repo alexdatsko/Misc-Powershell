@@ -1,7 +1,8 @@
 [cmdletbinding()]  # For verbose, debug etc
 param (
   [switch] $Automated = $false,    # this allows us to run without supervision and apply all changes necessary
-  [switch] $NoInstall = $false     # this allows us to run without installing the SSO Agent (Auth Gateway), just download the files and set up GPO for SSO Client, and Wgauth user
+  [switch] $NoInstall = $false,    # this allows us to run without installing the SSO Agent (Auth Gateway), just download the files and set up GPO for SSO Client, and Wgauth user
+  [switch] $Test = $false          # for testing purposes only
 )
 
 
@@ -18,6 +19,7 @@ $info = '''
 #              be modified to have the correct AD domain in the UNC share to Sysvol\Software\filename
 # Version: v0.1 - 10/1/2024 - orig
 # Version: v0.2 - 10/2/2024 - GPO restore
+# Version: v0.3 - 10/10/2024 - disabled GPO restore for now, but user account creation and addition to administrators group is done
 #
 '''
 
@@ -45,19 +47,57 @@ $tmp = $pwd  # Lets work out of local folder..
 
 ################################################################### FUNCTIONS
 
+function Check-UserGroup {
+  param (
+    [string]$user,
+    [string]$group
+  )
+  try {
+    $members = Get-ADGroupMember -Identity $group -Recursive | Select -ExpandProperty Name
+  } catch {
+    Write-Error "[-] Error checking Get-ADGroupMember : $_"
+  }
+
+  If ($members -contains $user) {
+    Write-Verbose "$user exists in the group $group"
+    return $true
+  } Else {
+    Write-Verbose "$user does not exist in the group $group"
+    return $false
+  }
+}
+
 function Create-WatchguardUser {
   param (
     [string] $wgusername = "wgauth",
     [string] $wgfullname = "Watchguard",
-    [Parameter(Mandatory)] [string] $wgpw = ""
+    [Parameter(Mandatory)] [string] $wgpw = "",
+    [string]$ADDomain = "$((Get-ADDomain).DNSRoot)"
   )
   Import-Module ActiveDirectory
   if (-not (get-aduser -filter * | where {$_.SAMAccountName -eq "wgauth"})) {
-    Write-Host "[+] Wgauth user not found, asking for password: " -ForegroundColor yellow
+    Write-Host "[+] Wgauth user not found, creating.. " -ForegroundColor yellow
     $wgpassword = ($wgpw | ConvertTo-SecureString -AsPlainText -Force)
-    New-ADUser -SamAccountName $wgusername -Name $wgfullname -AccountNeverExpires -PasswordNeverExpires -AccountPassword $wgpassword 
+    New-ADUser -SamAccountName $wgusername -Name $wgfullname -PasswordNeverExpires $true -AccountPassword $wgpassword -UserPrincipalName "$($wgusername)@$($ADDomain)"
+    Enable-ADAccount -Identity $wgusername
+    # User is disabled
+    # No UPN Set
   } else {
     Write-Host "[+] Wgauth user exists." -ForegroundColor green
+  }
+  if (!(Check-UserGroup -user $wgusername -group "Administrators")) {
+    Write-Host "[.] Adding to administrators group.." -ForegroundColor yellow
+    # Add to Administrators group
+    $member = get-aduser -filter * | where {$_.SAMAccountName -eq "wgauth"}
+    try {
+      Add-ADGroupMember -Identity "Administrators" -Members $member
+    } catch { 
+      Write-Error "`n[-] wgauth user couldn't be added to Administrators group, permissions possibly?" 
+      exit
+    }
+    Write-Host "[+] wgauth user added to Administrators group! Good to go." -ForegroundColor green
+  } else {
+    Write-Host "[+] wgauth user already in administrators group.. Good to go." -ForegroundColor green
   }
 }
 
@@ -120,6 +160,7 @@ function Install-WatchguardSSOAgent {
   Write-Host "[!] NOTE: Use this for user information:"
   Write-Host "> Domain User Name: $wgusername"
   Write-Host "> Password: $wgpw"
+  Write-Host "Don't forget to check off the option for Event Log Monitor!!" -ForegroundColor Red
 #  Write-Host "> AD Domain Name: $ADDomain"
 #  Write-Host "> AD NetBIOS Name: $ADDomainNetBios"
 #  Write-Host "> AD Distinguished Name: $ADDomainDN"
@@ -251,21 +292,20 @@ function Reconfigure-WatchguardSSOAgent {
 
 function Restore-WatchguardClientGPO {
   param (
-    [string]$GPOPath = "BackupGPO", # Directory for the Watchguard GPO backup
+    [string]$GPOPath = "c:\temp\BackupGPO", # Directory for the Watchguard GPO backup
     [string]$GPOBackupFile = "$(gci BackupGPO*.zip)",
-    [string]$GPOBackupDest = ".",  # This will create $GPOPath "BackupGPO" folder in $pwd.
     [string]$ADDomain = "$((Get-ADDomain).DNSRoot)",
     [string]$ADDomainDN = "$((Get-ADDomain).DistinguishedName)"
   )
-  if (Test-Path $GPOPath) { Remove-Item "$($GPOBackupDest)\$($GPOPath)" -Force -Recurse -ErrorAction SilentlyContinue }  # Remove this folder if it exists.. re-extract.
+  if (Test-Path $GPOPath) { Remove-Item "$($GPOPath)" -Force -Recurse -ErrorAction SilentlyContinue }  # Remove this folder if it exists.. re-extract.
   try {
-    Expand-Archive -Path $GPOBackupFile -Destination $GPOBackupDest -Force -ErrorAction Continue
+    Expand-Archive -Path $GPOBackupFile -Destination $GPOPath -Force -ErrorAction Continue
   } catch { 
-    Write-Host "[!] There was a problem extracting '$GPOBackupFile' to '$GPOBackupDest' !!! - `n  Error: $_" -ForegroundColor Red
+    Write-Host "[!] There was a problem extracting '$GPOBackupFile' to '$GPOPath' !!! - `n  Error: $_" -ForegroundColor Red
     return $false
   }
   Import-Module GroupPolicy
-  $GPOFolders = (gci "$($GPOBackupDest)\$($GPOPath)" -Directory).Name
+  $GPOFolders = (gci "$($GPOPath)" -Directory).Name
   Write-Host "[.] Searching $GPOPath for folders like '*Watchguard - SSO Client*' .."
   Write-Verbose "$GPOFolders"
   ForEach ($GPOFolder in $GPOFolders) {
@@ -283,28 +323,54 @@ function Restore-WatchguardClientGPO {
         Write-Host "[.] Modifying $($BackupFile) .."
         # <DSAttributeMultiString bkp:DSAttrName="msiFileList"><DSValue><![CDATA[0:\\mme-demo.local\SYSVOL\MME-DEMO.local\Software\WG-Authentication-Client_12_7.msi]]>
         $SysvolGenericFile = "mme-demo.local"
-        $lines = Get-Content $($BackupFile)
+<#
+        $lines = Get-Content $($BackupFile) -Encoding unicode 
         Write-Host "[.] Renaming to $(Split-Path $BackupFile -Leaf).old .."
         Rename-Item $BackupFile "$(Split-Path $BackupFile -Leaf).old"
         Write-Host "[.] Reconfiguring $($BackupFile) .."
         "" | Set-Content $BackupFile  # overwrite file since its loaded into $lines
         foreach ($line in $lines) {
           if ($line -like "*mme-demo.local*") {
-            (($line -replace "mme-demo.local",$ADDomain) -replace "MME-DEMO.local",$ADDomain) | out-file $BackupFile -Append
+            Write-Verbose "linebefore: $line"
+            $newline = (($line -replace "mme-demo.local",$ADDomain) -replace "MME-DEMO.local",$ADDomain) 
+            $newline | out-file $BackupFile -Append
+            Write-Verbose "lineafter: $line"
           } else {
             if ($line -like "*dc=mme-demo,dc=local*") {
-              (($line -replace "dc=mme-demo,dc=local",$ADDomainDN) -replace "dc=MME=DEMO,dc=local",$ADDomainDN) | out-file $BackupFile -Append
+              Write-Verbose "linebefore: $line"
+              $newline = (($line -replace "dc=mme-demo,dc=local",$ADDomainDN) -replace "dc=MME=DEMO,dc=local",$ADDomainDN) 
+              $newline | out-file $BackupFile -Append
+              Write-Verbose "lineafter: $line"
             } else {           
               $line | out-file $BackupFile -Append
+              Write-Verbose "lineunchanged: $line"
             }
             # Server.MME-DEMO.local could exist but I think this is  fine to leave currently. 
           }
         }
-        Write-Host "[+] Reconfigured $($BackupFile)."
+#>
+        $xmlDoc = New-Object System.Xml.XmlDocument
+        $xmlDoc.Load($BackupFile)
+        $nodes = $xmlDoc.SelectNodes("//text()[contains(., 'mme-demo.local')]")
+        foreach ($node in $nodes) {
+          $node.Value = $node.Value.Replace("mme-demo.local", $ADDomain)
+        }
+        $nodes = $xmlDoc.SelectNodes("//text()[contains(., 'dc=mme-demo,dc=local')]")
+        foreach ($node in $nodes) {
+          $node.Value = $node.Value.Replace("dc=mme-demo,dc=local", $ADDomainDN)
+        }
+        $xmlDoc.Save($BackupFile)
 
-        Write-Host "[.] Adding $($GPO.DisplayName) to GPOs"
-        $GPO = Import-GPO -Path "$($NewGPOPath)" -BackupId "$GPOBackupId" -TargetName "$GPOName" -CreateIfNeeded
-        Write-Host "[+] Added $($GPO.DisplayName)"
+        if (!(Test-Path $BackupFile)) {
+          Write-Host "[!] Error - $BackupFile not found!" -ForegroundColor Red
+        } else {
+          Write-Host "[+] Reconfigured $($BackupFile)." -ForegroundColor Green
+        }
+
+        Write-Host "[.] Adding $($GPOName) to GPOs"
+        Write-Verbose "GPOPath: $GPOPath `nGPOBackupId\GPOPath: $($GPOBackupDest)\$($GPOPath)\ `nGPOName: $GPOName"
+        $GPO = Import-GPO -Path "$($GPOPath)\" -BackupId "$GPOBackupId" -TargetName "$GPOName" -CreateIfNeeded
+        Write-Host "[+] Added $($GPOName)"
 
         $gpoLink = "$($ADDomainDN)"
         Write-Host "[.] Linking GPO to domain- '$gpoLink'"
@@ -321,49 +387,22 @@ function Restore-WatchguardClientGPO {
 
 }
 
-function Create-WatchguardClientGPO {
-  param (
-    [string]$ADDomain = "$((Get-ADDomain).DNSRoot)",
-    [string]$ADDomainDN = "$((Get-ADDomain).DistinguishedName)"
-  )
-  Import-Module GroupPolicy
-  $gpoName = "Watchguard - SSO Client - Install"
-  $gpoComment = "Installs Watchguard SSO Client software on each computer. To be applied to the root of the domain."
-  $gpo = Get-GPO -Name $gpoName -Comment $gpoComment -ErrorAction SilentlyContinue
-  if (-not $gpo) {
-      $gpo = New-GPO -Name $gpoName
-      Write-Host "GPO '$gpoName' created."
-  } else {
-      Write-Host "GPO '$gpoName' already exists."
-  }
-
-  # Define path to the installer
-  $installerPath = "\\$($ADDomain)\sysvol\$($ADDomain)\Software\installer.msi"
-
-  # Define the GPO target (for computers)
-  $gpoTarget = "Computer"
-  $gpoExtensionPath = "Software Settings\Software installation"
-  $policyName = "Watchguard - SSO Client- Install"
-  $gpoLink = "$($ADDomainDN)"
-
-  # Add software installation policy
-  #Set-GPRegistryValue -Name $gpoName -Key "HKLM\Software\Policies\Microsoft\Windows\Installer" -ValueName "Install MSI Software" -Type String -Value $installerPath
-  # not sure what this should be
-
-  Write-Host "[+] Linking GPO to domain '$gpoLink'."
-  New-GPLink -Name $gpoName -Target $gpoLink -Enforced $false
-  Write-Host "[+] Software installation policy added to GPO '$gpoName'."
-
-  
-}
-
-
 
 #####################################################################  MAIN 
 
 
 Write-Host $info -Foregroundcolor White
 Write-Host $datetime -ForegroundColor White
+
+if ($Test) {
+  if (Restore-WatchguardClientGPO -GPOBackupDest "C:\temp" -GPOPath "BackupGPO") {
+    Write-Host "[+] WG SSO Client GPO Installation complete, please reboot all hosts to complete process." -ForegroundColor Green
+  } else {
+    Write-Host "[!] Error installing GPO, please do this manually:" -ForegroundColor Red
+    gpmc.msc
+  }
+  exit
+}
 
 if (!(Test-Path $tmp)) { 
   Write-Host "[.] Creating temp folder $tmp ..."  
@@ -381,12 +420,14 @@ Download-WatchguardSoftware -tmp $tmp `
   -WG_SSO_Agent_Filename $WG_SSO_Agent_Filename `
   -WG_SSO_Agent_Url $WG_SSO_Agent_URL `
 
-if (Restore-WatchguardClientGPO -tmp $tmp) {
+<#
+if (Restore-WatchguardClientGPO -GPOBackupDest "C:\temp" -GPOPath "BackupGPO") {
   Write-Host "[+] WG SSO Client GPO Installation complete, please reboot all hosts to complete process." -ForegroundColor Green
 } else {
   Write-Host "[!] Error installing GPO, please do this manually:" -ForegroundColor Red
   gpmc.msc
 }
+#>
 
 if (!($NoInstall)) {
   Install-WatchguardSSOAgent -tmp $tmp -wgpw $wgpw
@@ -395,7 +436,20 @@ if (!($NoInstall)) {
 #Reconfigure-WatchguardSSOAgent -wgpw $wgpw -tmp $tmp  # Not working...
 Write-Host "[!] Reconfigure Watchguard SSO Auth Gateway manually."
 
+$ADDomain = "$((Get-ADDomain).DNSRoot)"
+$ADDomainDN = "$((Get-ADDomain).DistinguishedName)" 
+$ips = (ipconfig /all | findstr /i "IPv4")
+  
+Write-Host "`n[.] Reconfigure Watchguard Auth Gateway (SSO Agent) manually..`n"  -ForegroundColor Yellow
 
+Write-Host "> Login with : admin / readwrite"
+Write-Host "> Domain User Name: $wgusername"
+Write-Host "> Password: $wgpw"
+Write-Host "> AD Domain Name: $ADDomain"
+Write-Host "> AD NetBIOS Name: $ADDomainNetBios"
+Write-Host "> AD Distinguished Name: $ADDomainDN"
+Write-Host "> Server IPv4 addresses (one of these will be correct, please confirm its within the normal LAN subnet): "
+$ips
 $wgpw = ""
 
 Write-Host "[!] Done! Exiting." 
