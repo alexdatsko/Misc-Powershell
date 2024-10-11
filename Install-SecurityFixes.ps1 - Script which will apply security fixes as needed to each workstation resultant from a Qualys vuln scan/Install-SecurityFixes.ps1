@@ -46,8 +46,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.18"
-# New in this version:  WinRE check for QID 92167 better
+$Version = "0.40.19"
+# New in this version:  WinRE check for QID 92167 better2
 
 $VersionInfo = "v$($Version) - Last modified: 10/11/2024"
 
@@ -1269,7 +1269,7 @@ function Check-WinREVersion {
         } else {
             Write-Host "[-] WinRE Version ($winreVersion) is below the required version for $osName. Minimum required: $requiredVersion." -ForegroundColor Red
             Write-Host "[-] Opening browser to Microsoft SafeOS Dynamic update page: https://www.catalog.update.microsoft.com/Search.aspx?q=Safe+OS" -ForegroundColor White
-            & explorer "https://www.catalog.update.microsoft.com/Search.aspx?q=Safe+OS"
+            & explorer https://www.catalog.update.microsoft.com/Search.aspx?q=Safe+OS
         }
     } else {
         Write-Host "[!] OS $osName is not listed for checking."  -ForegroundColor green
