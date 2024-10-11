@@ -46,10 +46,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.15"
-# New in this version:  Spectre/Meltdown4 more verbose logging, cleanup
+$Version = "0.40.16"
+# New in this version:  Spectre/Meltdown4 fixed output
 
-$VersionInfo = "v$($Version) - Last modified: 10/4/2024"
+$VersionInfo = "v$($Version) - Last modified: 10/11/2024"
 
 #### VERSION ###################################################
 
@@ -2529,7 +2529,7 @@ foreach ($CurrentQID in $QIDs) {
           if ($(Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization').MinVmVersionForCpuBasedMitigations -ne '1.0') {
             $out += "Set $((Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Virtualization' -Name 'MinVmVersionForCpuBasedMitigations' -Value '1.0' -Force).PSPath) to '1.0'"
           } else { $out += "[.] Virtualization\MinVmVersionForCpuBasedMitigation already set correctly to '1.0'.." }
-          Foreach ($line in $out) { if ($line) { Write-Verbose $line } }
+          Foreach ($line in $out) { if ($line) { Write-Host $line -ForegroundColor White } }
           $QIDsSpectreMeltdown = 1
         } else { $QIDsSpectreMeltdown = 1 }
       }
