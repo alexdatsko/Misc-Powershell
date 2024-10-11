@@ -46,8 +46,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.17"
-# New in this version:  WinRE check for QID 92167
+$Version = "0.40.18"
+# New in this version:  WinRE check for QID 92167 better
 
 $VersionInfo = "v$($Version) - Last modified: 10/11/2024"
 
@@ -1268,11 +1268,11 @@ function Check-WinREVersion {
             return $true
         } else {
             Write-Host "[-] WinRE Version ($winreVersion) is below the required version for $osName. Minimum required: $requiredVersion." -ForegroundColor Red
-            return $false
+            Write-Host "[-] Opening browser to Microsoft SafeOS Dynamic update page: https://www.catalog.update.microsoft.com/Search.aspx?q=Safe+OS" -ForegroundColor White
+            & explorer "https://www.catalog.update.microsoft.com/Search.aspx?q=Safe+OS"
         }
     } else {
         Write-Host "[!] OS $osName is not listed for checking."  -ForegroundColor green
-        return $true
     }
 }
 
@@ -4273,10 +4273,8 @@ foreach ($CurrentQID in $QIDs) {
       }
       { 92167 } {
         if (Get-YesNo "$_ Check if Microsoft Windows Update Stack Elevation of Privilege Vulnerability is fixed " -Results $Results -QID $ThisQID) { 
-          # HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion WinREVersion = 10.0.19041.1#	
-          if (Check-WinREVersion) {
-            Write-Host "[!] Note: Customers are advised to refer to CVE-2024-38163 (https://msrc.microsoft.com/update-guide/en-US/vulnerability/CVE-2024-38163) for more information pertaining to this vulnerability.  Patch:  Following are links for downloading patches to fix the vulnerabilities:   CVE-2024-38163 (https://msrc.microsoft.com/update-guide/en-US/vulnerability/CVE-2024-38163)" 
-          }
+          # needs Dynamic SafeOS Update: https://www.catalog.update.microsoft.com/Search.aspx?q=Safe+OS
+          Check-WinREVersion
         }
       }
 
