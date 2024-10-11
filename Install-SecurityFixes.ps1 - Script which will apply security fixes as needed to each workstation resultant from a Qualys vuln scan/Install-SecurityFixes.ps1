@@ -4032,6 +4032,12 @@ foreach ($CurrentQID in $QIDs) {
           Write-Host "[+] Done!" -ForegroundColor Green
         }
       }
+      92167 {
+        if (Get-YesNo "$_ Check if Microsoft Windows Update Stack Elevation of Privilege Vulnerability is fixed " -Results $Results -QID $ThisQID) { 
+          # needs Dynamic SafeOS Update: https://www.catalog.update.microsoft.com/Search.aspx?q=Safe+OS
+          Check-WinREVersion
+        }
+      }
       #HKLM\SYSTEM\CurrentControlSet\Services\HTTP\Parameters EnableHttp2Tls
       378985 { #Disable-TLSCipherSuite TLS_RSA_WITH_3DES_EDE_CBC_SHA
         $AllCipherSuites = (Get-TLSCipherSuite).Name
@@ -4270,12 +4276,6 @@ foreach ($CurrentQID in $QIDs) {
           cmd /c "$($tmp)\msxml.exe /quiet /qn /norestart /log $($tmp)\msxml.log"
         }
         $QIDsMSXMLParser4 = 1
-      }
-      { 92167 } {
-        if (Get-YesNo "$_ Check if Microsoft Windows Update Stack Elevation of Privilege Vulnerability is fixed " -Results $Results -QID $ThisQID) { 
-          # needs Dynamic SafeOS Update: https://www.catalog.update.microsoft.com/Search.aspx?q=Safe+OS
-          Check-WinREVersion
-        }
       }
 
     ############################################
