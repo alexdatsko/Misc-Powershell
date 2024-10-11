@@ -44,8 +44,20 @@ $time = Get-Date -Format "hh:mm:ss"
 $datetime = "$date $time"
 #$tmp = $env:temp
 $tmp = $pwd  # Lets work out of local folder..
+$wgusername = "wgauth"
+$ADDomain = "$((Get-ADDomain).DNSRoot)"
+$ADDomainNetBios = "$((Get-ADDomain).NetBiosName)" 
+$ADDomainDN = "$((Get-ADDomain).DistinguishedName)" 
+$ips = (ipconfig /all | findstr /i "IPv4")
 
 ################################################################### FUNCTIONS
+
+function Check-Admin {
+  if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
+    Write-Output "`n[!] Not running under Admin context - Exiting!"
+    Exit
+  }
+}
 
 function Check-UserGroup {
   param (
@@ -320,10 +332,10 @@ function Restore-WatchguardClientGPO {
       
       $BackupFile = "$($NewGPOPath)\Backup.xml"
       if (Test-Path $BackupFile) {
+<#
         Write-Host "[.] Modifying $($BackupFile) .."
         # <DSAttributeMultiString bkp:DSAttrName="msiFileList"><DSValue><![CDATA[0:\\mme-demo.local\SYSVOL\MME-DEMO.local\Software\WG-Authentication-Client_12_7.msi]]>
         $SysvolGenericFile = "mme-demo.local"
-<#
         $lines = Get-Content $($BackupFile) -Encoding unicode 
         Write-Host "[.] Renaming to $(Split-Path $BackupFile -Leaf).old .."
         Rename-Item $BackupFile "$(Split-Path $BackupFile -Leaf).old"
@@ -349,6 +361,8 @@ function Restore-WatchguardClientGPO {
           }
         }
 #>
+
+<#  # Take 2, also didn't work
         $xmlDoc = New-Object System.Xml.XmlDocument
         $xmlDoc.Load($BackupFile)
         $nodes = $xmlDoc.SelectNodes("//text()[contains(., 'mme-demo.local')]")
@@ -367,6 +381,8 @@ function Restore-WatchguardClientGPO {
           Write-Host "[+] Reconfigured $($BackupFile)." -ForegroundColor Green
         }
 
+#>
+        # Lets just add the working policy for now and fix the folder manually in gpmc.msc
         Write-Host "[.] Adding $($GPOName) to GPOs"
         Write-Verbose "GPOPath: $GPOPath `nGPOBackupId\GPOPath: $($GPOBackupDest)\$($GPOPath)\ `nGPOName: $GPOName"
         $GPO = Import-GPO -Path "$($GPOPath)\" -BackupId "$GPOBackupId" -TargetName "$GPOName" -CreateIfNeeded
@@ -376,6 +392,12 @@ function Restore-WatchguardClientGPO {
         Write-Host "[.] Linking GPO to domain- '$gpoLink'"
         New-GPLink -Name "$GPOName" -Target $gpoLink
         Write-Host "[+] Software installation policy added to GPO '$gpoName' Completed." -ForegroundColor Green
+        Write-Host "`n[!] IMPORTANT: Please go fix the GPO now! Right click and edit >" -ForegroundColor White -BackgroundColor Red
+        Write-Host "[!] Navigate to to Computer Config > Policies > Software Settings > Software Installation > " -ForegroundColor White -BackgroundColor Red
+        Write-Host "[!] Right click > " -ForegroundColor White -BackgroundColor Red
+        Write-Host "[!] Then right click > Properties > Deployment tab > Advanced button > Ignore Language "
+        Write-Host "and edit > navigate to \\$($ADDomain)\Sysvol\$($ADDomain)\Software\ and double click on the SSO Client MSI file! " -ForegroundColor White -BackgroundColor Red
+        gpmc.msc
       }  else  { 
         Write-Host "[-] Script error importing GPO '$gpoName'" -ForegroundColor Red
         return $false
@@ -390,7 +412,9 @@ function Restore-WatchguardClientGPO {
 
 #####################################################################  MAIN 
 
-
+Check-Admin
+Set-WindowSize -Maximize
+$host.UI.RawUI.WindowTitle = "MME - Install-WatchguardSSO.ps1"
 Write-Host $info -Foregroundcolor White
 Write-Host $datetime -ForegroundColor White
 
@@ -420,37 +444,50 @@ Download-WatchguardSoftware -tmp $tmp `
   -WG_SSO_Agent_Filename $WG_SSO_Agent_Filename `
   -WG_SSO_Agent_Url $WG_SSO_Agent_URL `
 
-<#
-if (Restore-WatchguardClientGPO -GPOBackupDest "C:\temp" -GPOPath "BackupGPO") {
+#if (Restore-WatchguardClientGPO -GPOBackupDest "C:\temp" -GPOPath "BackupGPO") {
+if (1 -eq 2) {
   Write-Host "[+] WG SSO Client GPO Installation complete, please reboot all hosts to complete process." -ForegroundColor Green
 } else {
   Write-Host "[!] Error installing GPO, please do this manually:" -ForegroundColor Red
   gpmc.msc
+  Write-Host "`n> Right click $ADDomain > Create a GPO in this domain, and Link it here.. > " -ForegroundColor White -BackgroundColor Red
+  Write-Host ">> Name it 'Watchguard - SSO Client - Install' " -ForegroundColor White -BackgroundColor Red
+  Write-Host ">>> Right click the policy > Edit " -ForegroundColor White -BackgroundColor Red
+  Write-Host ">>>> Computer Configuration > Policies > Software Settings > Software Installation > " -ForegroundColor White -BackgroundColor Red
+  Write-Host ">>>>> Right click in the white space > New > Package > " -ForegroundColor White -BackgroundColor Red
+  Write-Host ">>>>>> Navigate to (or copy paste) \\$($ADDomain)\Sysvol\$($ADDomain)\Software\ and double click on the SSO Client MSI file! " -ForegroundColor White -BackgroundColor Red
+  Write-Host "> Then right click the deployment > Properties > Deployment tab > Advanced button > Ignore Language " -ForegroundColor White -BackgroundColor Red
+  Write-Host "[!] Done, close it.`n" -ForegroundColor White -BackgroundColor Red
 }
-#>
 
 if (!($NoInstall)) {
   Install-WatchguardSSOAgent -tmp $tmp -wgpw $wgpw
 }
 
 #Reconfigure-WatchguardSSOAgent -wgpw $wgpw -tmp $tmp  # Not working...
-Write-Host "[!] Reconfigure Watchguard SSO Auth Gateway manually."
-
-$ADDomain = "$((Get-ADDomain).DNSRoot)"
-$ADDomainDN = "$((Get-ADDomain).DistinguishedName)" 
-$ips = (ipconfig /all | findstr /i "IPv4")
   
 Write-Host "`n[.] Reconfigure Watchguard Auth Gateway (SSO Agent) manually..`n"  -ForegroundColor Yellow
+Write-Host "> Login with : admin / readwrite`n" -ForegroundColor Yellow
+Write-Host "> Edit > Add Domain >" -ForegroundColor Yellow
+Write-Host "    >> Domain Name: $ADDomain" -ForegroundColor White
+Write-Host "    >> NetBIOS Domain Name: $ADDomainNetBios" -ForegroundColor White
+Write-Host "    >> IPv4 addresses of DC (one of these will be correct, please confirm its within the normal LAN subnet): `n$($ips)" -ForegroundColor White
+Write-Host "    >> SELECT 2nd BOX: User Principal Name (UPN) ssouser@domain.com: $($wgusername)@$($ADDomain)"  -ForegroundColor White
+Write-Host "    >> Password of Searching User: $wgpw" -ForegroundColor White
+Write-Host "    >> Confirm Password: $wgpw" -ForegroundColor White
+Write-Host "> Edit > SSO Agent Contacts Settings: " -ForegroundColor Yellow
+Write-Host "    >> Uncheck Exchange Monitor, and check SSO Client. " -ForegroundColor White
+Write-Host "    >> [Add] Contact Domains: " -ForegroundColor White
+Write-Host "        >>> AD Domain Name: $ADDomain" -ForegroundColor White
+Write-Host "        >>> IP (add correct one): `n      $($ips) " -ForegroundColor White
+Write-Host "> Edit > SSO Agent Info" -ForegroundColor Yellow
+Write-Host "    >> Change Cache Data Time to 60 from 600." -ForegroundColor White
+Write-Host "> Information > Status >" -ForegroundColor Yellow
+Write-Host "    >> Make sure ELM is connected. Mark this yellow if not!" -ForegroundColor White
 
-Write-Host "> Login with : admin / readwrite"
-Write-Host "> Domain User Name: $wgusername"
-Write-Host "> Password: $wgpw"
-Write-Host "> AD Domain Name: $ADDomain"
-Write-Host "> AD NetBIOS Name: $ADDomainNetBios"
-Write-Host "> AD Distinguished Name: $ADDomainDN"
-Write-Host "> Server IPv4 addresses (one of these will be correct, please confirm its within the normal LAN subnet): "
-$ips
+Write-Host "[.] Running C:\Program Files (x86)\WatchGuard\WatchGuard Authentication Gateway\SSOGUITool.exe .. Use above values to configure." -ForegroundColor Green
+Start-Process "C:\Program Files (x86)\WatchGuard\WatchGuard Authentication Gateway\SSOGUITool.exe" -Wait
+
 $wgpw = ""
-
 Write-Host "[!] Done! Exiting." 
 Clear-History
