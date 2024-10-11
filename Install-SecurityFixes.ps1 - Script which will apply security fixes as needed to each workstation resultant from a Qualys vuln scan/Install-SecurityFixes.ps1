@@ -46,8 +46,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.16"
-# New in this version:  Spectre/Meltdown4 fixed output
+$Version = "0.40.17"
+# New in this version:  WinRE check for QID 92167
 
 $VersionInfo = "v$($Version) - Last modified: 10/11/2024"
 
@@ -1234,6 +1234,48 @@ Function Add-VulnToQIDList {
 }
 
 ################################################# VULN REMED FUNCTIONS ###############################################
+
+function Check-WinREVersion {
+    # QID 92167 - Windows Recovery Environment (WinRE) is a recovery environment that can repair common causes of unbootable operating systems.
+    #   The vulnerability pertains to a previous installer version which has been superseded by the new WinRE installer.  Affected version  WinRE
+    #   image based on the installed operating system. 
+    #       Windows 10, version 21H2 and Windows 10, version 22H2:     WinRE Version must be >= 10.0.19041.3920 
+    #       Windows 11, version 21H2:                                  WinRE Version must be >= 10.0.22000.2710 
+    #       Windows Server 2022:                                       WinRE Version must be >= 10.0.20348.2201 
+    $osInfo = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion'
+    $winreVersion = (Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').WinREVersion
+
+    $requiredVersions = @{
+        "Windows 11 Pro 21H2" = [version]"10.0.22000.2710"
+        "Windows 11 Home 21H2" = [version]"10.0.22000.2710"
+        "Windows 11 Educational 21H2" = [version]"10.0.22000.2710"
+        "Windows Server 2022 Standard 21H2" = [version]"10.0.20348.2201"
+        "Windows Server 2022 Datacenter 21H2" = [version]"10.0.20348.2201"
+        "Windows 10 Pro 21H2" = [version]"10.0.19041.3920"
+        "Windows 10 Home 21H2" = [version]"10.0.19041.3920"
+        "Windows 10 Educational 21H2" = [version]"10.0.19041.3920"
+        "Windows 10 Pro 22H2" = [version]"10.0.19041.3920"
+        "Windows 10 Home 22H2" = [version]"10.0.19041.3920"
+        "Windows 10 Educational 22H2" = [version]"10.0.19041.3920"
+    }
+
+    $osName = $osInfo.ProductName
+    $osBuild = $osInfo.DisplayVersion
+    if ($requiredVersions.ContainsKey("$osName $osBuild")) {
+        $requiredVersion = $requiredVersions["$osName $osBuild"]
+        if ([version]$winreVersion -ge $requiredVersion) {
+            Write-Host "[+] WinRE Version ($winreVersion) meets the requirement for $osName." -ForegroundColor Green
+            return $true
+        } else {
+            Write-Host "[-] WinRE Version ($winreVersion) is below the required version for $osName. Minimum required: $requiredVersion." -ForegroundColor Red
+            return $false
+        }
+    } else {
+        Write-Host "[!] OS $osName is not listed for checking."  -ForegroundColor green
+        return $true
+    }
+}
+
 
 function Test-IsType
 {
@@ -4228,6 +4270,14 @@ foreach ($CurrentQID in $QIDs) {
           cmd /c "$($tmp)\msxml.exe /quiet /qn /norestart /log $($tmp)\msxml.log"
         }
         $QIDsMSXMLParser4 = 1
+      }
+      { 92167 } {
+        if (Get-YesNo "$_ Check if Microsoft Windows Update Stack Elevation of Privilege Vulnerability is fixed " -Results $Results -QID $ThisQID) { 
+          # HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion WinREVersion = 10.0.19041.1#	
+          if (Check-WinREVersion) {
+            Write-Host "[!] Note: Customers are advised to refer to CVE-2024-38163 (https://msrc.microsoft.com/update-guide/en-US/vulnerability/CVE-2024-38163) for more information pertaining to this vulnerability.  Patch:  Following are links for downloading patches to fix the vulnerabilities:   CVE-2024-38163 (https://msrc.microsoft.com/update-guide/en-US/vulnerability/CVE-2024-38163)" 
+          }
+        }
       }
 
     ############################################
