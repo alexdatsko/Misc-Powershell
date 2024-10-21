@@ -172,6 +172,7 @@ function Install-WatchguardSSOAgent {
   Write-Host "[!] NOTE: Use this for user information:"
   Write-Host "> Domain User Name: $wgusername"
   Write-Host "> Password: $wgpw"
+  Write-Host "> Automatically close applications if asked." 
   Write-Host "Don't forget to check off the option for Event Log Monitor!!" -ForegroundColor Red
 #  Write-Host "> AD Domain Name: $ADDomain"
 #  Write-Host "> AD NetBIOS Name: $ADDomainNetBios"
@@ -456,7 +457,8 @@ if (1 -eq 2) {
   Write-Host ">>>> Computer Configuration > Policies > Software Settings > Software Installation > " -ForegroundColor White -BackgroundColor Red
   Write-Host ">>>>> Right click in the white space > New > Package > " -ForegroundColor White -BackgroundColor Red
   Write-Host ">>>>>> Navigate to (or copy paste) \\$($ADDomain)\Sysvol\$($ADDomain)\Software\ and double click on the SSO Client MSI file! " -ForegroundColor White -BackgroundColor Red
-  Write-Host "> Then right click the deployment > Properties > Deployment tab > Advanced button > Ignore Language " -ForegroundColor White -BackgroundColor Red
+  Write-Host ">>>>>>> Choose Advanced, then OK" -ForegroundColor White -BackgroundColor Red
+  Write-Host "> Then Deployment > Advanced button (at bottom) > Ignore Language when deploying this package > OK > OK  " -ForegroundColor White -BackgroundColor Red
   Write-Host "[!] Done, close it.`n" -ForegroundColor White -BackgroundColor Red
 }
 

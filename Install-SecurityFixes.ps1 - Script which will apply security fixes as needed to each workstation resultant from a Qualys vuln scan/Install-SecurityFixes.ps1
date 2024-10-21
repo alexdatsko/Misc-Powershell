@@ -46,10 +46,15 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.19"
-# New in this version:  WinRE check for QID 92167 better2
+$Version = "0.40.20"
+# New in this version:  92183 VC++ 14 Redist priv esc updater
 
-$VersionInfo = "v$($Version) - Last modified: 10/11/2024"
+$VersionInfo = "v$($Version) - Last modified: 10/21/2024"
+
+
+# CURRENT BUGS TO FIX:
+#    - VLC update broken - go back to ninite?
+#    - Notepad++ update broken
 
 #### VERSION ###################################################
 
@@ -871,6 +876,28 @@ function Set-PowerSettingsNeverSleep {
 
 ######################################### Script related
 
+function Update-VCPP14 {
+  param (
+    [string]$arch = "x64"
+  )
+
+  if ($arch -eq "x64" -or $arch -eq "both" -or $arch -eq "*") {
+    Write-Host "[.] Downloading required VC++ 14 Library file: VC_redist.x64.exe .."  -ForegroundColor Yellow
+    Write-Host "[!] BE CAREFUL IT MAY STILL RESTART... BECAUSE MICROSOFT...." -ForegroundColor Red
+    wget "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "$($tmp)\vc_redist.x64.exe"
+    Write-Host "[.] Running: VC_redist.x64.exe /silent /norestart"    # STILL RESTARTING , THIS POS.. 
+    . "$($tmp)\VC_redist.x64.exe" "/silent /norestart" 
+  }
+  if ($arch -eq "x86" -or $arch -eq "both" -or $arch -eq "*") {
+    Write-Host "[.] Downloading required VC++ 14 Library file: VC_redist.x86.exe .."  -ForegroundColor Yellow
+    Write-Host "[!] BE CAREFUL IT MAY STILL RESTART... BECAUSE MICROSOFT...." -ForegroundColor Red
+    wget "https://aka.ms/vs/17/release/vc_redist.x86.exe" -OutFile "$($tmp)\vc_redist.x86.exe"
+    Write-Host "[.] Running: VC_redist.x86.exe /silent /norestart"
+    . "$($tmp)\VC_redist.x86.exe" "/silent /norestart" 
+  }
+}
+
+
 function Check-ResultsForFiles {
     param(
         [Parameter(Mandatory = $true)][string] $Results
@@ -1264,16 +1291,17 @@ function Check-WinREVersion {
     if ($requiredVersions.ContainsKey("$osName $osBuild")) {
         $requiredVersion = $requiredVersions["$osName $osBuild"]
         if ([version]$winreVersion -ge $requiredVersion) {
-            Write-Host "[+] WinRE Version ($winreVersion) meets the requirement for $osName." -ForegroundColor Green
-            return $true
+          Write-Host "[+] WinRE Version ($winreVersion) meets the requirement for $osName." -ForegroundColor Green
         } else {
-            Write-Host "[-] WinRE Version ($winreVersion) is below the required version for $osName. Minimum required: $requiredVersion." -ForegroundColor Red
-            Write-Host "[-] Opening browser to Microsoft SafeOS Dynamic update page: https://www.catalog.update.microsoft.com/Search.aspx?q=Safe+OS" -ForegroundColor White
-            & explorer https://www.catalog.update.microsoft.com/Search.aspx?q=Safe+OS
+          Write-Host "[-] WinRE Version ($winreVersion) is below the required version for $osName. Minimum required: $requiredVersion." -ForegroundColor Red
+          Write-Host "[-] Opening browser to Microsoft SafeOS Dynamic update page: https://www.catalog.update.microsoft.com/Search.aspx?q=Safe+OS" -ForegroundColor White
+          & explorer https://www.catalog.update.microsoft.com/Search.aspx?q=Safe+OS
         }
     } else {
-        Write-Host "[!] OS $osName is not listed for checking."  -ForegroundColor green
+      Write-Host "[!] OS $osName is not listed for checking."  -ForegroundColor green
     }
+    # Win10 22h2 download:
+    # wget "https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/crup/2024/10/windows10.0-kb5044615-x64_4b85450447ef0e6750ea0c0b576c6ba6605d2e4c.cab" -outfile "$($tmp)\10-22h2update.cab"
 }
 
 
@@ -3450,6 +3478,11 @@ foreach ($CurrentQID in $QIDs) {
           Remove-File "$($env:windir)\system32\MRT.exe" -Results $Results
         }
       }
+      92183 { 
+        if (Get-YesNo "$_ Microsoft Visual C++ [14] Redistributable Installer Elevation of Privilege Vulnerability ") {
+          Update-VCPP14 -arch "both"  # Update for x86 and x64
+        }
+      }
       105803 {
         if (Get-YesNo "$_ Remove EOL/Obsolete Software: Adobe Shockwave Player 12 ? " -Results $Results -QID $ThisQID) { 
           $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Adobe Shockwave*'})
@@ -3560,13 +3593,7 @@ foreach ($CurrentQID in $QIDs) {
             Write-Host "Results = [ $Results ]"
           } else {
             if (-not $AlreadyPatched) {
-              Write-Host "[.] Downloading required VC++ Library files: VC_redist.x64.exe and VC_redist.x64.exe" 
-              wget "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "$($tmp)\vc_redist.x64.exe"
-              wget "https://aka.ms/vs/17/release/vc_redist.x86.exe" -OutFile "$($tmp)\vc_redist.x86.exe"
-              Write-Host "[.] Running: VC_redist.x64.exe /silent /norestart"    # STILL RESTARTING , THIS POS.. 
-              . "$($tmp)\VC_redist.x64.exe" "/silent /norestart" 
-              Write-Host "[.] Running: VC_redist.x86.exe /silent /norestart"
-              . "$($tmp)\VC_redist.x86.exe" "/silent /norestart" 
+              Update-VCPP14 -arch "both" # Update the VCPP 17 x86 and x64 to newest, unfortunately this may still ask to reboot..
 
               Write-Host "[.] Downloading msoleodbcsql.msi from $OLEODBCUrl for $OLEODBC.."
               wget $OLEODBCUrl -OutFile "$($tmp)\msoleodbcsql.msi"
