@@ -883,14 +883,14 @@ function Update-VCPP14 {
 
   if ($arch -eq "x64" -or $arch -eq "both" -or $arch -eq "*") {
     Write-Host "[.] Downloading required VC++ 14 Library file: VC_redist.x64.exe .."  -ForegroundColor Yellow
-    Write-Host "[!] BE CAREFUL IT MAY STILL RESTART... BECAUSE MICROSOFT...." -ForegroundColor Red
+    Write-Host "[!] BE CAREFUL NOT TO CLICK RESTART... " -ForegroundColor Red
     wget "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "$($tmp)\vc_redist.x64.exe"
     Write-Host "[.] Running: VC_redist.x64.exe /silent /norestart"    # STILL RESTARTING , THIS POS.. 
     . "$($tmp)\VC_redist.x64.exe" "/silent /norestart" 
   }
   if ($arch -eq "x86" -or $arch -eq "both" -or $arch -eq "*") {
     Write-Host "[.] Downloading required VC++ 14 Library file: VC_redist.x86.exe .."  -ForegroundColor Yellow
-    Write-Host "[!] BE CAREFUL IT MAY STILL RESTART... BECAUSE MICROSOFT...." -ForegroundColor Red
+    Write-Host "[!] BE CAREFUL NOT TO CLICK RESTART... " -ForegroundColor Red
     wget "https://aka.ms/vs/17/release/vc_redist.x86.exe" -OutFile "$($tmp)\vc_redist.x86.exe"
     Write-Host "[.] Running: VC_redist.x86.exe /silent /norestart"
     . "$($tmp)\VC_redist.x86.exe" "/silent /norestart" 

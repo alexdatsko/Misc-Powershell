@@ -113,6 +113,40 @@ function Create-WatchguardUser {
   }
 }
 
+function Create-SSOClientFirewallRule {
+  param (
+    [string]$IP = "192.168.1.2"
+  )
+
+  New-NetFirewallRule -DisplayName "WatchGuard - SSO Client - Port 4116 Restriction" `
+    -Direction Inbound `
+    -Action Allow `
+    -Protocol TCP `
+    -LocalPort 4116 `
+    -RemoteAddress $IP `
+    -Program "C:\Program Files (x86)\WatchGuard\WatchGuard Authentication Client\wgssoclient.exe" `
+    -Profile Any
+
+  # this should be a GPO instead, that rolls out to all domain workstations.. on the server maybe we restrict it to talk with anything on 192.168.1.0/24 or equivalent?
+}
+
+function Create-SSOAgentFirewallRule {
+  param (
+    [string]$FireboxIP = "192.168.1.1"
+  )
+
+  New-NetFirewallRule -DisplayName "WatchGuard - SSO Agent - Port 4114 Restriction" `
+    -Direction Inbound `
+    -Action Allow `
+    -Protocol TCP `
+    -LocalPort 4114 `
+    -RemoteAddress $FireboxIP `
+    -Program "C:\Program Files (x86)\WatchGuard\WatchGuard Authentication Client\wgssoclient.exe" `
+    -Profile Any
+
+  # this should be run on the server only
+}
+
 function Download-WatchguardSoftware {
   param (
     [string]$tmp = ".",

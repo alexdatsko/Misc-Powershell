@@ -7,10 +7,10 @@
 # v0.2 - recreated for WPAD GPO issue
 
 # CHANGE THIS TO MATCH THE GPO NAME OR PARTIAL!
-$GPOName = "WPAD - Enable"
+$GPOName = "Watchguard - SSO Client"
 
 $datetime = Get-Date -Format "yyyy-MM-dd_hhmm"
-$GPOPath = "C:\Temp"
+$GPOPath = "C:\Temp\BackupGPOs"
 New-Item $GPOPath -ItemType Directory -Erroraction SilentlyContinue
 Set-Location $GPOPath
 
