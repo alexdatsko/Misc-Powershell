@@ -5,6 +5,7 @@ $info = "###################################################
 #   LetsEncrypt.org and install them in the computer's Trusted Root CA
 #   Certificate store.
 # v0.1 - 10/22/2024 - Initial version
+# v0.2 - 10/23/2024 - added root certs and check
 #"
 
 $info
@@ -17,6 +18,14 @@ Set-Location $certDir
 
 # Fix to use TLS 1.2 for downloads
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+# Download Root CAs
+wget https://letsencrypt.org/certs/isrgrootx1.der -outfile x1.der
+wget https://letsencrypt.org/certs/isrg-root-x2.der -outfile x2.der
+# These should be included in Windows roots from WU
+# To update ALL root certs from Microsoft, download them to 'roots.sst' with this command:
+#   certutil -generateSSTFromWU roots.sst  
+# Then add these certs to the local computer Trusted Root store with mmc.exe.
 
 # Download subordinate (intermediate) CAs
 wget https://letsencrypt.org/certs/2024/e5.der -outfile e5-x1.der
@@ -55,4 +64,13 @@ try {
   exit
 }
 
-Write-Host "[+] All certificates imported successfully."
+Write-Host "[+] All certificates appeared to be imported.`n"
+
+Write-Host "[.] Checking for certificates in cert:\LocalMachine\Root :"
+$certs = gci cert:\LocalMachine\Root | Where { $_.Subject -like "*Let's*" -or $_.Subject -like "*ISRG*" }
+if ($certs.count -eq 17) {
+  Write-Host "[+] All certificates were imported successfully.`n" -ForegroundColor Green
+} else {
+  Write-Host "[-] The count did not match 17, something went wrong!`n" -ForegroundColor Red
+}
+Write-Host "[!] Done!"
