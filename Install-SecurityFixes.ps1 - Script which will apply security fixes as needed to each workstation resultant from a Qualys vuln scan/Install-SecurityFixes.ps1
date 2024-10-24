@@ -8,8 +8,9 @@ param (
   [int[]] $SkipQIDs,               # Allow a list of QIDs to skip
   [int] $SkipQID,                  # Allow user to pick one QID to skip
   [switch] $Help,                  # Allow -Help to display help for parameters
-  [switch] $Update                 # Allow -Update to only update the script then exit
+  [switch] $Update,                # Allow -Update to only update the script then exit
   [switch] $AutoUpdateAdobeReader = $false   # Auto update adobe reader, INCLUDING REMOVAL OF OLD PRODUCT WHICH COULD BE LICENSED!!! if this flag is set
+  [switch] $PowerOpts = $false     # This switch will set all Power options on Windows to never fall asleep or hibernate.
 )
 
 $AllHelp = "########################################################
@@ -41,6 +42,8 @@ $AllHelp = "########################################################
     Pick a certain QID to skip + ignore
 .PARAMETER SkipQIDs
     Pick a smaller list of QIDs to skip and not remediate, i.e 1,2,5
+.PARAMETER PowerOpts
+    This flag will change all of the machines Power options to NEVER time out, so workstation will stay on and available.
 .PARAMETER Verbose
     Enables verbose output for detailed information.
 #>
@@ -49,8 +52,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.21"
-# New in this version:  Added -AutoUpdateAdobeReader flag and changed code to NOT remove old versions of Acrobat with -automated by default unless flag is used
+$Version = "0.40.22"
+# New in this version:  Added -PowerOpts flag, to default to no.  Changed code to NOT change default power settings unless flag is set.
 
 $VersionInfo = "v$($Version) - Last modified: 10/24/2024"
 
@@ -2286,7 +2289,9 @@ if ($ServerName) {
 
 if (!$OnlyQIDs) {   # If we are not just trying a fix for one CSV, we will also see if we can install the Dell BIOS provider and set WOL to on, and backup Bitlocker keys to AD if possible
   if ([int](Get-OSType) -eq 1) {
-    Set-PowerSettingsNeverSleep  # Lets set this machine to never go to sleep, via registry. Disk, Sleep, and Hibernate time are set to 0.
+    if ($PowerOpts) {
+      Set-PowerSettingsNeverSleep  # Lets set this machine to never go to sleep, via registry. Disk, Sleep, and Hibernate time are set to 0.
+    }
     #Install-DellBiosProvider  # Will only run if value is set in Config
     #Set-DellBiosProviderDefaults # Will only run if value is set in Config  
   }
