@@ -9,6 +9,7 @@ param (
   [int] $SkipQID,                  # Allow user to pick one QID to skip
   [switch] $Help,                  # Allow -Help to display help for parameters
   [switch] $Update                 # Allow -Update to only update the script then exit
+  [switch] $AutoUpdateAdobeReader = $false   # Auto update adobe reader, INCLUDING REMOVAL OF OLD PRODUCT WHICH COULD BE LICENSED!!! if this flag is set
 )
 
 $AllHelp = "########################################################
@@ -28,6 +29,8 @@ $AllHelp = "########################################################
     Specifies the path to the CSV file to use.
 .PARAMETER Automated
     Indicates whether the script is running in automated mode. Fixes will be applied automatically.
+.PARAMETER AutoUpdateAdobeReader
+    This flag will cause Adobe Reader to be automatically REMOVED (including Licensed Versions!) and updated to free Adobe Reader DC newest version
 .PARAMETER NoAuto
     This is a fix to make sure the script will not re-run as automated next time.
 .PARAMETER QID
@@ -46,10 +49,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.20"
-# New in this version:  92183 VC++ 14 Redist priv esc updater
+$Version = "0.40.21"
+# New in this version:  Added -AutoUpdateAdobeReader flag and changed code to NOT remove old versions of Acrobat with -automated by default unless flag is used
 
-$VersionInfo = "v$($Version) - Last modified: 10/21/2024"
+$VersionInfo = "v$($Version) - Last modified: 10/24/2024"
 
 
 # CURRENT BUGS TO FIX:
@@ -74,6 +77,7 @@ $AgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KH
 $OLE19x64Url = "https://go.microsoft.com/fwlink/?linkid=2278038"
 $DCUUrl = "https://dl.dell.com/FOLDER11914075M/1/Dell-Command-Update-Application_6VFWW_WIN_5.4.0_A00.EXE"
 $ghostscripturl = "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10031/gs10031w64.exe"
+$AdobeReaderUpdateUrl = "https://rdc.adobe.io/reader/products?lang=mui&site=enterprise&os=Windows%2011&country=US&nativeOs=Windows%2010&api_key=dc-get-adobereader-cdn"
 $DCUFilename = ($DCUUrl -split "/")[-1]
 $DCUVersion = (($DCUUrl -split "_WIN_")[1] -split "_A0")[0]
 $CheckOptionalUpdates = $true                # Set this to false to ignore Optional Updates registry value
@@ -1532,7 +1536,7 @@ function Get-NewestAdobeReader {
     # determining the latest version of Reader
     $session = New-Object Microsoft.PowerShell.Commands.WebRequestSession
     $session.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.67 Safari/537.36"
-    $result = Invoke-RestMethod -Uri "https://rdc.adobe.io/reader/products?lang=mui&site=enterprise&os=Windows%2011&country=US&nativeOs=Windows%2010&api_key=dc-get-adobereader-cdn" `
+    $result = Invoke-RestMethod -Uri $AdobeReaderUpdateURL `
         -WebSession $session `
         -Headers @{
             "Accept"="*/*"
@@ -3195,24 +3199,28 @@ foreach ($CurrentQID in $QIDs) {
         }
       }
       { ($QIDsAdobeReader -contains $_) -or ($VulnDesc -like "*Adobe Reader*" -and ($QIDsAdobeReader -ne 1)) } {
-        if (Get-YesNo "$_ Remove older versions of Adobe Reader ? " -Results $Results -QID $ThisQID) { 
-          $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Adobe Reader*'})
-          if ($Products) {
-            Write-Host "[.] Products found matching *Adobe Reader* : "
-            $Products
-            Remove-Software -Products $Products -Results $Results
-          } else {
-            Write-Host "[!] Adobe products not found under 'Adobe Reader*' : `n    $Products !!`n" -ForegroundColor Red
-          }  
+        if ($Automated -and (!($AutoUpdateAdobeReader))) {
+          if (Get-YesNo "$_ Remove older versions of Adobe Reader ? " -Results $Results -QID $ThisQID) { 
+            $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Adobe Reader*'})
+            if ($Products) {
+              Write-Host "[.] Products found matching *Adobe Reader* : "
+              $Products
+              Remove-Software -Products $Products -Results $Results
+            } else {
+              Write-Host "[!] Adobe products not found under 'Adobe Reader*' : `n    $Products !!`n" -ForegroundColor Red
+            }  
+          }
+          if (Get-YesNo "$_ Install newest Adobe Reader DC ? ") {
+            Get-NewestAdobeReader
+            #cmd /c "$($tmp)\readerdc.exe"
+            $Outfile = "$($tmp)\readerdc.exe"
+            # silent install
+            Start-Process -FilePath $Outfile -ArgumentList "/sAll /rs /rps /msi /norestart /quiet EULA_ACCEPT=YES" -WorkingDirectory $env:TEMP -Wait -LoadUserProfile
+            $QIDsAdobeReader = 1
+          } else { $QIDsAdobeReader = 1 }
+        } else {
+          Write-Host "[!] Skipping Adobe Reader vulns for automated, not sure if I should remove old and install newest Reader DC etc."
         }
-        if (Get-YesNo "$_ Install newest Adobe Reader DC ? ") {
-          Get-NewestAdobeReader
-          #cmd /c "$($tmp)\readerdc.exe"
-          $Outfile = "$($tmp)\readerdc.exe"
-          # silent install
-          Start-Process -FilePath $Outfile -ArgumentList "/sAll /rs /rps /msi /norestart /quiet EULA_ACCEPT=YES" -WorkingDirectory $env:TEMP -Wait -LoadUserProfile
-          $QIDsAdobeReader = 1
-        } else { $QIDsAdobeReader = 1 }
       }
       { $QIDsMicrosoftSilverlight -contains $_ -or ($VulnDesc -like "*Silverlight*" -and ($QIDsMicrosoftSilverlight -ne 1))} {
         if (Get-YesNo "$_ Remove Microsoft Silverlight ? ") {

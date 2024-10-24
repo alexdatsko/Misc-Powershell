@@ -38,7 +38,8 @@ function Search-Software {
     [string]$SoftwareName)
 
   $SearchString="*$($SoftwareName)*"
-  $Results = (get-wmiobject Win32_Product | Where-Object { $_.Name -like $SearchString })
+  $Products = (get-wmiobject Win32_Product)
+  $Results = ($Products | Where-Object { $_.Name -like $SearchString })
   if ($Results) {
     return $Results
   } else {

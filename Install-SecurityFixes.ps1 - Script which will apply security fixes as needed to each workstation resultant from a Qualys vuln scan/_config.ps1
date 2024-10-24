@@ -11,5 +11,5 @@ $QIDsIgnored += @(90007)                     # This will ignore Cached Credentia
 $InstallDellBIOSProvider = $true             # This will install the DellBIOSProvider.ps1 powershell module if not found
 $SetWOL = $true                              # This will use the DellBIOSProvider module to turn on WakeOnLan
 $BackupBitlocker = $true                     # This will backup Bitlocker Keys to AD
-
+$AutoUpdateAdobeReader = $false              # This will cause the script running in Automated mode to remove old versions of Adobe Reader/Acrobat which could be LICENSED versions!
 Write-Output "[+] Done Loading Configuration items."
