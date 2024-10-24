@@ -52,8 +52,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.22"
-# New in this version:  Added -PowerOpts flag, to default to no.  Changed code to NOT change default power settings unless flag is set.
+$Version = "0.40.23"
+# New in this version:  Slight fix for update Adobe reader and -AutoUpdateAdobeReader flag logic
 
 $VersionInfo = "v$($Version) - Last modified: 10/24/2024"
 
@@ -3204,7 +3204,7 @@ foreach ($CurrentQID in $QIDs) {
         }
       }
       { ($QIDsAdobeReader -contains $_) -or ($VulnDesc -like "*Adobe Reader*" -and ($QIDsAdobeReader -ne 1)) } {
-        if ($Automated -and (!($AutoUpdateAdobeReader))) {
+        if ((!($Automated)) -or ($Automated -and ($AutoUpdateAdobeReader))) {  
           if (Get-YesNo "$_ Remove older versions of Adobe Reader ? " -Results $Results -QID $ThisQID) { 
             $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Adobe Reader*'})
             if ($Products) {
