@@ -29,7 +29,8 @@ $Events = Get-WinEvent -LogName "Microsoft-Windows-TerminalServices-Gateway/Oper
 
 $eventnum = ($events).Count
 "[TOTAL] $eventnum TerminalService-Gateway/Operational events [200, or 300-312] found in date range $StartDate - $EndDate" | tee $Logfile -Append
-$Results = Foreach ($Event in $Events) {
+$Results = @()
+Foreach ($Event in $Events) {
   $Result = "" | Select Message,User,TimeCreated,Id
   $Result.TimeCreated = $Event.TimeCreated
   $eid = $Event.Id
@@ -46,6 +47,10 @@ $Results = Foreach ($Event in $Events) {
   }
   if ($emsg -like "*to resource *") {
     $Element = ($emsg -split 'to resource "')[1]
+    $Resource = (($Element -split '"')[0] -replace '"', '')
+  }
+  if ($emsg -like "* network resource *") {
+    $Element = ($emsg -split ' network resource: "')[1]
     $Resource = (($Element -split '"')[0] -replace '"', '')
   }
   if ($emsg -like "*authentication method used was: *") {
@@ -100,13 +105,13 @@ $Results = Foreach ($Event in $Events) {
   $User = ""
   $SessionID= ""
   $SourceIP = ""
-  $Resource = ""
+  $Resource = "n/a"
   $AuthMethod = "n/a"
   $ConnectionProtocol = ""
   $BytesReceived = ""
   $BytesSent = ""
   $time = ""
-
+  $Results += $result
 } 
 if ($Results) {
   Write-Host "[+] Logged, exporting to CSV: $CSVFile"  -ForegroundColor Yellow
