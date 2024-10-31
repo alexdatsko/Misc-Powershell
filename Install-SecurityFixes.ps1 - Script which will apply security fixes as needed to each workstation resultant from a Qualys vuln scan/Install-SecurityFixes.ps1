@@ -53,8 +53,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.30"
-# New in this version:  Adding Winget installations in place of Ninite which is hacky
+$Version = "0.40.31"
+# New in this version:  Added 105943 - Remove adobe flash
 
 $VersionInfo = "v$($Version) - Last modified: 10/31/2024"
 
@@ -2771,9 +2771,23 @@ foreach ($CurrentQID in $QIDs) {
             Remove-RegistryItem $Path
         }
       }
+      105943 {
+        if (Get-YesNo "$_ Remove Adobe Flash? " -Results $Results -QID $ThisQID) {
+          Write-Host "[.] Checking for product: '*Adobe Flash*' .." -ForegroundColor Yellow
+          $Products = Search-Software "Adobe Flash" 
+          if ($Products) {
+            Remove-Software -Products $Products -Results $Results
+          } else {
+            Write-Host "[!] Software not found: $Products !!`n" -ForegroundColor Red
+          } 
+          # Try to delete from registry, if it exists
+          Remove-RegistryItem $Path
+      }
+      }
+
 
         ####################################################### Installers #######################################
-        # Install newest apps via Ninite
+        # Install newest apps via Winget or Ninite
 
       { ($QIDsGhostScript -contains $_) -or ($VulnDesc -like "*GhostScript*" -and ($QIDsGhostScript -ne 1)) } {
         if (Get-YesNo "$_ Install GhostScript 10.03.1 64bit? " -Results $Results -QID $ThisQID) {
