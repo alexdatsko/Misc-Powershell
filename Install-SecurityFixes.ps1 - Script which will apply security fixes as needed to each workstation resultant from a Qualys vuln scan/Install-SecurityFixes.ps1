@@ -9,6 +9,7 @@ param (
   [int] $SkipQID,                  # Allow user to pick one QID to skip
   [switch] $Help,                  # Allow -Help to display help for parameters
   [switch] $Update,                # Allow -Update to only update the script then exit
+  [switch] $Risky = $true,         # Allows for risky behavior like kililng the ninite.exe installer when updating an Application (if Winget is not installed), this should be false for slow machines!
   [switch] $PowerOpts = $false,    # This switch will set all Power options on Windows to never fall asleep or hibernate.
   [switch] $AutoUpdateAdobeReader = $false   # Auto update adobe reader, INCLUDING REMOVAL OF OLD PRODUCT WHICH COULD BE LICENSED!!! if this flag is set
 )
@@ -52,10 +53,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.23"
-# New in this version:  Slight fix for update Adobe reader and -AutoUpdateAdobeReader flag logic
+$Version = "0.40.30"
+# New in this version:  Adding Winget installations in place of Ninite which is hacky
 
-$VersionInfo = "v$($Version) - Last modified: 10/24/2024"
+$VersionInfo = "v$($Version) - Last modified: 10/31/2024"
 
 
 # CURRENT BUGS TO FIX:
@@ -87,7 +88,7 @@ $CheckOptionalUpdates = $true                # Set this to false to ignore Optio
 $AlreadySetOptionalUpdates = $false          # This is to make sure we do not keep trying to set the Optional Updates registry value.
 $oldPwd = $pwd                               # Grab location script was run from
 $UpdateBrowserWait = 60                      # Default to 60 seconds for updating Chrome, Edge or Firefox with -Automated. Can be overwritten in Config, for slower systems.. 
-$UpdateNiniteWait = 60                       # How long to wait for the Ninite updater to finish and close
+$UpdateNiniteWait = 90                       # How long to wait for the Ninite updater to finish and then force-close, default 90 seconds
 $UpdateDellCommandWait = 60                  # How long to wait for Dell Command Update to re-install/update
 $SoftwareInstallWait = 60                    # How long to wait for generic software to finish installing
 $ConfigFile = "$oldpwd\_config.ps1"          # Configuration file 
@@ -96,7 +97,14 @@ $tmp = "$($env:temp)\SecAud"                 # "temp" Temporary folder to save d
 $OSVersion = ([environment]::OSVersion.Version).Major
 $SoftwareInstalling=[System.Collections.ArrayList]@()
 $QIDsAdded = @()
-$QIDSpecific=@()
+$QIDSpecific = @()
+
+# Applications we currently support updating through WinGet:
+$WingetApplicationList = @("Teamviewer 15","Irfanview","Notepad++","Zoom client","Dropbox","7-zip")   
+$WinGetOpts = "-h --accept-source-agreements --accept-package-agreements"
+
+################################################### INITIAL CHECKS ########
+
 Write-Verbose "Checking for specific parameters.."
 if ($OnlyQIDs) {
   $QIDSpecific=[System.Collections.Generic.List[int]]$OnlyQIDs
@@ -106,6 +114,7 @@ if ($QID) {
   $QIDSpecific=[int]$QID
   Write-Verbose "-QID parameter found: $QIDSpecific"
 }
+
 if ($SkipQID) {
   if (-not $SkipQIDs) {
     $SkipQIDs = [int]$SkipQID  # Use the same SkipQIDs parameter, should work for one as well
@@ -152,7 +161,15 @@ try {
   }
 }
 
-####################################################### FUNCTIONS #######################################################
+if (Get-Command winget -ErrorAction SilentlyContinue) {
+  $WinGetInstalled = $true
+  Write-Output "[+] Winget is installed."
+} else {
+  $WinGetInstalled = $false
+  Write-Output "[-] Winget is not installed."
+}
+
+####################################################### GENERAL FUNCTIONS #######################################################
 
 function Init-Script {
   param (
@@ -217,7 +234,6 @@ function Init-Script {
       Remove-Item $TestFile -ErrorAction SilentlyContinue
   }
 }
-
 function Print-YesNoHelp {
   Write-Host "[?] Legend: (Not case sensitive)"
   Write-Host "  Y = Yes"
@@ -881,7 +897,7 @@ function Set-PowerSettingsNeverSleep {
   $Errors = Set-PowerSchemeSettings -HibernateTimeoutDC 0
 }
 
-######################################### Script related
+######################################### UPDATE RELATED FUNCTIONS ######################
 
 function Update-VCPP14 {
   param (
@@ -1865,7 +1881,6 @@ function Get-FileVersion {
 }
 
 function Get-ChromeVersion {
- 
   try {
     if (Test-Path -Path "c:\program files (x86)\Google\Chrome\Application\Chrome.exe") {
       $ThisVersion = (Get-Item $FileNameToTest -ErrorAction SilentlyContinue).VersionInfo.ProductVersion  # or FileVersion??
@@ -2048,77 +2063,69 @@ function Remove-SpecificAppXPackage {
   }
 }
 
-Function Update-ViaNinite {
+Function Update-Application {
   param(
     [string]$Uri,
     [string]$OutFile,
     [string]$KillProcess,
     [string]$UpdateString
   )
-  Write-Host "[.] Updating to newest $UpdateString from Ninite.com .."
-  Write-Host "[.] Downloading $uri from Ninite, to: $OutFile .."
-  Invoke-WebRequest -UserAgent $AgentString -Uri $Uri -OutFile $OutFile
-  Write-Host "[.] Killing all $Updatetring processess ( $KillProcess ) .."
-  taskkill.exe /f /im $(($KillProcess -split "\\")[-1]) # Works without a \ in $KillProcess either.
-  Write-Host "[.] Waiting 5 seconds .."
-  Start-Sleep 5 # Wait 5 seconds to make sure all processes are killed, could take longer.
-  if ($script:Automated) {
-    Write-Host "[.] Running the Ninite updater, this window will automatically be closed within $UpdateNiniteWait seconds"
-    Start-Process -FilePath "$($OutFile)" -NoNewWindow  # -Wait   # This will wait forever for ninite
-    Write-Host "[.] Waiting $UpdateNiniteWait seconds .."
-    Start-Sleep $UpdateNiniteWait # Wait X seconds to make sure the app has updated, usually 30-45s or so at least!! Longer for slower machines!
-    Write-Host "[.] Killing the Ninite updater window, hopefully it is stuck at 'Done'"
-    taskkill.exe /f /im $(($OutFile -split "\\")[-1])  # Grab filename from full path if given
+  #$WingetApplicationList = @("Teamviewer 15","Irfanview","Notepad++","Zoom client","Dropbox","7-zip")   
+  if ($WinGetInstalled -and $WingetApplicationList -contains $UpdateString) { 
+    Write-Host "[+] Using WinGet to update $UpdateString (if possible).."
+    if ($UpdateString -eq "Chrome") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Google.Chrome $WinGetOpts" }
+  if ($UpdateString -eq "MSEdge") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Microsoft.Edge $WinGetOpts" }
+    if ($UpdateString -eq "Firefox") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Mozilla.Firefox $WinGetOpts" }
+    if ($UpdateString -eq "Brave") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Brave.Brave $WinGetOpts" }
+    if ($UpdateString -eq "Teamviewer 15") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update TeamViewer.TeamViewer $WinGetOpts" }
+    if ($UpdateString -eq "Irfanview") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update IrfanSkiljan.IrfanView $WinGetOpts" }
+    if ($UpdateString -eq "Notepad++") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Notepad++.Notepad++ $WinGetOpts" }
+    if ($UpdateString -eq "Zoom client") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Zoom.Zoom $WinGetOpts" }
+    if ($UpdateString -eq "Dropbox") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Dropbox.Dropbox $WinGetOpts" }
+    if ($UpdateString -eq "7-zip") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update 7zip.7zip $WinGetOpts" }
+    Write-Host "[+] Done."
   } else {
-    Write-Host "[.] Running the Ninite $Updatetring updater, please close this window by hitting DONE when complete! Otherwise, we will kill the proce after $UpdateNiniteWait seconds."
-    Start-Process -FilePath $OutFile -NoNewWindow -Wait
-    #Start-Sleep $UpdateNiniteWait # Wait X seconds to make sure the app has updated, usually 30-45s or so at least!! Longer for slower machines!
-    #Write-Host "[.] Killing the Ninite updater window, hopefully it is stuck at 'Done'"
-    #taskkill.exe /f /im $(($Outfile -split "\\")[-1])  # Grab filename from full path if given
+    # Lets use Ninite to update..
+    Write-Host "[.] Updating to newest $UpdateString using Ninite.."
+    Write-Host "[.] Downloading $uri from Ninite, to: $OutFile .."
+    Invoke-WebRequest -UserAgent $AgentString -Uri $Uri -OutFile $OutFile
+    Write-Host "[.] Killing all $Updatetring processess ( $KillProcess ) .."
+    taskkill.exe /f /im $(($KillProcess -split "\\")[-1]) # Works without a \ in $KillProcess either.
+    Write-Host "[.] Waiting 5 seconds .."
+    Start-Sleep 5 # Wait 5 seconds to make sure all processes are killed, could take longer.
+    if ($script:Automated) {
+      Write-Host "[.] Running the Ninite updater, this window will automatically be closed within $UpdateNiniteWait seconds"
+      Start-Process -FilePath "$($OutFile)" -NoNewWindow  # -Wait   # This will wait forever for ninite
+      Write-Host "[.] Waiting $UpdateNiniteWait seconds .."
+      Start-Sleep $UpdateNiniteWait # Wait X seconds to make sure the app has updated, usually 30-45s or so at least!! Longer for slower machines!
+      Write-Host "[.] Killing the Ninite updater window, hopefully it is stuck at 'Done'"
+      taskkill.exe /f /im $(($OutFile -split "\\")[-1])  # Grab filename from full path if given
+    } else {
+      Write-Host "[.] Running the Ninite $Updatetring updater, please close this window by hitting DONE when complete! Otherwise, we will kill the proce after $UpdateNiniteWait seconds."
+      Start-Process -FilePath $OutFile -NoNewWindow -Wait
+      if ($Risky) {
+        Start-Sleep $UpdateNiniteWait # Wait X seconds to make sure the app has updated, usually 30-45s or so at least!! Longer for slower machines!
+        Write-Host "[.] Killing the Ninite updater window, hopefully it is stuck at 'Done'"
+        taskkill.exe /f /im $(($Outfile -split "\\")[-1])  # Grab filename from full path if given
+      } else {
+        Write-Host "[-] Not killing the ninite.exe updater as this is risky, please close the window yourself!!"
+      }
+    }
   }
 }
 
-
 Function Update-Chrome {
-  Write-Host "[.] Downloading newest Chrome update from Ninite.com .."
-  Invoke-WebRequest -UserAgent $AgentString -Uri "https://ninite.com/chrome/ninite.exe" -OutFile "$($tmp)\ninitechrome.exe"
   Write-Host "[.] Killing all chrome browser windows .."
   taskkill.exe /f /im chrome.exe
-  Write-Host "[.] Waiting 5 seconds .."
-  Start-Sleep 5 # Wait 5 seconds to make sure this is completed
-  if ($script:Automated) {
-    Write-Host "[.] Running the Ninite chrome updater, this window will automatically be closed within $UpdateBrowserWait seconds"
-    Start-Process -FilePath "$($tmp)\ninitechrome.exe" -NoNewWindow
-    Write-Host "[.] Waiting $UpdateBrowserWait seconds .."
-    Start-Sleep $UpdateBrowserWait # Wait X seconds to make sure the app has updated, usually 30-45s or so at least!! Longer for slower machines!
-    Write-Host "[.] Killing the Ninite Chrome updater window!"
-    taskkill.exe /f /im ninite.exe
-    taskkill.exe /f /im ninitechrome.exe
-  } else {
-    Write-Host "[.] Running the Ninite Chrome updater, please close this window by hitting DONE when complete!"
-    Start-Process -FilePath "$($tmp)\ninitechrome.exe" -NoNewWindow -Wait
-  }
+  Write-Host "[.] Updating to newest Chrome.."
+  Update-Application -Uri "https://ninite.com/chrome/ninite.exe" -Outfile "$($tmp)\ninitechrome.exe" -UpdateString "Chrome"
 }
 
 Function Update-Firefox {
-  Write-Host "[.] Downloading newest Firefox update from Ninite.com .."
-  Invoke-WebRequest -UserAgent $AgentString -Uri "https://ninite.com/firefox/ninite.exe" -OutFile "$($tmp)\ninitefirefox.exe"
-  Write-Host "[.] Killing all firefox browser windows .."
+  Write-Host "[.] Killing all Firefox browser windows .."
   taskkill.exe /f /im firefox.exe
-  Write-Host "[.] Waiting 5 seconds .."
-  Start-Sleep 5 # Wait 5 seconds to make sure this is completed
-  if ($script:Automated) {
-    Write-Host "[.] Running the Ninite firefox updater, this window will automatically be closed within $UpdateBrowserWait seconds"
-    Start-Process -FilePath "$($tmp)\ninitefirefox.exe" -NoNewWindow
-    Write-Host "[.] Waiting $UpdateBrowserWait seconds .."
-    Start-Sleep $UpdateBrowserWait # Wait X seconds to make sure the app has updated
-    Write-Host "[.] Killing the Ninite firefox updater window!"
-    taskkill.exe /f /im ninite.exe
-    taskkill.exe /f /im ninitefirefox.exe
-  } else {
-    Write-Host "[.] Running the Ninite firefox updater, please close this window by hitting DONE when complete!"
-    Start-Process -FilePath "$($tmp)\ninitefirefox.exe" -NoNewWindow -Wait
-  }
+  Write-Host "[.] Updating to newest Firefox.."
+  Update-Application -Uri "https://ninite.com/firefox/ninite.exe" -OutFile "$($tmp)\ninitefirefox.exe" -UpdateString "Firefox"
 }
 
 # Test's if the script is running in an elevated fashion (required for HKLM edits)
@@ -2982,7 +2989,7 @@ foreach ($CurrentQID in $QIDs) {
         } else { $QIDsEdge = 1 }
       }
       { ($QIDsFirefox -contains $_) -or ($VulnDesc -like "*Mozilla Firefox*" -and ($QIDsFirefox -ne 1)) } {
-        if (Get-YesNo "$_ Install newest Firefox from Ninite? " -Results $Results -QID $ThisQID) { 
+        if (Get-YesNo "$_ Install newest Firefox? " -Results $Results -QID $ThisQID) { 
             #  Firefox - https://ninite.com/firefox/ninite.exe
             Update-Firefox
             $ResultsFolder = Parse-ResultsFolder $Results
@@ -2993,23 +3000,23 @@ foreach ($CurrentQID in $QIDs) {
         } else { $QIDsFirefox = 1 }
       }      
       { ($QIDsIrfanView -contains $_) -or ($VulnDesc -like "*IrfanView*" -and ($QIDsIrfanView -ne 1)) } {
-        if (Get-YesNo "$_ Install newest IrfanView from Ninite? " -Results $Results -QID $ThisQID) { 
+        if (Get-YesNo "$_ Install newest IrfanView? " -Results $Results -QID $ThisQID) { 
             $IrfanviewUrl = "https://ninite.com/irfanview/ninite.exe"
-            Update-ViaNinite -Uri $IrfanviewUrl -Outfile "NiniteIrfanview.exe" -Killprocess "Irfanview.exe" -UpdateString "Irfanview"
+            Update-Application -Uri $IrfanviewUrl -Outfile "NiniteIrfanview.exe" -Killprocess "Irfanview.exe" -UpdateString "Irfanview"
             $QIDsIrfanView = 1
         } else { $QIDsIrfanView = 1 }
       }      
       { ($QIDsNotepadPP -contains $_) -or ($VulnDesc -like "Notepad++*" -and ($QIDsNotepadPP -ne 1)) } {
-        if (Get-YesNo "$_ Install newest Notepad++ from Ninite? " -Results $Results -QID $ThisQID) { 
+        if (Get-YesNo "$_ Install newest Notepad++? " -Results $Results -QID $ThisQID) { 
             $NotepadPPurl = "https://ninite.com/notepadplusplus/ninite.exe"
-            Update-ViaNinite -Uri $NotepadPPUrl -Outfile "NiniteNotepadPP.exe" -Killprocess "notepad++.exe" -UpdateString "Notepad++"
+            Update-Application -Uri $NotepadPPUrl -Outfile "NiniteNotepadPP.exe" -Killprocess "notepad++.exe" -UpdateString "Notepad++"
             $QIDsNotepadPP = 1
         } else { $QIDsNotepadPP = 1 }
       }
 
       { ($QIDsZoom -contains $_) -or ($VulnDesc -like "*Zoom*" -and ($QIDsZoom -ne 1)) } {
-        if (Get-YesNo "$_ Install newest Zoom Client from Ninite? " -Results $Results -QID $ThisQID) { 
-            Update-ViaNinite "https://ninite.com/zoom/ninite.exe" -OutFile "$($tmp)\ninite.exe" -KillProcess 'ninite.exe' -UpdateString "Zoom client"
+        if (Get-YesNo "$_ Install newest Zoom Client? " -Results $Results -QID $ThisQID) { 
+            Update-Application "https://ninite.com/zoom/ninite.exe" -OutFile "$($tmp)\ninite.exe" -KillProcess 'ninite.exe' -UpdateString "Zoom client"
 
             #If Zoom folder is in another users AppData\Local folder, this will not work
             $FolderFound = $false
@@ -3025,16 +3032,16 @@ foreach ($CurrentQID in $QIDs) {
         } else { $QIDsZoom = 1 }
       }
       { ($QIDsTeamViewer -contains $_) -or ($VulnDesc -like "*TeamViewer*" -and ($QIDsTeamViewer -ne 1)) } {
-        if (Get-YesNo "$_ Install newest Teamviewer from Ninite? " -Results $Results -QID $ThisQID) { 
+        if (Get-YesNo "$_ Install newest Teamviewer? " -Results $Results -QID $ThisQID) { 
             #  Teamviewer - https://ninite.com/teamviewer15/ninite.exe
-            Update-ViaNinite -Uri "https://ninite.com/teamviewer15/ninite.exe" -OutFile "$($tmp)\ninite.exe" -KillProcess "TeamViewer.exe" -UpdateString "TeamViewer 15"
+            Update-Application -Uri "https://ninite.com/teamviewer15/ninite.exe" -OutFile "$($tmp)\ninite.exe" -KillProcess "TeamViewer.exe" -UpdateString "TeamViewer 15"
             $QIDsTeamViewer = 1
         } else { $QIDsTeamViewer = 1 }
       }
       { ($QIDsDropbox -contains $_) -or ($VulnDesc -like "*Dropbox*" -and ($QIDsDropbox -ne 1)) } {
-        if (Get-YesNo "$_ Install newest Dropbox from Ninite? " -Results $Results -QID $ThisQID) { 
+        if (Get-YesNo "$_ Install newest Dropbox? " -Results $Results -QID $ThisQID) { 
             #  Dropbox - https://ninite.com/dropbox/ninite.exe
-            Update-ViaNinite -Uri "https://ninite.com/dropbox/ninite.exe" -OutFile "$($tmp)\dropboxninite.exe" -KillProcess "Dropbox.exe" -UpdateString "Dropbox"
+            Update-Application -Uri "https://ninite.com/dropbox/ninite.exe" -OutFile "$($tmp)\dropboxninite.exe" -KillProcess "Dropbox.exe" -UpdateString "Dropbox"
             $QIDsDropbox = 1
         } else { $QIDsDropbox = 1 }
       }
@@ -3079,8 +3086,8 @@ foreach ($CurrentQID in $QIDs) {
         $QIDsVLC = 1 # Whether updated or not, don't ask again.
       }
       378839 {
-        if (Get-YesNo "$_ Install newest 7-Zip from Ninite? " -Results $Results -QID $ThisQID) { 
-          Update-ViaNinite -Uri "https://ninite.com/7-zip/ninite.exe" -OutFile "$($tmp)\7zninite.exe" -KillProcess "7zfm.exe"  -Updatetring "7-Zip" 
+        if (Get-YesNo "$_ Install newest 7-Zip? " -Results $Results -QID $ThisQID) { 
+          Update-Application -Uri "https://ninite.com/7-zip/ninite.exe" -OutFile "$($tmp)\7zninite.exe" -KillProcess "7zfm.exe"  -Updatetring "7-Zip" 
           $QIDs7zip = 1
         } else { $QIDs7zip = 1 }
       }
@@ -4426,3 +4433,6 @@ if (!($script:Automated)) {
 Write-Host "`n"
 
 Exit
+
+
+ 
