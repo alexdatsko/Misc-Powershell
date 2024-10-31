@@ -53,14 +53,14 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.32"
-# New in this version:  Fixed  VC++14 installers - silent install works using /install /passive /quiet /norestart
+$Version = "0.40.33"
+# New in this version:  Updated Intel GPU detection for driver page popup, also worked on Dell command update removal hang.. 
 
 $VersionInfo = "v$($Version) - Last modified: 10/31/2024"
 
 
 # CURRENT BUGS TO FIX:
-#    - VLC update broken - go back to ninite?
+#    - VLC update broken - Winget? also ninite backup?
 #    - Notepad++ update broken
 
 #### VERSION ###################################################
@@ -414,7 +414,14 @@ function Read-QIDLists {    # NOT USING!!!!
 }
 
 function Get-OSVersion {
-  return (Get-CimInstance Win32_OperatingSystem).version
+  return [version](Get-CimInstance Win32_OperatingSystem).version
+}
+
+function Report-OSVersion {
+  $OSVersion = [version](Get-OSVersion)
+  if ($OSVersion -le [version]10.0.19045) { return "Win10" }
+  if ($OSVersion -gt [version]10.0.19045) { return "Win11" }
+  return "unknown"
 }
 
 function Get-NewerScriptVersion {   # Check in ps1 file for VersionStr and report back if its newer than the current value ($VersionToCheck), returns version# if so.
@@ -1410,7 +1417,7 @@ function Remove-Software {
     if (Get-YesNo "Uninstall $Name - $Guid ") { 
         Write-Host "[.] Removing $Guid (Waiting max of 30 seconds after).. "
         $x=0
-        cmd /c "msiexec /x $Guid /quiet /qn"
+        Start-Process "msiexec.exe" -ArgumentList "/x $Guid /quiet /qn" -NoNewWindow # -Wait
         Write-Host "[.] Checking for removal of $Guid .." -ForegroundColor White -NoNewline
         while ($x -lt 5) {
             Start-sleep 5
@@ -3188,7 +3195,7 @@ foreach ($CurrentQID in $QIDs) {
               Write-Host "." -NoNewLine
               $cmdtime = Measure-Command { $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like '*Dell Command | Update*'}) | Select-Object -First 1 } # Takes 5-10 seconds.. maybe longer.. lets measure
               $elapsedtime += $cmdtime
-              if ($Products) {                $InstalledYet = $true              }
+              if ($Products) {  $InstalledYet = $true  }
             }
             Write-Host ""
             if ($Products) {
@@ -4181,7 +4188,58 @@ foreach ($CurrentQID in $QIDs) {
           }
         }
       }
-
+      371263 {
+        if (Get-YesNo "$_ Fix Intel Graphics drivers" -Results $Results -QID $ThisQID) {
+          foreach($gpu in Get-WmiObject Win32_VideoController) {  
+            Write-Host $gpu.Description
+            $GpuName = ""
+            if ($gpu.Description -like '*Intel*') {
+              $IntelcardFound = $true
+              if ($gpu.Description -like "*HD Graphics 4*") { 
+                $GpuName = "Intel 5xx" 
+                $GPUWin10 = "https://www.intel.com/content/www/us/en/download/18799/intel-graphics-driver-for-windows-15-45.html"
+                $GPUWin11 = "n/a"
+              }
+              if ($gpu.Description -like "*HD Graphics 54*" -or $gpu.Description -like "*HD Graphics Iris" -or $gpu.Description -like "*HD Graphics 53*" -or $gpu.Description -like "*HD Graphics 51*" -or $gpu.Description -like "*HD Graphics P5*") { 
+                $GpuName = "Intel 5xx" 
+                $GPUWin10 = "https://www.intel.com/content/www/us/en/download/18388/intel-graphics-driver-for-windows-10-15-40-4th-gen.html"
+                $GPUWin11 = "n/a"
+              }
+              if ($gpu.Description -like "*HD Graphics 6*") { 
+                $GpuName = "Intel 6xx" 
+                $GPUWin10 = "https://www.intel.com/content/www/us/en/download/762755/intel-6th-10th-gen-processor-graphics-windows.html"
+                $GPUWin11 = "https://www.intel.com/content/www/us/en/download/762755/intel-6th-10th-gen-processor-graphics-windows.html"
+              }
+              if ($gpu.Description -like "*HD Graphics 7*") { 
+                $GpuName = "Intel 7xx"  
+                $GPUWin11 = "https://www.intel.com/content/www/us/en/download/776137/intel-7th-10th-gen-processor-graphics-windows.html"
+                $GPUWin10 = "https://www.intel.com/content/www/us/en/download/776137/intel-7th-10th-gen-processor-graphics-windows.html"
+              }
+              if ($gpu.Description -like "*ARC Pro*") { 
+                $GpuName = "Intel ARC Pro" 
+                $GPUWin11 = "https://www.intel.com/content/www/us/en/download/741626/intel-arc-pro-graphics-windows.html"
+                $GPUWin10 = "https://www.intel.com/content/www/us/en/download/741626/intel-arc-pro-graphics-windows.html"
+              }
+              if ($gpu.Description -like "*ARC*") { 
+                $GpuName = "Intel ARC" 
+                $GPUWin10 = "https://www.intel.com/content/www/us/en/download/785597/intel-arc-iris-xe-graphics-windows.html"
+              }
+            }
+          }
+          if ($Intelcardfound) {
+            if ($GPUName) {
+              $OSVersion = [version](Get-OSVersion)
+              if ($OSVersion -le [version]10.0.19045) { Write-Host "GPU Update URL (Win 10): $GPUWin10" ; explorer $GPUWin10 }
+              if ($OSVersion -gt [version]10.0.19045) { Write-Host "GPU Update URL (Win 11): $GPUWin11" ; explorer $GPUWin11 }
+            } else {
+              Write-Host "[!] Please fix manually, opening https://www.intel.com/content/www/us/en/security-center/advisory/intel-sa-00166.html :" -Foregroundcolor Yellow
+              explorer.exe "https://www.intel.com/content/www/us/en/security-center/advisory/intel-sa-00166.html"
+            }
+          } else {
+            Write-Host "[!] No Intel card found! or, program error.."
+          }
+        }
+      }
       371476 {
         if (Get-YesNo "$_ Fix Intel Proset Wireless Software" -Results $Results -QID $ThisQID) {
           Write-Host "[.] Checking for product: 'Intel PROset*' " -ForegroundColor Yellow
