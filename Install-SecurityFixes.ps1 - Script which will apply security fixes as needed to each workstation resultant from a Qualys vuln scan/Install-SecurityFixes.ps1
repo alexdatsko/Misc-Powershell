@@ -53,8 +53,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.31"
-# New in this version:  Added 105943 - Remove adobe flash
+$Version = "0.40.32"
+# New in this version:  Fixed  VC++14 installers - silent install works using /install /passive /quiet /norestart
 
 $VersionInfo = "v$($Version) - Last modified: 10/31/2024"
 
@@ -632,7 +632,7 @@ Function Install-DellBiosProvider {
             if (Test-Path "$env:temp\SecAud\vc2012redist_x64.exe") {
               Write-Host "[.] Trying to install VC 2012 U4 package, but it may require a reboot after."
               try { 
-                . "$env:temp\SecAud\vc2012redist_x64.exe" "/q" 
+                . "$env:temp\SecAud\vc2012redist_x64.exe" "/install /passive /quiet /norestart" 
                 Write-Host "[+] Looks to have succeeded. The workstation will need a reboot for this to apply properly and the DellBIOSProvider module to work properly." -ForegroundColor Green
               } catch {
                 Write-Host "[!] Couldn't install VC 2012 U4 package!" -ForegroundColor Red
@@ -906,17 +906,17 @@ function Update-VCPP14 {
 
   if ($arch -eq "x64" -or $arch -eq "both" -or $arch -eq "*") {
     Write-Host "[.] Downloading required VC++ 14 Library file: VC_redist.x64.exe .."  -ForegroundColor Yellow
-    Write-Host "[!] BE CAREFUL NOT TO CLICK RESTART... " -ForegroundColor Red
+    #Write-Host "[!] BE CAREFUL NOT TO CLICK RESTART... " -ForegroundColor Red
     wget "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "$($tmp)\vc_redist.x64.exe"
-    Write-Host "[.] Running: VC_redist.x64.exe /silent /norestart"    # STILL RESTARTING , THIS POS.. 
-    . "$($tmp)\VC_redist.x64.exe" "/silent /norestart" 
+    Write-Host "[.] Running: VC_redist.x64.exe /install /passive /quiet /norestart"    
+    Start-Process "$($tmp)\VC_redist.x64.exe" -ArgumentList "/install /passive /quiet /norestart" -Wait  -NoNewWindow
   }
   if ($arch -eq "x86" -or $arch -eq "both" -or $arch -eq "*") {
     Write-Host "[.] Downloading required VC++ 14 Library file: VC_redist.x86.exe .."  -ForegroundColor Yellow
-    Write-Host "[!] BE CAREFUL NOT TO CLICK RESTART... " -ForegroundColor Red
+    #Write-Host "[!] BE CAREFUL NOT TO CLICK RESTART... " -ForegroundColor Red
     wget "https://aka.ms/vs/17/release/vc_redist.x86.exe" -OutFile "$($tmp)\vc_redist.x86.exe"
-    Write-Host "[.] Running: VC_redist.x86.exe /silent /norestart"
-    . "$($tmp)\VC_redist.x86.exe" "/silent /norestart" 
+    Write-Host "[.] Running: VC_redist.x86.exe /install /passive /quiet /norestart"
+    Start-Process "$($tmp)\VC_redist.x86.exe" -ArgumentList "/install /passive /quiet /norestart" -Wait -NoNewWindow
   }
 }
 
@@ -3296,28 +3296,28 @@ foreach ($CurrentQID in $QIDs) {
               Write-Host "[!] Found Microsoft Visual C++ 2008 Redistributable - x86 "
               $notfound = $false
               Invoke-WebRequest -UserAgent $AgentString -Uri "https://download.microsoft.com/download/5/D/8/5D8C65CB-C849-4025-8E95-C3966CAFD8AE/vcredist_x86.exe" -OutFile "$($tmp)\vcredist2008x86.exe"
-              cmd /c "$($tmp)\vcredist2008x86.exe /q"
+              cmd /c "$($tmp)\vcredist2008x86.exe /install /passive /quiet /norestart"
               $QIDsMicrosoftVisualStudioActiveTemplate = 1
           }
           if ($Installed | Where-Object { $_.IdentifyingNumber -like '{837b34e3-7c30-493c-8f6a-2b0f04e2912c}'}) {
             Write-Host "[!] Found Microsoft Visual C++ 2005 Redistributable"
             $notfound = $false
             Invoke-WebRequest -UserAgent $AgentString -Uri "https://download.microsoft.com/download/8/B/4/8B42259F-5D70-43F4-AC2E-4B208FD8D66A/vcredist_x86.EXE" -OutFile "$($tmp)\vcredist2005.exe"
-            cmd /c "$($tmp)\vcredist2005.exe /q"
+            cmd /c "$($tmp)\vcredist2005.exe  /install /passive /quiet /norestart"
             $QIDsMicrosoftVisualStudioActiveTemplate = 1
           }
           if ($Installed | Where-Object { $_.IdentifyingNumber -like '{710f4c1c-cc18-4c49-8cbf-51240c89a1a2}'}) {
             Write-Host "[!] Found Microsoft Visual C++ 2005 Redistributable - x86"
             $notfound = $false
             Invoke-WebRequest -UserAgent $AgentString -Uri "https://download.microsoft.com/download/8/B/4/8B42259F-5D70-43F4-AC2E-4B208FD8D66A/vcredist_x86.EXE" -OutFile "$($tmp)\vcredist2005x86.exe"
-            cmd /c "$($tmp)\vcredist2005x86.exe /q"
+            cmd /c "$($tmp)\vcredist2005x86.exe  /install /passive /quiet /norestart"
             $QIDsMicrosoftVisualStudioActiveTemplate = 1
           }
           if ($Installed | Where-Object { $_.IdentifyingNumber -like '{6E8E85E8-CE4B-4FF5-91F7-04999C9FAE6A}'}) { #x64
             Write-Host "[!] Found Microsoft Visual C++ 2005 Redistributable - x64 "
             $notfound = $false
             Invoke-WebRequest -UserAgent $AgentString -Uri "https://download.microsoft.com/download/8/B/4/8B42259F-5D70-43F4-AC2E-4B208FD8D66A/vcredist_x64.EXE" -OutFile "$($tmp)\vcredist2005x64.exe"
-            cmd /c "$($tmp)\vcredist2005x64.exe /q"
+            cmd /c "$($tmp)\vcredist2005x64.exe  /install /passive /quiet /norestart"  # /q
             $QIDsMicrosoftVisualStudioActiveTemplate = 1
           } 
 
