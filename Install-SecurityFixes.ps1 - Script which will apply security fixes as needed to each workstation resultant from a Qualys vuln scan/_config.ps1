@@ -12,4 +12,10 @@ $InstallDellBIOSProvider = $true             # This will install the DellBIOSPro
 $SetWOL = $true                              # This will use the DellBIOSProvider module to turn on WakeOnLan
 $BackupBitlocker = $true                     # This will backup Bitlocker Keys to AD
 $AutoUpdateAdobeReader = $false              # This will cause the script running in Automated mode to remove old versions of Adobe Reader/Acrobat which could be LICENSED versions!
+
+#### Scheduled Task creation stuff, able to be run twice a month on schedule
+$ST_StartTime = Get-Date -Format "23:00:00"      # 11pm
+$ST_DayOfWeek = 4                                # Thursday
+$ST_IgnoreComputers = @("SERVER")                # Comptuers to NOT run a scheduled task with -automated
+
 Write-Output "[+] Done Loading Configuration items."

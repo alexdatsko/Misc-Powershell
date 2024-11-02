@@ -9,8 +9,10 @@ param (
   [int] $SkipQID,                  # Allow user to pick one QID to skip
   [switch] $Help,                  # Allow -Help to display help for parameters
   [switch] $Update,                # Allow -Update to only update the script then exit
+  [switch] $SkipAPI = $true,       # Set this to $true to not try to make any calls to the API
   [switch] $Risky = $true,         # Allows for risky behavior like kililng the ninite.exe installer when updating an Application (if Winget is not installed), this should be false for slow machines!
   [switch] $PowerOpts = $false,    # This switch will set all Power options on Windows to never fall asleep or hibernate.
+  [switch] $AddScheduledTask = $false,       # This switch will install a scheduled task to run the script first thursday of each month and reboot after
   [switch] $AutoUpdateAdobeReader = $false   # Auto update adobe reader, INCLUDING REMOVAL OF OLD PRODUCT WHICH COULD BE LICENSED!!! if this flag is set
 )
 
@@ -27,6 +29,8 @@ $AllHelp = "########################################################
     Displays help information for the script.
 .PARAMETER Update
     Updates the script (if an update is available on github) and then exits.
+.PARAMETER SkipAPI
+    If true, the app will not  make any calls to the API
 .PARAMETER CSVFile
     Specifies the path to the CSV file to use.
 .PARAMETER Automated
@@ -53,10 +57,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.40.33"
-# New in this version:  Updated Intel GPU detection for driver page popup, also worked on Dell command update removal hang.. 
+$Version = "0.50.01"
+# New in this version:  Added initial code for API reporting, Scheduled Task addition, some other fixes/cleanup
 
-$VersionInfo = "v$($Version) - Last modified: 10/31/2024"
+$VersionInfo = "v$($Version) - Last modified: 11/01/2024"
 
 
 # CURRENT BUGS TO FIX:
@@ -77,11 +81,14 @@ if ($Help) {
 
 
 # ----------- Script specific vars:  ---------------
+$apiBaseUrl = "https://mqra.mme-sec.us/api/v1"
 $AgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.67 Safari/537.36"
 $OLE19x64Url = "https://go.microsoft.com/fwlink/?linkid=2278038"
 $DCUUrl = "https://dl.dell.com/FOLDER11914075M/1/Dell-Command-Update-Application_6VFWW_WIN_5.4.0_A00.EXE"
 $ghostscripturl = "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10031/gs10031w64.exe"
 $AdobeReaderUpdateUrl = "https://rdc.adobe.io/reader/products?lang=mui&site=enterprise&os=Windows%2011&country=US&nativeOs=Windows%2010&api_key=dc-get-adobereader-cdn"
+$MQRAUserAgent = "MQRA v0.50 PS"
+
 $DCUFilename = ($DCUUrl -split "/")[-1]
 $DCUVersion = (($DCUUrl -split "_WIN_")[1] -split "_A0")[0]
 $CheckOptionalUpdates = $true                # Set this to false to ignore Optional Updates registry value
@@ -94,10 +101,14 @@ $SoftwareInstallWait = 60                    # How long to wait for generic soft
 $ConfigFile = "$oldpwd\_config.ps1"          # Configuration file 
 $QIDsListFile = "$oldpwd\QIDLists.ps1"       # QID List file 
 $tmp = "$($env:temp)\SecAud"                 # "temp" Temporary folder to save downloaded files to, this will be overwritten when checking config ..
+$LogToEventLog = $true                       # Set this to $false to not log to event viewer Application log, source "MQRA", also picked up in _config.ps1
 $OSVersion = ([environment]::OSVersion.Version).Major
 $SoftwareInstalling=[System.Collections.ArrayList]@()
 $QIDsAdded = @()
 $QIDSpecific = @()
+$ST_StartTime = "0" #default Scheduled task settings - Start time - 23:00:00 default
+$ST_DayOfWeek = "0" #default Scheduled task settings - Day of week - Sun=0, Mon=1, ..
+$ST_IgnoreComputers = @() # default comptuers that should NOT have a Scheduled task  (no servers will, they will be manual remediation)
 
 # Applications we currently support updating through WinGet:
 $WingetApplicationList = @("Teamviewer 15","Irfanview","Notepad++","Zoom client","Dropbox","7-zip")   
@@ -141,7 +152,7 @@ if ($SkipQIDs) {
   $SkipQIDs = @()
 }
 Write-Verbose "Done checking parameters"
-if (!(Test-Path $tmp)) { New-Item -ItemType Directory $tmp }
+if (!(Test-Path $tmp)) { $null = New-Item -ItemType Directory $tmp | Out-Null }
 
 # Start a transscript of what happens while the script is running, but stop any currently running transcript so we can start a new one!
 try {
@@ -149,9 +160,10 @@ try {
 }
 catch [System.InvalidOperationException]{}
 
-$dateshort= Get-Date -Format "yyyy-MM-dd"
+$dateshort= Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 try {
-  Start-Transcript "$($env:temp)\Install-SecurityFixes_$($dateshort).log" -ErrorAction SilentlyContinue
+  $script:LogFile = "\\$($tmp)\SecAud\$($hostname)_Install-SecurityFixes_$($dateshort).log"
+  Start-Transcript $script:LogFile -ErrorAction SilentlyContinue
 } catch {
   if ($Error[0].Exception.Message -match 'Transcript is already in progress') {
     Write-Warning '[!] Start-Transcript: Already running.'
@@ -1102,59 +1114,84 @@ function Check-ResultsForKB {
 
 ################################################# CONFIG FUNCTIONS ###############################################
 
+
+function MD5hash {
+  param
+    ( 
+      [string]$input
+    )
+    return [System.BitConverter]::ToString((New-Object Security.Cryptography.MD5CryptoServiceProvider).ComputeHash([Text.Encoding]::UTF8.GetBytes($input))).Replace("-", "").ToLower()
+}
+function Get-UniqueID { 
+  param 
+    (
+      [string]$csvPath,
+      [string]$NetBIOS = (hostname)
+    )
+  $csvData = Import-Csv -Path $csvPath | Where { $_.NetBIOS -eq "$NetBIOS" } | Select -First 1
+  $identifierString = "$($csvData.NetBIOS)|$($csvData.'Parent Account Name')|$($csvData.'QG Host ID')"
+  return MD5hash($identifierString)
+}
+
 function Find-ConfigFileLine {  # CONTEXT Search, a match needs to be found but NOT need to be exact line, i.e '$QIDsFlash = 1,2,3,4' returns true if '#$QIDsFlash = 1,2,3,4,9999,12345' is found
-  param ([string]$ConfigLine)
+  param (
+    [string]$ConfigFile = "_config.ps1",
+    [string]$ConfigLine
+  )
 
   $ConfigContents = (Get-Content -path $ConfigFile)
   ForEach ($str in $ConfigContents) {
     if ($str -like "*$($ConfigLine)*") {
-      return $true
+      return $str
     }
   }
   return $false
 }
 
 function Set-ConfigFileLine {
-  param ([string]$ConfigOldLine,
-         [string]$ConfigNewLine)
-  if (Get-YesNo "Change [$($ConfigOldLine)] in $($ConfigFile) to [$($ConfigNewLine)] ?") {
-    Write-Verbose "Changing line in $($ConfigFile): `n  Old: [$($ConfigOldLine)] `n  New: [$($ConfigNewLine)]"
-    $ConfigLine = (Select-String  -Path $ConfigFile -pattern $ConfigOldLine).Line
-    Write-Verbose "  Found match: [$($ConfigOldLine)]"  
-    Write-Verbose "  Replaced with: [$($ConfigNewLine)]"
+  param (
+    [string]$ConfigFile = "_config.ps1",
+    [string]$ConfigOldLine,
+    [string]$ConfigNewLine
+  )
+  if ($ConfigOldLine -eq "") {
+    # Just add new line if blank
     $ConfigContents = (Get-Content -path $ConfigFile)
-    $ConfigFileNew=@()
-    ForEach ($str in $ConfigContents) {
-      if ($str -like "*$($ConfigLine)*") {
-        Write-Verbose "Replaced: `n$str with: `n$ConfigNewLine"
-        $ConfigFileNew += $ConfigNewLine
-      } else {
-        $ConfigFileNew += $str
-      }
+    $ConfigContents | ForEach { 
+      $ConfigNewContents += $_ 
     }
-    $ConfigFileNew | Set-Content -path $ConfigFile -Force
-  }
-}
+    $ConfigNewContents += $ConfigNewLine
+    Set-Content -path $ConfigFile -Value $ConfigNewContents
+  } else {
 
-function Add-ConfigFileLine {
-  param ([string]$ConfigNewLine)
-  if (Get-YesNo "Add [$($ConfigLine)] to $($ConfigFile) ?") {
-    $ConfigContents = Get-Content -Path $ConfigFile
-    $ConfigFileNew=@()
-    ForEach ($str in $ConfigContents) {
-      $ConfigFileNew += $str
+    if (Get-YesNo "Change [$($ConfigOldLine)] in $($ConfigFile) to [$($ConfigNewLine)] ?") {
+      Write-Verbose "Changing line in $($ConfigFile): `n  Old: [$($ConfigOldLine)] `n  New: [$($ConfigNewLine)]"
+      $ConfigLine = (Select-String  -Path $ConfigFile -pattern $ConfigOldLine).Line
+      Write-Verbose "  Found match: [$($ConfigOldLine)]"  
+      Write-Verbose "  Replaced with: [$($ConfigNewLine)]"
+      $ConfigContents = (Get-Content -path $ConfigFile)
+      $ConfigContentsNew=@()
+      ForEach ($str in $ConfigContents) {
+        if ($str -like "*$($ConfigLine)*") {
+          Write-Verbose "Replaced: `n$str with: `n$ConfigNewLine"
+          $ConfigContentsNew += $ConfigNewLine
+        } else {
+          $ConfigContentsNew += $str
+        }
+      }
+      Set-Content -path $ConfigFile -Value $ConfigContentsNew
     }
-    Write-Verbose "Adding line to $($ConfigFile): `nLine: [$($ConfigNewLine)]"
-    $ConfigFileNew += $ConfigNewLine
-    $ConfigFileNew | Set-Content -path $ConfigFile -Force
-  } else { 
-    Write-Host "[-] Skipping!"
   }
 }
 
 function Remove-ConfigFileLine {  # Wrapper for Change-ConfigFileLine 
   param ([string]$ConfigOldLine)
-  Change-ConfigFileLine $ConfigOldLine ""
+  Set-ConfigFileLine -ConfigFile $ConfigFile -ConfigOldLine $ConfigOldLine -ConfigNewLine ""
+}
+
+function Add-ConfigFileLine {  # Wrapper for Change-ConfigFileLine 
+  param ([string]$ConfigNewLine)
+  Set-ConfigFileLine -ConfigFile $ConfigFile -ConfigOldLine "" -ConfigNewLine $ConfigNewLine
 }
 
 function Is-Array {  
@@ -1167,7 +1204,8 @@ function Is-Array {
 
 function Pick-File {    # Show a list of files with a number to the left of each one, pick by number
   param (
-    [array]$Filenames
+    [array]$Filenames,
+    [string]$Newest = 0  # If no filename is sent as newest, we will pick first one on the list if they hit enter
   )
   
   $i=0
@@ -1176,11 +1214,15 @@ function Pick-File {    # Show a list of files with a number to the left of each
     $i += 1
   }
 
+  if (!($Newest -eq 0)) {  # Just pick newest file if one is provided??
+    Write-Host "[+] Pick-File: Returning newest file $($Location)\$($Filenames[$Newest]) .." -ForegreoundColor Green 
+    return "$($Location)\$($Filenames[$Newest])"
+  }
   if ((-not $script:Automated) -and ($i -gt 1)) {
     Write-Host "[$i] EXIT" -ForegroundColor Blue
-    $Selection = Read-Host "Select file to import, [Enter=0] ?"
+    $Selection = Read-Host "Select file to import, [Enter=Newest] ?"
     if ($Selection -eq $i) { Write-Host "[-] Exiting!" -ForegroundColor Gray; exit }
-    if ([string]::IsNullOrEmpty($Selection)) { $Selection = "0" } else {
+    if ([string]::IsNullOrEmpty($Selection)) { $Selection = $Filenames[$Newest] } else {
       $Sel = [int]$Selection
     }
     return "$($Location)\$($Filenames[$Sel])"
@@ -1210,23 +1252,23 @@ function Pick-File {    # Show a list of files with a number to the left of each
 function Find-LocalCSVFile {
   param ([string]$Location,
          [string]$Oldpwd)
-    #write-Host "Find-LocalCSVFile $Location $OldPwd"
-    # FIGURE OUT CSV Filename
-    Write-Verbose "Checking for CSV in Location: $Location"
-    Write-Verbose "OldPwd: $oldPwd"
-    if (($null -eq $Location) -or ("." -eq $Location)) { $Location = $OldPwd }
-    [array]$Filenames = Get-ChildItem "$($Location)\*.csv" | ForEach-Object { $_.Name }
-    if ($Filenames.Length -lt 1) {  # If no files found in $Location, check $OldPwd
-      Write-Verbose "Checking for CSV in Location: $OldPwd"
-      [array]$Filenames = Get-ChildItem "$($OldPwd)\*Internal*.csv" | ForEach-Object { $_.Name }  # Find only internal scans
-    } 
-    if (!(Is-Array $Filenames)) {  # If no files found still, error out!
-      Write-Host "[!] Error, can't seem to find any CSV files (or none with 'Internal' in the filename).."
-      Exit
-    }
-    Write-Verbose "Filenames:"
-    Write-Verbose "$Filenames"
-    return (Pick-File $Filenames)    
+  #write-Host "Find-LocalCSVFile $Location $OldPwd"
+  # FIGURE OUT CSV Filename
+  Write-Verbose "Checking for CSV in Location: $Location"
+  Write-Verbose "OldPwd: $oldPwd"
+  if (($null -eq $Location) -or ("." -eq $Location)) { $Location = $OldPwd }
+  [array]$Filenames = (Get-ChildItem "$($Location)\*Internal*.csv"  | Sort-Object LastWriteTime -Descending).Name # Find only internal scans
+  $Newest = $Filenames | Select-Object -First 1
+  return $Newest
+  if ($Filenames.Length -lt 1) {  # If no files found in $Location, check $OldPwd
+    Write-Verbose "Checking for CSV in Location: $OldPwd"
+    [array]$Filenames = (Get-ChildItem "$($OldPwd)\*Internal*.csv" | Sort-Object LastWriteTime -Descending).Name  
+    $Newest = $Filenames | Select-Object -First 1
+    return $Newest
+  } 
+  
+
+  # Used to Pick-File from here, why bother.. automate
 }
 
 function Find-ServerCSVFile {
@@ -1238,7 +1280,7 @@ function Find-ServerCSVFile {
     Write-Verbose "[!] Can't access '$($serverName)', skipping Find-ServerCSVFile!"
     return $null
   }
-  if (!($null -eq $Location)) { $Location = "data\secaud" }  # Default to \\$servername\data\secaud if can't read from config..
+  if ($null -eq $Location) { $Location = "data\secaud" }  # Default to \\$servername\data\secaud if can't read from config..
   if (Test-Path "\\$($ServerName)\$($Location)") {
     $CSVFilename=(Get-ChildItem "\\$($ServerName)\$($Location)" -Filter "*.csv" | Sort-Object LastWriteTime | Select-Object -last 1).FullName
     Write-Host "[i] Found most recent CSV file: $CSVFileName" -ForegroundColor Blue
@@ -2182,6 +2224,219 @@ function Set-RegKey {
     }
 }
 
+function Check-ScheduledTask {
+  param (
+    [string]$ComputerName = (hostname),
+    [string]$ServerName
+  )
+  Write-Host "`n[+] Checking Scheduled Task .." -ForegroundColor Yellow
+  $Serverhostname = [string](Get-RegistryEntry -Name "ServerName")
+  Write-Verbose "ServerName found in registry: $Serverhostname"
+  if ($Serverhostname -eq "0") {  # ServerName should be set by here if we've read the CSV.. its not set in registry if we get "0"
+    Set-RegistryEntry -Name "ServerName" -Value $ServerName
+    Write-Verbose "ServerName set in registry: $ServerName"
+    $Serverhostname = $ServerName
+  }
+  if ($ST_IgnoreComputers -notcontains $ComputerName -and ((Get-OSType) -eq 1)) {  # Workstation OS only! No servers, and make sure its not on a skip list
+    # Task properties
+    $taskName = "MME - MQRA - Install-SecurityFixes.ps1 -Automated"
+    if ($Serverhostname = ".") { # catch non-domain systems
+      $taskPath = "c:\temp\data\secaud\Install-SecurityFixes.ps1"
+      $taskAction = "-exec bypass -noninteractive -c 'sl c:\temp\data\secaud; .\Install-SecurityFixes.ps1 -Automated'"
+    } else {
+      $taskPath = "\\$($Serverhostname)\data\secaud\Install-SecurityFixes.ps1"
+      $taskAction = "-exec bypass -noninteractive -c 'sl $($Serverhostname)\data\secaud; .\Install-SecurityFixes.ps1 -Automated'"
+    }
+    $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $taskAction 
+    $taskSettings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 1) -WakeToRun
+
+    # Check $ST_DayOfWeek and $ST_StartTime for sane values first....
+    if ($ST_StartTime -eq "0") {
+      $ST_StartTime = Get-Date -Format "23:00:00"
+      $ST_StartTimeHours = $ST_StartTime.Substring(0,2)  # get number of hours from date format
+      Write-Verbose "ST_StartTimeHours = $ST_StartTimeHours"
+    }
+    if ($ST_DayOfWeek -eq "0") {
+      $ST_DayOfWeek = 4 # Thursday
+    }
+    Write-Verbose "ST_StartTime: $ST_StartTime ST_DayOfWeek: $ST_DayOfWeek"
+    #$FirstRun = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $ST_DayOfWeek -WeeksInterval 1 -At $ST_StartTime -RandomDelay 01:00:00
+    $FirstRun = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $ST_DayOfWeek -WeeksInterval 4 -At $ST_StartTime  -RandomDelay 01:00:00
+
+    #IGNORING 2nd run date now, can retrigger remotely eventually..
+    #$SecondRunDate = (Get-Date -Day 14).AddHours($ST_StartTimeHours)
+    #$SecondRun = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $ST_DayOfWeek -At $SecondRunDate -RandomDelay 01:00:00
+
+    # Validate if task exists and settings match
+    $taskRequiresUpdate = $false
+    $existingTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    if ($existingTask) {
+        Write-Verbose "Task found, checking actions and triggers.."
+        # Check if the action and triggers match expected settings
+        $existingEnabled = ($exitingTask.State -eq "Enabled") 
+        $existingAction = $existingTask.Actions | Where-Object {$_.Execute -eq "powershell.exe" -and $_.Arguments -eq $taskAction}
+        $existingTriggers = $existingTask.Triggers | Where-Object {($_.DaysOfWeek -eq $ST_DayOfWeek) -and ($_.At -eq $ST_StartTime)}
+        Write-Verbose "ExistingAction: $existingAction"
+        Write-Verbose "ExistingTriggers: ($($existingTriggers.Count)): DaysOfWeek: $(($existingTriggers).DaysOfWeek) At: $(($existingTriggers).At) Startboundary: $(($existingTriggers).StartBoundary)"
+        Write-Verbose "ActualTriggers: $(($existingTask.Triggers | select *))"
+
+        if (-not $existingEnabled -or -not $existingAction -or $existingTriggers.Count -ne 1) {   # Fix eventually for 2nd run?
+            Write-Verbose "No task found, task will be added."
+            $taskRequiresUpdate = $true
+        }
+    } else {
+      Write-Verbose "ExistingTask: $existingTask"
+      $taskRequiresUpdate = $true
+    }
+
+    # If the task doesn't exist or needs an update, create/update it
+    if ($taskRequiresUpdate) {
+        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+        try {
+          $null = Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $FirstRun -RunLevel Highest -User "SYSTEM" -Settings $taskSettings | Out-Null  # ... Add $SecondRun
+        } catch {
+          Write-Host "[!] Error with Register-ScheduledTask:  $_"
+        }
+        Write-Host "[+] Scheduled task '$taskName' has been created or updated." -ForegroundColor Green
+    } else {
+        Write-Host "[+] Scheduled task '$taskName' is already configured correctly."  -ForegroundColor Green
+    }
+  } else {
+    Write-Host "[+] Scheduled task will not be created on $($ComputerName), per _config.ps1"  -ForegroundColor Yellow
+  }
+}
+
+###################################################################### API Related Calls ##################
+
+function API-StoreKey {
+  param (
+    [string]$APIKey
+  )
+  $configfile = "_config.ps1"
+  $APIKeyFound = Find-ConfigFileLine '$APIKey = *'
+  if (!($APIKeyFound)) {
+    # Add $APIKey= line to config file
+    SetConfigFileLine -ConfigOldLine "" -ConfigNewLine $APIKeyLine
+  } else {
+    SetConfigFileLine -ConfigOldLine "$APIKey " -ConfigNewLine $APIKeyLine
+  }
+}
+
+Function API-Call {
+  param (
+    [string]$APIRoute, 
+    [string]$UniqueID, 
+    [string]$APIKey, 
+    [string]$Method = "POST",
+    [string]$Useragent = $MQRAUserAgent,
+    [string]$FixData = "n/a"
+  )
+  
+  $url = "$($apiBaseUrl)$($APIRoute)"   # $APIRoute should have initial /
+  
+  $headers = @{
+      'Content-Type' = 'application/json'
+      'Authorization' = "Bearer $APIkey"
+  }
+  if ($FixData -ne "n/a") {
+    $body = @{ 
+        unique_id = $uniqueID
+        fix_data = $FixData
+    } | ConvertTo-Json
+  } else {
+    $body = @{
+      unique_id = $uniqueID
+    } | ConvertTo-Json
+  }
+  try {
+    $Resp = Invoke-RestMethod -Uri $url -UserAgent $UserAgent -Method $Method -Headers $headers -Body $body  
+    Write-Host "[API] API-Call StatusCode:" $_.Exception.Response.StatusCode.value__  -ForegroundColor Green
+  } catch {
+    Write-Host "[API] API-Call Error: StatusCode:" $_.Exception.Response.StatusCode.value__   -ForegroundColor Red
+    Write-Host "[API] API-Call  Error: StatusDescription:" $_.Exception.Response.StatusDescription  -ForegroundColor Red
+  }
+}
+
+
+function API-Checkin {
+  param (
+    [string]$UniqueID,
+    [string]$APIKey
+  )
+  if (!($SkipAPI)) {  
+    $APIRoute = "/api/v1/checkin"
+    $Response = API-Call -APIRoute $APIRoute -UniqueId $UniqueID -APIKey $APIKey
+    if ($Response -eq $UniqueID) {
+      Write-Host "[API] Checkin Succeeded"
+      return $true
+    } else {
+      Write-Host "[API] Checkin Failed"
+      return $false
+    }
+  }
+}
+
+function API-Hello {
+  param ( 
+    [string]$UniqueID
+  )
+  if (!($SkipAPI)) {  
+    $APIRoute = "/api/v1/hello"
+    $APIKey = MD5hash("MQRA-HELLO")
+    $APIKey = API-Call -APIRoute $APIRoute -UniqueId $UniqueID -APIKey $APIKey
+    if ($APIKey.Length -eq 16) {   # Better check here
+      Write-Host "[API] Hello Succeeded. API Key = $APIKey "  -ForegroundColor Green
+      return $APIKey
+    } else {
+      Write-Host "[API] Hello FAILED!" -ForegroundColor Red
+    }
+  }
+}
+
+function API-Fixed {
+  param (
+    [string]$UniqueID,
+    [string]$APIKey,
+    [string]$FixData
+  )
+  if (!($SkipAPI)) {  
+    $APIRoute = "/api/v1/remed"
+    $Response = API-Call -APIRoute $APIRoute -UniqueId $UniqueID -APIKey $APIKey -FixData $FixData
+    if ($Response -eq $UniqueID) {
+      Write-Host "[API] Remed Succeeded"
+      return $true
+    } else {
+      Write-Host "[API] Remed Failed"
+      return $false
+    }
+  } else {
+    
+  }
+}
+
+function API-Checkout {
+  param (
+    [string]$UniqueID,
+    [string]$APIKey
+  )
+  if (!($SkipAPI)) {
+    $APIRoute = "/api/v1/checkout"
+    $Response = API-Call -APIRoute $APIRoute -UniqueId $UniqueID -APIKey $APIKey
+    if ($Response -eq 1) {
+      Write-Host "[API] Checkin Succeeded"
+      return $true
+    } else {
+      Write-Host "[API] Checkin Failed"
+      return $false
+    }
+  } else {
+    Write-Host "[-] Skipping API calls.. SkipAPI=true"
+  }
+}
+
+
+
+
 # All the microsoft office products with their corresponding dword value
 $RemediationValues = @{ "Excel" = "Excel.exe"; "Graph" = "Graph.exe"; "Access" = "MSAccess.exe"; "Publisher" = "MsPub.exe"; "PowerPoint" = "PowerPnt.exe"; "OldPowerPoint" = "PowerPoint.exe" ; "Visio" = "Visio.exe"; "Project" = "WinProj.exe"; "Word" = "WinWord.exe"; "Wordpad" = "Wordpad.exe" }
 
@@ -2222,21 +2477,24 @@ if (Update-QIDLists) {
  . "$($QIDsListFile)" 
  }
 
-# Lets check the Config first for $ServerName, as that is our default..
-if ($ServerName) {
+# Lets check the Config first, Registry 2nd  for $ServerName
+if (!($ServerName)) {
+  $ServerName = Get-RegistryEntry "ServerName"
   if (Test-Connection -ComputerName $ServerName -Count 1 -Delay 1 -Quiet -ErrorAction SilentlyContinue) {
     Write-Output "[.] Checking location \\$($ServerName)\$($CSVLocation) .."
-    if (Get-Item "\\$($ServerName)\$($CSVLocation)\Install-SecurityFixes.ps1") {
+    if (Get-Item "\\$($ServerName)\$($CSVLocation)\Install-SecurityFixes.ps1" -ErrorAction SilentlyContinue) {
       Write-Host "[.] Found \\$($ServerName)\$($CSVLocation)\Install-SecurityFixes.ps1 .. Cleared to proceed." -ForegroundColor Green
       $SecAudPath = "\\$($ServerName)\$($CSVLocation)"
     }
   } else {
     # Lets also check SERVER in case config is wrong?
-    Write-Output "[.] Checking default location \\SERVER\Data\SecAud .."
-    if (Test-Connection -ComputerName "SERVER" -Count 1 -Delay 1 -Quiet -ErrorAction SilentlyContinue) {
-      if (Get-Item "\\SERVER\Data\SecAud\Install-SecurityFixes.ps1" -ErrorAction SilentlyContinue) {
-        $ServerName = "SERVER"
+    $ServerName = "SERVER"
+    Write-Output "[.] Checking default location \\$($ServerName)\Data\SecAud .."
+    if (Test-Connection -ComputerName "$($ServerName)R" -Count 1 -Delay 1 -Quiet -ErrorAction SilentlyContinue) {
+      if (Get-Item "\\$($ServerName)\Data\SecAud\Install-SecurityFixes.ps1" -ErrorAction SilentlyContinue) {
+        $ServerName = "$($ServerName)"
         $CSVLocation = "Data\SecAud"
+        $script:ServerShare = "$($ServerName)\$($CSVLocation)"
         $SecAudPath = "\\$($ServerName)\$($CSVLocation)"
         Write-Host "[.] Found \\$($SecAudPath)\Install-SecurityFixes.ps1 .. Cleared to proceed." -ForegroundColor Green
       }
@@ -2244,18 +2502,21 @@ if ($ServerName) {
   }
 } else {  # Can't ping $ServerName, lets see if there is a good location, or localhost?
   if (-not $script:Automated) {
-    $ServerName = Read-Host "[!] Couldn't ping SERVER or '$($ServerName)' .. please enter the server name (or UNC path) where we can find the .CSV file, or press enter to read it out of the current folder: "
+    $ServerName = Read-Host "[!] Couldn't ping SERVER or '$($ServerName)' .. please enter the full path (or UNC path) where we can find the .CSV file, or press enter to read it out of the current folder: "
     if ($ServerName -eq "") { 
       Write-Verbose "No input found"
       $ServerName = "$($env:computername)"
-      #$SecAudPath = "\\$($ServerName)\c$\temp\secaud"  # Change this?
-      $SecAudPath = "c:\temp\secaud"  # for now..
+      Set-RegistryEntry "ServerName" -Value $ServerName
+      
+      $SecAudPath = "."  # for now?.. ###########################################################################
+      $ServerName = $SecAudPath
+
+      $script:ServerShare = $SecAudPath  # Where logs are copied to
       if (!(Test-Path $SecAudPath)) {
-        New-Item -ItemType Directory -Path $SecAudPath
+        $null = New-Item -ItemType Directory -Path $SecAudPath | Out-Null
       }
     } else {
       $SecAudPath = $null
-
       # Determine if the input is a UNC path or a hostname
       if ($ServerName -like "\\*") {
           # It's a UNC path, search for the file
@@ -2263,17 +2524,19 @@ if ($ServerName) {
           Write-Verbose "UNC path detected - $path"
       } elseif ($ServerName -ne "") {
           # It's a hostname, construct the UNC path
-          $path = "\\$ServerName\data\secaud"
+          $path = "\\$($ServerName)\data\secaud"
+          $script:ServerShare = $path
           Write-Verbose "Servername found, using - $path"
       } else {
           # No input provided, use the current directory .. shouldnt get here due to logic above
           $path = "."
+          $ServerName = "."
           Write-Verbose "No input provided, using - $path"
       }
 
       Write-Host "[.] Searching for files modified within the last 30 days that match the pattern '*_Internal_*.csv' in path - $path"
       $dateLimit = (Get-Date).AddDays(-30)
-      $files = Get-ChildItem -Path $path -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt $dateLimit }
+      $files = Get-ChildItem -Path $path -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt $dateLimit } | Sort-Object $_.LastWriteTime -Descending
 
       if ($files.Count -gt 0) {
           # Use the full path of the first found file
@@ -2292,6 +2555,8 @@ if ($ServerName) {
             $files
           }
           Write-Host "[!] ERROR: Can't find a CSV to use, or the servername to check.." -ForegroundColor Red
+          Write-Verbose "Creating Log: Application Source: Type: Error ID: 2500 - CSV not found"
+          Write-Event  Application Source: Type: Error ID: 2500 - CSV not found"
           exit
       }
     }
@@ -2300,6 +2565,7 @@ if ($ServerName) {
     exit
   }
 }
+Set-RegistryEntry "ServerName" -Value $ServerName # This should be legit or we don't get out of the above, without a CSV.
 
 if (!$OnlyQIDs) {   # If we are not just trying a fix for one CSV, we will also see if we can install the Dell BIOS provider and set WOL to on, and backup Bitlocker keys to AD if possible
   if ([int](Get-OSType) -eq 1) {
@@ -2312,6 +2578,7 @@ if (!$OnlyQIDs) {   # If we are not just trying a fix for one CSV, we will also 
   Backup-BitlockerKeys # Try to Backup Bitlocker recovery keys to AD
 }
 $OSVersionInfo = Get-OSVersionInfo
+
 ################# ( READ IN CSV AND PROCESS ) #####################
 
 if (!(Test-Path $($tmp))) {
@@ -2342,15 +2609,19 @@ if (!($CSVFile -like "*.csv")) {  # Check for command line param -CSVFile
   }
 }
 
+########### Scheduled task check:
+
+if ($AddScheduledTask) { Check-ScheduledTask -ServerName $ServerName }
+
 # READ CSV
-  if (!(Test-Path $CSVFilename)) {  # Split path from file if it doesn't exist
-    if (!(Test-Path "$($oldpwd)\$(Split-Path $CSVFilename -leaf)")) {
-      Write-Host "[!] Error: Couldn't locate $CSVFilename or $($oldpwd)\$(Split-Path $CSVFilename -leaf) in $($oldpwd) !" -ForegroundColor Red
-      exit
-    } else {
-      $CSVFilename = Split-Path $CSVFilename -leaf
-    }
+if (!(Test-Path $CSVFilename)) {  # Split path from file if it doesn't exist
+  if (!(Test-Path "$($oldpwd)\$(Split-Path $CSVFilename -leaf)")) {
+    Write-Host "[!] Error: Couldn't locate $CSVFilename or $($oldpwd)\$(Split-Path $CSVFilename -leaf) in $($oldpwd) !" -ForegroundColor Red
+    exit
+  } else {
+    $CSVFilename = Split-Path $CSVFilename -leaf
   }
+}
 if ($null -eq $CSVFilename) {
   Write-Host "[X] Couldn't find CSV file : $CSVFilename " -ForegroundColor Red
   Exit
@@ -2364,7 +2635,7 @@ if ($null -eq $CSVFilename) {
     
     Write-Verbose "Finding delimeter for $CSVFullPath"
     $delimiter = Find-Delimiter $CSVFullPath
-    Write-Host "[.] Importing data from $CSVFullPath" -ForegroundColor Yellow
+    Write-Host "`n[.] Importing data from $CSVFullPath" -ForegroundColor Yellow
     $CSVData = Import-CSV $CSVFullPath -Delimiter $delimiter | Sort-Object "Vulnerability Description"
   } catch {
     Write-Host "[X] Couldn't open CSV file : $CSVFullPath " -ForegroundColor Red
@@ -2379,6 +2650,24 @@ if ($null -eq $CSVFilename) {
   }
 }
 
+# We've found CSV file, now perform API Related calls, checkin, and/or hello as needed
+$UniqueID = Get-UniqueID -csvPath $CSVFullPath
+Write-Host "[API] Using UniqueID: $UniqueID" -ForegroundColor White
+Write-Host "[API] Using API Key: $APIKey" -ForegroundColor White
+$Checkin = (API-Checkin -UniqueID $UniqueID -APIKey $APIKey) 
+if (!$Checkin) {
+  Write-Host "[API] Checkin failed! Sending Hello for UniqueID: $UniqueID" -ForegroundColor Yellow
+  $APIKey = API-Hello -UniqueID $UniqueID
+  if (!($APIKey.Length -eq 16)) { 
+    Write-Host "[API] Checkin failed and HELLO failed!! UniqueID: $UniqueID" -ForegroundColor Red
+    # If logging failed here, lets still write to eventlog and maybe we can catch up with it later
+    $LogToEventLog = $true
+  } else {
+    Write-Host "[API] Hello complete. API Key returned: $APIKey" -ForegroundColor Green
+  }
+} else {
+  Write-Host "[API] Checkin complete!" -ForegroundColor Green
+}
 ######## Find if there are any new vulnerabilities not listed ########
 
 $Rows = @()
@@ -2511,9 +2800,14 @@ if ($Rows.Count -lt 1) {
   Write-Host "[?] Maybe you meant to pick from a different file? "
   Write-Host $Filenames
   Exit
-}
-# $Rows
+} else {
+  # Report check-in to MQRA cloud
 
+}
+# I can assume we have a good servername, or . if it is localhost..
+if (Get-RegistryEntry -Name "ServerName" -eq "0") {
+  Set-RegistryEntry -Name "ServerName" -Value "$ServerName"
+}
 # FIND QIDS FROM THESE ROWS
 $QIDs = @()
 $QIDsVerbose = @()
@@ -3552,6 +3846,7 @@ foreach ($CurrentQID in $QIDs) {
           New-ItemProperty -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config" -Name "EnableCertPaddingCheck" -Value "1" -PropertyType "String" -Force | Out-Null    
           Write-Output "[!] Done!"
         }
+
       }
       378936 {
         if (Get-YesNo "$_ Fix Microsoft Windows Curl Multiple Security Vulnerabilities? " -Results $Results -QID $ThisQID) { 
@@ -4483,8 +4778,6 @@ Generic
         #>
 }
 
-
-
 if ($SoftwareInstalling.Length -gt 0) {
   Write-Host "[.] Checking for finished software upgrading: $SoftwareInstalling"
   #
@@ -4498,11 +4791,24 @@ Set-Location $oldpwd
 
 Set-RegistryEntry -Name "ReRun" -Value $false
 
-Stop-Transcript
 if (!($script:Automated)) {
   $null = Read-Host "--- Press enter to exit ---"
+} else {
+  Write-Host "[AUTOMATED REBOOT] Setting reboot for 5 minutes from now, please use shutdown /a to abort!"
+  shutdown /r /f /t 5
 }
-Write-Host "`n"
+Stop-Transcript
+Write-Host "[+] Log written to: $script:LogFile `n"
+$LogPath = "$($script:serverShare)\Logs"
+if (!(Test-Path $LogPath)) {
+  $null = New-Item -ItemType Directory -Path $LogPath | Out-Null
+}
+try {
+  Copy-Item $script:LogFile $LogPath -Force
+  Write-Host "[+] Log copied to: $LogPath `n"
+} catch {
+  Write-Error "[!] Log copy failed! $_"
+}
 
 Exit
 

@@ -43,16 +43,15 @@ function Remove-SubkeysNotInIgnoreList {
 
   # Check if the registry path exists
   if (Test-Path $RegistryPath) {
-      # Get all subkeys
-      $Subkeys = Get-ChildItem -Path $RegistryPath
+    Write-Output "[.] Checking tree: $RegistryPath .."
+    $Subkeys = Get-ChildItem -Path $RegistryPath
       if ($Verbose) { Write-Output "Subkeys: $subkeys" }
       foreach ($Subkey in $Subkeys) {
           if ($IgnoreList -notcontains $Subkey.PSChildName -and $Ignored -notcontains $Subkey.PSChildName) {
-              # Delete the subkey if it's not in the ignore list
               Remove-Item -Path "$RegistryPath\$($Subkey.PSChildName)" -Recurse -Force
-              Write-Output "Deleted: $RegistryPath\$($Subkey.PSChildName)"
+              Write-Output "[-] Deleted: $RegistryPath\$($Subkey.PSChildName)"
           } else {
-              Write-Output "Ignored: $RegistryPath\$($Subkey.PSChildName)"
+              Write-Output "[.] Ignored: $RegistryPath\$($Subkey.PSChildName)"
           }
       }
   } else {
