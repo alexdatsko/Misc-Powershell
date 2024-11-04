@@ -2314,11 +2314,14 @@ function API-StoreKey {
   )
   $configfile = "_config.ps1"
   $APIKeyFound = Find-ConfigFileLine '$APIKey = *'
+  $APIKeyFound = '$APIKey = '+$APIKey
   if (!($APIKeyFound)) {
     # Add $APIKey= line to config file
     SetConfigFileLine -ConfigOldLine "" -ConfigNewLine $APIKeyLine
+    Write-Host "[+] Saved new API Key to _config.ps1." -ForegroundColor Green
   } else {
-    SetConfigFileLine -ConfigOldLine "$APIKey " -ConfigNewLine $APIKeyLine
+    SetConfigFileLine -ConfigOldLine "APIKey =" -ConfigNewLine $APIKeyLine
+    Write-Host "[+] Overwrite API Key in _config.ps1." -ForegroundColor Green
   }
 }
 
@@ -2364,7 +2367,7 @@ function API-Checkin {
     [string]$APIKey
   )
   if (!($SkipAPI)) {  
-    $APIRoute = "/api/v1/checkin"
+    $APIRoute = "/checkin"
     $Response = API-Call -APIRoute $APIRoute -UniqueId $UniqueID -APIKey $APIKey
     if ($Response -eq $UniqueID) {
       Write-Host "[API] Checkin Succeeded"
@@ -2381,7 +2384,7 @@ function API-Hello {
     [string]$UniqueID
   )
   if (!($SkipAPI)) {  
-    $APIRoute = "/api/v1/hello"
+    $APIRoute = "/hello"
     $APIKey = MD5hash("MQRA-HELLO")
     $APIKey = API-Call -APIRoute $APIRoute -UniqueId $UniqueID -APIKey $APIKey
     if ($APIKey.Length -eq 16) {   # Better check here
@@ -2400,7 +2403,7 @@ function API-Fixed {
     [string]$FixData
   )
   if (!($SkipAPI)) {  
-    $APIRoute = "/api/v1/remed"
+    $APIRoute = "/remed"
     $Response = API-Call -APIRoute $APIRoute -UniqueId $UniqueID -APIKey $APIKey -FixData $FixData
     if ($Response -eq $UniqueID) {
       Write-Host "[API] Remed Succeeded"
@@ -2420,7 +2423,7 @@ function API-Checkout {
     [string]$APIKey
   )
   if (!($SkipAPI)) {
-    $APIRoute = "/api/v1/checkout"
+    $APIRoute = "/checkout"
     $Response = API-Call -APIRoute $APIRoute -UniqueId $UniqueID -APIKey $APIKey
     if ($Response -eq 1) {
       Write-Host "[API] Checkin Succeeded"
@@ -2433,7 +2436,6 @@ function API-Checkout {
     Write-Host "[-] Skipping API calls.. SkipAPI=true"
   }
 }
-
 
 
 
