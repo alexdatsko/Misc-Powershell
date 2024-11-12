@@ -14,7 +14,7 @@ param (
   [switch] $PowerOpts = $false,    # This switch will set all Power options on Windows to never fall asleep or hibernate.
   [switch] $AddScheduledTask = $false,       # This switch will install a scheduled task to run the script first thursday of each month and reboot after
   [switch] $AutoUpdateAdobeReader = $false   # Auto update adobe reader, INCLUDING REMOVAL OF OLD PRODUCT WHICH COULD BE LICENSED!!! if this flag is set
-)
+  [string] $LogPath = "C:\Program Files\MQRA\logs"    # Where to copy log files to after.  (Should be overwritten from the config file if existing there.)
 
 $AllHelp = "########################################################
 # Install-SecurityFixes.ps1
@@ -30,11 +30,13 @@ $AllHelp = "########################################################
 .PARAMETER Update
     Updates the script (if an update is available on github) and then exits.
 .PARAMETER SkipAPI
-    If true, the app will not  make any calls to the API
+    If true, the app will not make any calls to the MQRA API
 .PARAMETER CSVFile
     Specifies the path to the CSV file to use.
+.PARAMETER AddScheduledTask
+    This flag will add the Scheduled Task for this script to run every 2 weeks on Thursday evening at 11pm (unless otherwise adjusted) automatically.
 .PARAMETER Automated
-    Indicates whether the script is running in automated mode. Fixes will be applied automatically.
+    In automated mode, all fixes will be applied automatically without keyboard input.  Reboots will be scheduled for 5m after all fixes are applied.
 .PARAMETER AutoUpdateAdobeReader
     This flag will cause Adobe Reader to be automatically REMOVED (including Licensed Versions!) and updated to free Adobe Reader DC newest version
 .PARAMETER NoAuto
@@ -57,10 +59,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.01"
-# New in this version:  Added initial code for API reporting, Scheduled Task addition, some other fixes/cleanup
+$Version = "0.50.04"
+# New in this version:  Copy config to local folder in C:\Program Files\MQRA for API etc, look for config here first, then current folder if not found, updated code to look for CSV in several places, logging updates
 
-$VersionInfo = "v$($Version) - Last modified: 11/01/2024"
+$VersionInfo = "v$($Version) - Last modified: 11/12/2024"
 
 
 # CURRENT BUGS TO FIX:
@@ -78,8 +80,6 @@ if ($Help) {
   exit
 }
 
-
-
 # ----------- Script specific vars:  ---------------
 $apiBaseUrl = "https://mqra.mme-sec.us/api/v1"
 $AgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.67 Safari/537.36"
@@ -88,6 +88,7 @@ $DCUUrl = "https://dl.dell.com/FOLDER11914075M/1/Dell-Command-Update-Application
 $ghostscripturl = "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10031/gs10031w64.exe"
 $AdobeReaderUpdateUrl = "https://rdc.adobe.io/reader/products?lang=mui&site=enterprise&os=Windows%2011&country=US&nativeOs=Windows%2010&api_key=dc-get-adobereader-cdn"
 $MQRAUserAgent = "MQRA v0.50 PS"
+$MQRAdir = "C:\Program Files\MQRA"
 
 $DCUFilename = ($DCUUrl -split "/")[-1]
 $DCUVersion = (($DCUUrl -split "_WIN_")[1] -split "_A0")[0]
@@ -98,8 +99,9 @@ $UpdateBrowserWait = 60                      # Default to 60 seconds for updatin
 $UpdateNiniteWait = 90                       # How long to wait for the Ninite updater to finish and then force-close, default 90 seconds
 $UpdateDellCommandWait = 60                  # How long to wait for Dell Command Update to re-install/update
 $SoftwareInstallWait = 60                    # How long to wait for generic software to finish installing
-$ConfigFile = "$oldpwd\_config.ps1"          # Configuration file 
-$QIDsListFile = "$oldpwd\QIDLists.ps1"       # QID List file 
+$ConfigFile = "C:\Program Files\MQRA\_config.ps1"  # Configuration file 
+$OldConfigFile = "$oldpwd\_config.ps1"  # Configuration file 
+$QIDsListFile = "$mqradir\QIDLists.ps1"       # QID List file 
 $tmp = "$($env:temp)\SecAud"                 # "temp" Temporary folder to save downloaded files to, this will be overwritten when checking config ..
 $LogToEventLog = $true                       # Set this to $false to not log to event viewer Application log, source "MQRA", also picked up in _config.ps1
 $OSVersion = ([environment]::OSVersion.Version).Major
@@ -182,6 +184,25 @@ if (Get-Command winget -ErrorAction SilentlyContinue) {
 }
 
 ####################################################### GENERAL FUNCTIONS #######################################################
+
+
+function Write-Event { 
+  param (
+    [string]$Log = 'Application',
+    [string]$Source = 'MQRA',
+    [string]$Type = 'Information',
+    [string]$Msg
+  )
+
+  if ($LogToEventLog) {
+    if (!( [System.Diagnostics.EventLog]::SourceExists($SourceName) )) {
+        New-EventLog -LogName $LogName -Source $SourceName
+    }
+
+    Write-EventLog -LogName $Log -Source $Source -EntryType $Type -Message $msg
+
+  }
+}
 
 function Init-Script {
   param (
@@ -551,7 +572,7 @@ Function Update-Script {
   # For 0.32 I am assuming $pwd is going to be the correct path
   Write-Host "[.] Checking for updated version of script on github.. Current Version = $($Version)"
   $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/Install-SecurityFixes.ps1"
-  if (Update-ScriptFile -URL $url -FilenameTmp "$($tmp)\Install-SecurityFixes.ps1" -FilenamePerm "$($pwd)\Install-SecurityFixes.ps1" -VersionStr '$Version = *' -VersionToCheck $Version) {
+  if (Update-ScriptFile -URL $url -FilenameTmp "$($tmp)\Install-SecurityFixes.ps1" -FilenamePerm "$($MQRAdir)\Install-SecurityFixes.ps1" -VersionStr '$Version = *' -VersionToCheck $Version) {
     Write-Verbose "Automated: $Automated"
     Write-Verbose "script:Automated: $script:Automated"
     if ($script:Update) { 
@@ -1131,6 +1152,34 @@ function Get-UniqueID {
   $csvData = Import-Csv -Path $csvPath | Where { $_.NetBIOS -eq "$NetBIOS" } | Select -First 1
   $identifierString = "$($csvData.NetBIOS)|$($csvData.'Parent Account Name')|$($csvData.'QG Host ID')"
   return MD5hash($identifierString)
+}
+
+function Copy-ConfigFile {  
+  param (
+    [string]$ConfigFile = "_config.ps1",
+    [string]$NewConfigFile = "C:\Program Files\MQRA\_config.ps1"
+  )
+
+  if (!(Test-Path -Path $NewConfigFile)) {
+    if (!(Test-Path -Path (Split-Path $NewConfigFile -Parent))) {
+      try {
+        New-Item -Itemtype Directory -Path (Split-Path $NewConfigFile -Parent)
+      } catch {
+        Write-Host "[!] Couldn't create folder: $(Split-Path $NewConfigFile -Parent)" -ForegroundColor Red
+      }
+    }
+    Write-Host "[+] Copying config file from: $ConfigFile to: $NewConfigFile" -ForegroundColor Yellow
+    try {
+      $ConfigContents = (Get-Content -path $ConfigFile) | Set-Content -path $NewConfigFile
+      Write-Host "[+] Wrote to: $NewConfigFile" -ForegroundColor Green
+      return $true
+    } catch {
+      Write-Host "[!] Couldn't set contents: $NewConfigFile" -ForegroundColor Red
+      return $false
+    }
+  } else {
+    Write-Host "[+] [Copy-ConfigFile] $NewConfigFile already exists, nothing to do." -ForegroundColor Green
+  }
 }
 
 function Find-ConfigFileLine {  # CONTEXT Search, a match needs to be found but NOT need to be exact line, i.e '$QIDsFlash = 1,2,3,4' returns true if '#$QIDsFlash = 1,2,3,4,9999,12345' is found
@@ -2240,12 +2289,12 @@ function Check-ScheduledTask {
   if ($ST_IgnoreComputers -notcontains $ComputerName -and ((Get-OSType) -eq 1)) {  # Workstation OS only! No servers, and make sure its not on a skip list
     # Task properties
     $taskName = "MME - MQRA - Install-SecurityFixes.ps1 -Automated"
+    $taskPath = "c:\windows\system32\windowspowershell\v1.0\powershell.exe"
     if ($Serverhostname = ".") { # catch non-domain systems
-      $taskPath = "c:\temp\data\secaud\Install-SecurityFixes.ps1"
-      $taskAction = "-exec bypass -noninteractive -c 'sl c:\temp\data\secaud; .\Install-SecurityFixes.ps1 -Automated'"
+      $taskAction = "-exec bypass -noninteractive -c 'sl c:\Program Files\MQRA; .\Install-SecurityFixes.ps1 -Automated'"
     } else {
-      $taskPath = "\\$($Serverhostname)\data\secaud\Install-SecurityFixes.ps1"
-      $taskAction = "-exec bypass -noninteractive -c 'sl $($Serverhostname)\data\secaud; .\Install-SecurityFixes.ps1 -Automated'"
+      
+      $taskAction = "-exec bypass -noninteractive -c 'sl c:\Program Files\MQRA; .\Install-SecurityFixes.ps1 -Automated'"
     }
     $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument $taskAction 
     $taskSettings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 1) -WakeToRun
@@ -2308,11 +2357,24 @@ function Check-ScheduledTask {
 
 ###################################################################### API Related Calls ##################
 
+############ This is only here temporarily
+function MD5hash {
+  param
+    ( 
+      [string]$input
+    )
+    return [System.BitConverter]::ToString((New-Object Security.Cryptography.MD5CryptoServiceProvider).ComputeHash([Text.Encoding]::UTF8.GetBytes($input))).Replace("-", "").ToLower()
+}
+############
+
 function API-StoreKey {
   param (
     [string]$APIKey
   )
-  $configfile = "_config.ps1"
+  $configfile = "C:\Program Files\MQRA\_config.ps1"
+  if (!(Test-Path $configfile)) {
+    Copy-ConfigFile
+  }
   $APIKeyFound = Find-ConfigFileLine '$APIKey = *'
   $APIKeyFound = '$APIKey = '+$APIKey
   if (!($APIKeyFound)) {
@@ -2437,6 +2499,27 @@ function API-Checkout {
   }
 }
 
+function API-SendLogs {
+  param (
+    [string]$UniqueID,
+    [string]$APIKey,
+    [string]$LogFile
+  )
+  if (!($SkipAPI)) {
+    $APIRoute = "/sendlogs"
+    $Logs = Get-Content $LogFile
+    $Response = API-Call -APIRoute $APIRoute -UniqueId $UniqueID -APIKey $APIKey -Logs $Logs
+    if ($Response -eq 1) {
+      Write-Host "[API] Checkin Succeeded"
+      return $true
+    } else {
+      Write-Host "[API] Checkin Failed"
+      return $false
+    }
+  } else {
+    Write-Host "[-] Skipping API calls.. SkipAPI=true"
+  }
+}
 
 
 # All the microsoft office products with their corresponding dword value
@@ -2470,6 +2553,11 @@ if (([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDat
 }
 
 # These variables should be referenced globally:
+if (!(Test-Path $ConfigFile)) {
+  Copy-ConfigFile
+}
+$ServerName=""
+Write-Verbose "Loading config from $ConfigFile"
 . "$($ConfigFile)"
 . "$($QIDsListFile)"
 
@@ -2479,20 +2567,25 @@ if (Update-QIDLists) {
  . "$($QIDsListFile)" 
  }
 
-# Lets check the Config first, Registry 2nd  for $ServerName
+# Lets check the Cofnig 1st, Registry 2nd, default hostnames 3rd for a place with our CSV file shared in \\$serverName\Data\SecAud
+#Config should have already loaded $ServerName
+Write-Verbose "Found ServerName $ServerName"
 if (!($ServerName)) {
   $ServerName = Get-RegistryEntry "ServerName"
-  if (Test-Connection -ComputerName $ServerName -Count 1 -Delay 1 -Quiet -ErrorAction SilentlyContinue) {
-    Write-Output "[.] Checking location \\$($ServerName)\$($CSVLocation) .."
-    if (Get-Item "\\$($ServerName)\$($CSVLocation)\Install-SecurityFixes.ps1" -ErrorAction SilentlyContinue) {
-      Write-Host "[.] Found \\$($ServerName)\$($CSVLocation)\Install-SecurityFixes.ps1 .. Cleared to proceed." -ForegroundColor Green
-      $SecAudPath = "\\$($ServerName)\$($CSVLocation)"
-    }
-  } else {
-    # Lets also check SERVER in case config is wrong?
-    $ServerName = "SERVER"
-    Write-Output "[.] Checking default location \\$($ServerName)\Data\SecAud .."
-    if (Test-Connection -ComputerName "$($ServerName)R" -Count 1 -Delay 1 -Quiet -ErrorAction SilentlyContinue) {
+}
+if (Test-Connection -ComputerName $ServerName -Count 1 -Delay 1 -Quiet -ErrorAction SilentlyContinue) {
+  Write-Output "[.] Checking location \\$($ServerName)\$($CSVLocation) .."
+  if (Get-Item "\\$($ServerName)\$($CSVLocation)\Install-SecurityFixes.ps1" -ErrorAction SilentlyContinue) {
+    Write-Host "[.] Found \\$($ServerName)\$($CSVLocation)\Install-SecurityFixes.ps1 .. Cleared to proceed." -ForegroundColor Green
+    $SecAudPath = "\\$($ServerName)\$($CSVLocation)"
+  }
+} else {
+  # Lets also check SERVER, DC-SERVER, localhost in case config is wrong?
+  $localhost = ($env:computername)
+  $ServerNames = "SERVER","DC-SERVER",$localhost
+  foreach ($ServerName in $ServerNames) {
+    Write-Output "[.] Checking default locations: \\$($ServerName)\Data\SecAud .."
+    if (Test-Connection -ComputerName "$($ServerName)" -Count 1 -Delay 1 -Quiet -ErrorAction SilentlyContinue) {
       if (Get-Item "\\$($ServerName)\Data\SecAud\Install-SecurityFixes.ps1" -ErrorAction SilentlyContinue) {
         $ServerName = "$($ServerName)"
         $CSVLocation = "Data\SecAud"
@@ -2500,11 +2593,11 @@ if (!($ServerName)) {
         $SecAudPath = "\\$($ServerName)\$($CSVLocation)"
         Write-Host "[.] Found \\$($SecAudPath)\Install-SecurityFixes.ps1 .. Cleared to proceed." -ForegroundColor Green
       }
-    }    
+    } else { Write-Output "[-] No response found, Trying next.." }
   }
 } else {  # Can't ping $ServerName, lets see if there is a good location, or localhost?
   if (-not $script:Automated) {
-    $ServerName = Read-Host "[!] Couldn't ping SERVER or '$($ServerName)' .. please enter the full path (or UNC path) where we can find the .CSV file, or press enter to read it out of the current folder: "
+    $ServerName = Read-Host "[!] Couldn't ping SERVER, DC-SERVER, or '$($ServerName)' .. please enter the full path (or UNC path) where we can find the .CSV file, or press enter to read it out of the current folder: "
     if ($ServerName -eq "") { 
       Write-Verbose "No input found"
       $ServerName = "$($env:computername)"
@@ -2558,7 +2651,7 @@ if (!($ServerName)) {
           }
           Write-Host "[!] ERROR: Can't find a CSV to use, or the servername to check.." -ForegroundColor Red
           Write-Verbose "Creating Log: Application Source: Type: Error ID: 2500 - CSV not found"
-          Write-Event  Application Source: Type: Error ID: 2500 - CSV not found"
+          Write-Event -type "error" -msg "Error ID: 2500 - CSV not found"
           exit
       }
     }
@@ -2613,7 +2706,7 @@ if (!($CSVFile -like "*.csv")) {  # Check for command line param -CSVFile
 
 ########### Scheduled task check:
 
-if ($AddScheduledTask) { Check-ScheduledTask -ServerName $ServerName }
+if ($AddScheduledTask) { Check-ScheduledTask -ServerName $ServerName ; Exit }
 
 # READ CSV
 if (!(Test-Path $CSVFilename)) {  # Split path from file if it doesn't exist
@@ -4800,10 +4893,26 @@ if (!($script:Automated)) {
   shutdown /r /f /t 5
 }
 Stop-Transcript
-Write-Host "[+] Log written to: $script:LogFile `n"
-$LogPath = "$($script:serverShare)\Logs"
+Write-Host "[+] Log written to: $script:LogFile , copying to $LogPath `n"
 if (!(Test-Path $LogPath)) {
-  $null = New-Item -ItemType Directory -Path $LogPath | Out-Null
+
+  <#
+  New-Item : The path is not of a legal form.
+At \\dc-server\data\SecAud\Install-SecurityFixes.ps1:4875 char:11
++   $null = New-Item -ItemType Directory -Path $LogPath | Out-Null
++           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidArgument: (Logs:String) [New-Item], ArgumentException
+    + FullyQualifiedErrorId : CreateDirectoryArgumentError,Microsoft.PowerShell.Commands.NewItemCommand
+
+Copy-Item : Cannot find path '\\C:\Users\ADMINI~1.EMS\AppData\Local\Temp\SecAud\SecAud\_Install-SecurityFixes_2024-11-11 09:07:07.log' because it does not exist.
+At \\dc-server\data\SecAud\Install-SecurityFixes.ps1:4878 char:3
++   Copy-Item $script:LogFile $LogPath -Force
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (\\C:\Users\ADMI...11 09:07:07.log:String) [Copy-Item], ItemNotFoundException
+    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.CopyItemCommand
+
+    #>
+    $null = New-Item -ItemType Directory -Path $LogPath | Out-Null
 }
 try {
   Copy-Item $script:LogFile $LogPath -Force
@@ -4811,7 +4920,8 @@ try {
 } catch {
   Write-Error "[!] Log copy failed! $_"
 }
-
+API-SendLogs -LogFile $script:LogFile
+API-Checkout
 Exit
 
 

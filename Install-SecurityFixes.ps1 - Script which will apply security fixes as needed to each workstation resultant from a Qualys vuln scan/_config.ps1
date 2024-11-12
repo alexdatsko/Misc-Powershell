@@ -18,4 +18,7 @@ $ST_StartTime = Get-Date -Format "23:00:00"      # 11pm
 $ST_DayOfWeek = 4                                # Thursday
 $ST_IgnoreComputers = @("SERVER")                # Comptuers to NOT run a scheduled task with -automated
 
+#### MQRA API related
+$API_key = ""
+
 Write-Output "[+] Done Loading Configuration items."
