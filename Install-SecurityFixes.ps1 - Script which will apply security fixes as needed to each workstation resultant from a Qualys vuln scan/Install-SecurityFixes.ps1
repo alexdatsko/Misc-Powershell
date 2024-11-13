@@ -61,8 +61,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.04"
-# New in this version:  Copy config to local folder in C:\Program Files\MQRA for API etc, look for config here first, then current folder if not found, updated code to look for CSV in several places, logging updates
+$Version = "0.50.05"
+# New in this version:  Small fixes, move base operations to C:\Program Files\MQRA\
 
 $VersionInfo = "v$($Version) - Last modified: 11/12/2024"
 
@@ -193,6 +193,7 @@ function Write-Event {
     [string]$Log = 'Application',
     [string]$Source = 'MQRA',
     [string]$Type = 'Information',
+    [int]$EventID = 2500
     [string]$Msg
   )
 
@@ -201,7 +202,7 @@ function Write-Event {
         New-EventLog -LogName $LogName -Source $SourceName
     }
 
-    Write-EventLog -LogName $Log -Source $Source -EntryType $Type -Message $msg
+    Write-EventLog -LogName $Log -Source $Source -EntryType $Type -EventId $eventID -Message $msg
 
   }
 }
@@ -259,7 +260,7 @@ function Init-Script {
       Write-Warning "$env:tmp is not writable. Using $TmpPath instead."
       if (-not (Test-Path $TmpPath)) {
           try {
-              New-Item -ItemType Directory -Path $TmpPath -Force | Out-Null
+              $null = New-Item -ItemType Directory -Path $TmpPath -Force | Out-Null
               Write-Host "Failed! Created $TmpPath folder."
           } catch {
               throw "Failed to create $TmpPath folder. Error: $($_.Exception.Message)"
@@ -325,7 +326,7 @@ function Create-IfNotExists {
     [string]$directory
   )
   if (!(Test-Path $directory)) {
-    New-Item -ItemType 
+    $null = New-Item -ItemType directory -Path $directory -Force | Out-Null
   }
 }
 
@@ -2542,6 +2543,7 @@ $RemediationValues = @{ "Excel" = "Excel.exe"; "Graph" = "Graph.exe"; "Access" =
 ################################################################################################################## MAIN ############################################################################################################
 
 Init-Script -Automated $Automated
+Write-Event -type "information" -eventid 100 -msg "Script starting"
 
 $hostname = $env:COMPUTERNAME
 $datetime = Get-Date -Format "yyyy-MM-dd HH:mm:ss K"
@@ -2668,7 +2670,7 @@ if (Get-Item "C:\Program Files\MQRA\Install-SecurityFixes.ps1" -ErrorAction Sile
           }
           Write-Host "[!] ERROR: Can't find a CSV to use, or the servername to check.." -ForegroundColor Red
           Write-Verbose "Creating Log: Application Source: Type: Error ID: 2500 - CSV not found"
-          Write-Event -type "error" -msg "Error ID: 2500 - CSV not found"
+          Write-Event -type "error" -eventid 2500 -msg "Error - CSV not found"
           exit
       }
     }
@@ -4939,6 +4941,8 @@ try {
 }
 API-SendLogs -LogFile $script:LogFile
 API-Checkout
+
+Write-Event -type "information" -eventid 101 -msg "Script ended"
 Exit
 
 
