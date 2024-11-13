@@ -193,7 +193,7 @@ function Write-Event {
     [string]$Log = 'Application',
     [string]$Source = 'MQRA',
     [string]$Type = 'Information',
-    [int]$EventID = 2500
+    [int]$EventID = 2500,
     [string]$Msg
   )
 
@@ -201,9 +201,7 @@ function Write-Event {
     if (!( [System.Diagnostics.EventLog]::SourceExists($SourceName) )) {
         New-EventLog -LogName $LogName -Source $SourceName
     }
-
     Write-EventLog -LogName $Log -Source $Source -EntryType $Type -EventId $eventID -Message $msg
-
   }
 }
 
