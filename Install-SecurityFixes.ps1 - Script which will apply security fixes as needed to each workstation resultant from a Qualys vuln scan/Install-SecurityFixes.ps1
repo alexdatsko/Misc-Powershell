@@ -13,8 +13,10 @@ param (
   [switch] $Risky = $true,         # Allows for risky behavior like kililng the ninite.exe installer when updating an Application (if Winget is not installed), this should be false for slow machines!
   [switch] $PowerOpts = $false,    # This switch will set all Power options on Windows to never fall asleep or hibernate.
   [switch] $AddScheduledTask = $false,       # This switch will install a scheduled task to run the script first thursday of each month and reboot after
-  [switch] $AutoUpdateAdobeReader = $false   # Auto update adobe reader, INCLUDING REMOVAL OF OLD PRODUCT WHICH COULD BE LICENSED!!! if this flag is set
+  [switch] $AutoUpdateAdobeReader = $false,  # Auto update adobe reader, INCLUDING REMOVAL OF OLD PRODUCT WHICH COULD BE LICENSED!!! if this flag is set
   [string] $LogPath = "C:\Program Files\MQRA\logs"    # Where to copy log files to after.  (Should be overwritten from the config file if existing there.)
+)
+ 
 
 $AllHelp = "########################################################
 # Install-SecurityFixes.ps1
@@ -318,6 +320,15 @@ function Get-YesNo {
   }
 }
 
+function Create-IfNotExists {
+  param (
+    [string]$directory
+  )
+  if (!(Test-Path $directory)) {
+    New-Item -ItemType 
+  }
+}
+
 ################################################# SCRIPT FUNCTIONS ###############################################
 
 function Set-RegistryEntry {
@@ -572,6 +583,7 @@ Function Update-Script {
   # For 0.32 I am assuming $pwd is going to be the correct path
   Write-Host "[.] Checking for updated version of script on github.. Current Version = $($Version)"
   $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/Install-SecurityFixes.ps1"
+  Create-IfNotExists $MQRADir
   if (Update-ScriptFile -URL $url -FilenameTmp "$($tmp)\Install-SecurityFixes.ps1" -FilenamePerm "$($MQRAdir)\Install-SecurityFixes.ps1" -VersionStr '$Version = *' -VersionToCheck $Version) {
     Write-Verbose "Automated: $Automated"
     Write-Verbose "script:Automated: $script:Automated"
@@ -587,7 +599,7 @@ Function Update-Script {
         Write-Verbose "Script was run as automated, setting ReRun reg entry to true."
         Set-RegistryEntry -Name "ReRun" -Value $true
       }
-      . "$($pwd)\Install-SecurityFixes.ps1" $Vars  # Dot source and run from here once, then exit.
+      . "$($MQRAdir)\Install-SecurityFixes.ps1" $Vars  # Dot source and run from here once, then exit.
       Stop-Transcript
       exit
     }
@@ -602,7 +614,7 @@ Function Update-QIDLists {
   if (!($QIDsVersion)) { $QIDsVersion = "0.01" }   # If its missing, assume its super old.
   Write-Host "[.] Checking for updated QIDLists file on github.. Current Version = $($QIDsVersion)"  # Had to change to Write-Host, Write-Output is being send back to caller
   $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/QIDLists.ps1"
-  if (Update-ScriptFile -URL $url -FilenameTmp "$($tmp)\QIDLists.ps1" -FilenamePerm "$($pwd)\QIDLists.ps1" -VersionStr '$QIDsVersion = *' -VersionToCheck $QIDsVersion) {
+  if (Update-ScriptFile -URL $url -FilenameTmp "$($tmp)\QIDLists.ps1" -FilenamePerm "$($mqradir)\QIDLists.ps1" -VersionStr '$QIDsVersion = *' -VersionToCheck $QIDsVersion) {
     Write-Host "[+] Updates found, reloading QIDLists.ps1 .."
     return $true
     #Read-QIDLists  # Doesn't work in this scope, do it below in global scope
@@ -2573,29 +2585,34 @@ Write-Verbose "Found ServerName $ServerName"
 if (!($ServerName)) {
   $ServerName = Get-RegistryEntry "ServerName"
 }
-if (Test-Connection -ComputerName $ServerName -Count 1 -Delay 1 -Quiet -ErrorAction SilentlyContinue) {
-  Write-Output "[.] Checking location \\$($ServerName)\$($CSVLocation) .."
-  if (Get-Item "\\$($ServerName)\$($CSVLocation)\Install-SecurityFixes.ps1" -ErrorAction SilentlyContinue) {
-    Write-Host "[.] Found \\$($ServerName)\$($CSVLocation)\Install-SecurityFixes.ps1 .. Cleared to proceed." -ForegroundColor Green
-    $SecAudPath = "\\$($ServerName)\$($CSVLocation)"
+if ($Servername -ne "non-domain") {
+  if (Test-Connection -ComputerName $ServerName -Count 1 -Delay 1 -Quiet -ErrorAction SilentlyContinue) {
+    Write-Output "[.] Checking location \\$($ServerName)\$($CSVLocation) .."
+    if (Get-Item "\\$($ServerName)\$($CSVLocation)\Install-SecurityFixes.ps1" -ErrorAction SilentlyContinue) {
+      Write-Host "[.] Found \\$($ServerName)\$($CSVLocation)\Install-SecurityFixes.ps1 .. Cleared to proceed." -ForegroundColor Green
+      $SecAudPath = "\\$($ServerName)\$($CSVLocation)"
+    }
+  } else {
+    # Lets also check SERVER, DC-SERVER, localhost in case config is wrong?
+    $ServerNames = "SERVER","DC-SERVER",($env:computername)
+    foreach ($ServerName in $ServerNames) {
+      Write-Output "[.] Checking default locations: \\$($ServerName)\Data\SecAud .."
+      if (Test-Connection -ComputerName "$($ServerName)" -Count 1 -Delay 1 -Quiet -ErrorAction SilentlyContinue) {
+        if (Get-Item "\\$($ServerName)\Data\SecAud\Install-SecurityFixes.ps1" -ErrorAction SilentlyContinue) {
+          $ServerName = "$($ServerName)"
+          $CSVLocation = "Data\SecAud"
+          $script:ServerShare = "$($ServerName)\$($CSVLocation)"
+          $SecAudPath = "\\$($ServerName)\$($CSVLocation)"
+          Write-Host "[.] Found \\$($SecAudPath)\Install-SecurityFixes.ps1 .. Cleared to proceed." -ForegroundColor Green
+        }
+      } else { Write-Output "[-] No response found, Trying next.." }
+    }
   }
-} else {
-  # Lets also check SERVER, DC-SERVER, localhost in case config is wrong?
-  $localhost = ($env:computername)
-  $ServerNames = "SERVER","DC-SERVER",$localhost
-  foreach ($ServerName in $ServerNames) {
-    Write-Output "[.] Checking default locations: \\$($ServerName)\Data\SecAud .."
-    if (Test-Connection -ComputerName "$($ServerName)" -Count 1 -Delay 1 -Quiet -ErrorAction SilentlyContinue) {
-      if (Get-Item "\\$($ServerName)\Data\SecAud\Install-SecurityFixes.ps1" -ErrorAction SilentlyContinue) {
-        $ServerName = "$($ServerName)"
-        $CSVLocation = "Data\SecAud"
-        $script:ServerShare = "$($ServerName)\$($CSVLocation)"
-        $SecAudPath = "\\$($ServerName)\$($CSVLocation)"
-        Write-Host "[.] Found \\$($SecAudPath)\Install-SecurityFixes.ps1 .. Cleared to proceed." -ForegroundColor Green
-      }
-    } else { Write-Output "[-] No response found, Trying next.." }
-  }
-} else {  # Can't ping $ServerName, lets see if there is a good location, or localhost?
+}
+if (Get-Item "C:\Program Files\MQRA\Install-SecurityFixes.ps1" -ErrorAction SilentlyContinue) {  # we will be keeping the qualys scans here from now on, and deleting them when not in use..
+  $oldpwd = "C:\Program Files\MQRA"
+  $servername = "non-domain"
+}  else {  # Can't ping $ServerName, lets see if there is a good location, or localhost?
   if (-not $script:Automated) {
     $ServerName = Read-Host "[!] Couldn't ping SERVER, DC-SERVER, or '$($ServerName)' .. please enter the full path (or UNC path) where we can find the .CSV file, or press enter to read it out of the current folder: "
     if ($ServerName -eq "") { 
