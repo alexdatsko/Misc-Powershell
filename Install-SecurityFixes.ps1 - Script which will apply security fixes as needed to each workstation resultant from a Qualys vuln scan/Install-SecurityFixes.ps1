@@ -61,8 +61,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.08"
-# New in this version:  .NET Core 6.0.36, Teamviewer delete registry if its not installed
+$Version = "0.50.09"
+# New in this version:  More steps in converting to C:\Program Files\MQRA base location
 
 $VersionInfo = "v$($Version) - Last modified: 11/14/2024"
 
@@ -102,9 +102,9 @@ $UpdateBrowserWait = 60                      # Default to 60 seconds for updatin
 $UpdateNiniteWait = 90                       # How long to wait for the Ninite updater to finish and then force-close, default 90 seconds
 $UpdateDellCommandWait = 60                  # How long to wait for Dell Command Update to re-install/update
 $SoftwareInstallWait = 60                    # How long to wait for generic software to finish installing
-$ConfigFile = "C:\Program Files\MQRA\_config.ps1"  # Configuration file 
-$OldConfigFile = "$oldpwd\_config.ps1"  # Configuration file 
-$QIDsListFile = "$mqradir\QIDLists.ps1"       # QID List file 
+$OldConfigFile = "$oldpwd\_config.ps1"       # OLD Configuration file 
+$ConfigFile = "$($mqradir)\_config.ps1"      # New Configuration file location
+$QIDsListFile = "$($mqradir)\QIDLists.ps1"   # QID List file location
 $tmp = "$($env:temp)\SecAud"                 # "temp" Temporary folder to save downloaded files to, this will be overwritten when checking config ..
 $LogToEventLog = $true                       # Set this to $false to not log to event viewer Application log, source "MQRA", also picked up in _config.ps1
 $OSVersion = ([environment]::OSVersion.Version).Major
@@ -2413,70 +2413,56 @@ if (Update-QIDLists) {
  . "$($QIDsListFile)" 
  }
 
+ $MQRAPath = "C:\Program Files\MQRA"
+ if (!(Test-Path $MQRAPath)) {
+  Create-IfNotExists $MQRAPath
+  $null = Copy-Item "Install-SecurityFixes.ps1" -Destination $MQRAPath -Force -ErrorAction SilentlyContinue | Out-null
+  $null = Copy-Item "QIDList.ps1" -Destination $MQRAPath -Force -ErrorAction SilentlyContinue | Out-null
+  $null = Copy-Item "_config.ps1" -Destination $MQRAPath -Force -ErrorAction SilentlyContinue | Out-null
+  $null = Copy-Item "*.csv" -Destination $MQRAPath -Force -ErrorAction SilentlyContinue | Out-null
+ }
+
 # Lets check the Cofnig 1st, Registry 2nd, default hostnames 3rd for a place with our CSV file shared in \\$serverName\Data\SecAud
 #Config should have already loaded $ServerName
 Write-Verbose "Found ServerName $ServerName"
 if (!($ServerName)) {
-  $ServerName = Get-RegistryEntry "ServerName"
+  $ServerName = Get-RegistryEntry -Name "ServerName"
 }
-if ($Servername -ne "non-domain") {
-  if (Test-Connection -ComputerName $ServerName -Count 1 -Delay 1 -Quiet -ErrorAction SilentlyContinue) {
-    Write-Output "[.] Checking location \\$($ServerName)\$($CSVLocation) .."
-    if (Get-Item "\\$($ServerName)\$($CSVLocation)\Install-SecurityFixes.ps1" -ErrorAction SilentlyContinue) {
-      Write-Host "[.] Found \\$($ServerName)\$($CSVLocation)\Install-SecurityFixes.ps1 .. Cleared to proceed." -ForegroundColor Green
-      $SecAudPath = "\\$($ServerName)\$($CSVLocation)"
-    }
-  } else {
-    # Lets also check SERVER, DC-SERVER, localhost in case config is wrong?
-    $ServerNames = "SERVER","DC-SERVER",($env:computername)
-    foreach ($ServerName in $ServerNames) {
-      Write-Output "[.] Checking default locations: \\$($ServerName)\Data\SecAud .."
-      if (Test-Connection -ComputerName "$($ServerName)" -Count 1 -Delay 1 -Quiet -ErrorAction SilentlyContinue) {
-        if (Get-Item "\\$($ServerName)\Data\SecAud\Install-SecurityFixes.ps1" -ErrorAction SilentlyContinue) {
-          $ServerName = "$($ServerName)"
-          $CSVLocation = "Data\SecAud"
-          $script:ServerShare = "$($ServerName)\$($CSVLocation)"
-          $SecAudPath = "\\$($ServerName)\$($CSVLocation)"
-          Write-Host "[.] Found \\$($SecAudPath)\Install-SecurityFixes.ps1 .. Cleared to proceed." -ForegroundColor Green
-        }
-      } else { Write-Output "[-] No response found, Trying next.." }
-    }
-  }
-}
+
 if (!($CSVFile) -and (Get-Item "C:\Program Files\MQRA\Install-SecurityFixes.ps1" -ErrorAction SilentlyContinue)) {  # we will be keeping the qualys scans here from now on, and deleting them when not in use..
   $oldpwd = "C:\Program Files\MQRA"
   $servername = "non-domain"
 } 
-if (-not $script:Automated) {
+if (!($CSVFile)) {
   $script:ServerShare = $SecAudPath  # Where logs are copied to
   if (!(Test-Path $SecAudPath)) {
     $null = New-Item -ItemType Directory -Path $SecAudPath | Out-Null
   }
-}
-Write-Host "[.] Searching for files modified within the last 30 days that match the pattern '*_Internal_*.csv' in path - $SecAudPath"
-$dateLimit = (Get-Date).AddDays(-30)
-$files = Get-ChildItem -Path $SecAudPath -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt $dateLimit } | Sort-Object $_.LastWriteTime -Descending
-
-if ($files.Count -gt 0) {
-  # Use the full path of the first found file
-  $CSVFilename = $files[0].FullName
-  $CSVFile = $CSVFilename  # This needs to be set below as well
-  Write-Host "[+] Latest CSV File found: $CSVFilename" -ForegroundColor Green
-} else {
-  Write-Host "[-] No recent (within 30d) matching CSV files found in [ $path ] "
-  $files = Get-ChildItem -Path $SecAudPath -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue 
-  if ($files) {
-    Write-Host "[-] List of files found MORE THAN 30 days old: " -ForegroundColor Yellow
-    $files
+  Write-Host "[.] Searching for files modified within the last 30 days that match the pattern '*_Internal_*.csv' in path - $SecAudPath"
+  $dateLimit = (Get-Date).AddDays(-30)
+  $files = Get-ChildItem -Path $SecAudPath -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt $dateLimit } | Sort-Object $_.LastWriteTime -Descending
+  
+  if ($files.Count -gt 0) {
+    # Use the full path of the first found file
+    $CSVFilename = $files[0].FullName
+    $CSVFile = $CSVFilename  # This needs to be set below as well
+    Write-Host "[+] Latest CSV File found: $CSVFilename" -ForegroundColor Green
   } else {
-    $files = Get-ChildItem -Path $SecAudPath
-    Write-Host "[-] No matching CSV Files found in $SecAudPath"
-    $files
-  }
-  Write-Host "[!] ERROR: Can't find a CSV to use, or the servername to check.." -ForegroundColor Red
-  Write-Verbose "Creating Log: Application Source: Type: Error ID: 2500 - CSV not found"
-  Write-Event -type "error" -eventid 2500 -msg "Error - CSV not found"
-  exit
+    Write-Host "[-] No recent (within 30d) matching CSV files found in [ $path ] "
+    $files = Get-ChildItem -Path $SecAudPath -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue 
+    if ($files) {
+      Write-Host "[-] List of files found MORE THAN 30 days old: " -ForegroundColor Yellow
+      $files
+    } else {
+      $files = Get-ChildItem -Path $SecAudPath
+      Write-Host "[-] No matching CSV Files found in $SecAudPath"
+      $files
+    }
+    Write-Host "[!] ERROR: Can't find a CSV to use, or the servername to check.." -ForegroundColor Red
+    Write-Verbose "Creating Log: Application Source: Type: Error ID: 2500 - CSV not found"
+    Write-Event -type "error" -eventid 2500 -msg "Error - CSV not found"
+    exit
+  }  
 }
 Set-RegistryEntry -Name "ServerName" -Value $ServerName # This should be legit or we don't get out of the above, without a CSV.
 
@@ -2504,7 +2490,7 @@ if (!(Test-Path $($tmp))) {
   }
 }
 $oldpwd=(Get-Location).Path
-Set-Location "$($tmp)"  # Fix for Cmd.exe cannot be run from a server share..
+Set-Location "$($SecAudPath)\temp"  # Fix for Cmd.exe cannot be run from a server share.. lets run from MQRA folder though now.
 
 ### Find CSV File name. 2024-05- This is dumb using 2 variables, I have added on to this so many times its terribly messy, but works. Ugh. Needs a rewrite/refactor SO badly.
 if (!($CSVFile -like "*.csv")) {  # Check for command line param -CSVFile
@@ -4715,7 +4701,7 @@ if (!($script:Automated)) {
   $null = Read-Host "--- Press enter to exit ---"
 } else {
   Write-Host "[AUTOMATED REBOOT] Setting reboot for 5 minutes from now, please use shutdown /a to abort!"
-  shutdown /r /f /t 5
+  shutdown /r /f /t 300
 }
 Stop-Transcript
 Write-Host "[+] Log written to: $script:LogFile , copying to $LogPath `n"
@@ -4724,13 +4710,13 @@ if (!(Test-Path $LogPath)) {
     Create-IfNotExists $LogPath
 }
 try {
-  Copy-Item $script:LogFile $LogPath -Force
+  Copy-Item -Path $script:LogFile -Destination $LogPath -Force
   Write-Host "[+] Log copied to: $LogPath `n"
 } catch {
   Write-Error "[!] Log copy failed! $_"
 }
-API-SendLogs -LogFile $script:LogFile
-API-Checkout
+#API-SendLogs -LogFile $script:LogFile
+#API-Checkout
 
 Write-Event -type "information" -eventid 101 -msg "Script ended"
 Exit
