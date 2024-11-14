@@ -343,9 +343,12 @@ function Set-RegistryEntry {   # STRINGS ONLY!
         New-Item -Path $Path -Force | Out-Null
     }
     $ValueAsString = $Value.ToString()
-    if ($Name.length -gt 1 -and $ValueString) {
-      Write-Verbose "Set-RegistryEntry: Creating: Set-ItemProperty -Path $Path -Name $Name -Value $ValueAsString"
+    if ($ValueString -eq $Value) {
+      Write-Verbose "Set-RegistryEntry: Creating (value as string): Set-ItemProperty -Path $Path -Name $Name -Value $ValueAsString"
       Set-ItemProperty -Path $Path -Name $Name -Value $ValueAsString
+    } else {
+      Write-Verbose "Set-RegistryEntry: Creating: (value = ?) Set-ItemProperty -Path $Path -Name $Name -Value $Value"
+      Set-ItemProperty -Path $Path -Name $Name -Value $Value
     }
 }
 
@@ -2508,7 +2511,7 @@ if (!($CSVFile) -and (Get-Item "C:\Program Files\MQRA\Install-SecurityFixes.ps1"
     exit
   }
 }
-Set-RegistryEntry "ServerName" -Value $ServerName # This should be legit or we don't get out of the above, without a CSV.
+Set-RegistryEntry -Name "ServerName" -Value $ServerName # This should be legit or we don't get out of the above, without a CSV.
 
 if (!$OnlyQIDs) {   # If we are not just trying a fix for one CSV, we will also see if we can install the Dell BIOS provider and set WOL to on, and backup Bitlocker keys to AD if possible
   if ([int](Get-OSType) -eq 1) {
