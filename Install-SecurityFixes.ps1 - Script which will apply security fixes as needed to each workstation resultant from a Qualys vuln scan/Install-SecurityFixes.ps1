@@ -2448,36 +2448,9 @@ if (!($CSVFile) -and (Get-Item "C:\Program Files\MQRA\Install-SecurityFixes.ps1"
   $servername = "non-domain"
 }  else {  # Can't ping $ServerName, lets see if there is a good location, or localhost?
   if (-not $script:Automated) {
-    $ServerName = Read-Host "[!] Couldn't ping SERVER, DC-SERVER, or '$($ServerName)' .. please enter the full path (or UNC path) where we can find the .CSV file, or press enter to read it out of the current folder: "
-    if ($ServerName -eq "") { 
-      Write-Verbose "No input found"
-      $ServerName = "$($env:computername)"
-      Set-RegistryEntry "ServerName" -Value $ServerName
-      
-      $SecAudPath = "C:\Program Files\MQRA" 
-      $ServerName = $SecAudPath
-
       $script:ServerShare = $SecAudPath  # Where logs are copied to
       if (!(Test-Path $SecAudPath)) {
         $null = New-Item -ItemType Directory -Path $SecAudPath | Out-Null
-      }
-    } else {
-      $SecAudPath = $null
-      # Determine if the input is a UNC path or a hostname
-      if ($ServerName -like "\\*") {
-          # It's a UNC path, search for the file
-          $path = $ServerName
-          Write-Verbose "UNC path detected - $path"
-      } elseif ($ServerName -ne "") {
-          # It's a hostname, construct the UNC path
-          $path = "\\$($ServerName)\data\secaud"
-          $script:ServerShare = $path
-          Write-Verbose "Servername found, using - $path"
-      } else {
-          # No input provided, use the current directory .. shouldnt get here due to logic above
-          $path = "."
-          $ServerName = "."
-          Write-Verbose "No input provided, using - $path"
       }
 
       Write-Host "[.] Searching for files modified within the last 30 days that match the pattern '*_Internal_*.csv' in path - $path"
