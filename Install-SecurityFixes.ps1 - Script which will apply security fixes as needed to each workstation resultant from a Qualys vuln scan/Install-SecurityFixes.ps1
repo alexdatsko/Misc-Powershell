@@ -61,7 +61,7 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.09"
+$Version = "0.50.10"
 # New in this version:  More steps in converting to C:\Program Files\MQRA base location
 
 $VersionInfo = "v$($Version) - Last modified: 11/14/2024"
