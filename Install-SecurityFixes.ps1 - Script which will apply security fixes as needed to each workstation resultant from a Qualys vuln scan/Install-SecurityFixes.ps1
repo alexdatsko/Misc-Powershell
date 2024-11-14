@@ -4620,14 +4620,14 @@ foreach ($CurrentQID in $QIDs) {
         $QIDsMSXMLParser4 = 1
       }
 
-      { $QIDs_dotNET_Core6 } { 
+      $QIDs_dotNET_Core6 { 
         if (Get-YesNo "$_ Install newest .NET Core 6.0.428 update? " -Results $Results -QID $ThisQID) { 
           Write-Host "[.] Downloading installer to $($tmp)\netcore.exe .."
           Invoke-WebRequest -UserAgent $AgentString -Uri $NetCore6NewestUpdate -OutFile "$($tmp)\netcore.exe"
           Write-Host "[.] Running installer: $($tmp)\netcore.exe .."
           Start-Process -Wait "$($tmp)\netcore.exe" -ArgumentList '/install /quiet /norestart'
         }
-        $QIDsMSXMLParser4 = 1
+        $QIDs_dotNET_Core6 = 1
       }
 
     ############################################
