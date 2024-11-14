@@ -61,10 +61,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.05"
-# New in this version:  Small fixes, move base operations to C:\Program Files\MQRA\
+$Version = "0.50.07"
+# New in this version:  Further updates
 
-$VersionInfo = "v$($Version) - Last modified: 11/12/2024"
+$VersionInfo = "v$($Version) - Last modified: 11/14/2024"
 
 
 # CURRENT BUGS TO FIX:
@@ -89,6 +89,7 @@ $OLE19x64Url = "https://go.microsoft.com/fwlink/?linkid=2278038"
 $DCUUrl = "https://dl.dell.com/FOLDER11914075M/1/Dell-Command-Update-Application_6VFWW_WIN_5.4.0_A00.EXE"
 $ghostscripturl = "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10031/gs10031w64.exe"
 $AdobeReaderUpdateUrl = "https://rdc.adobe.io/reader/products?lang=mui&site=enterprise&os=Windows%2011&country=US&nativeOs=Windows%2010&api_key=dc-get-adobereader-cdn"
+$NetCore6NewestUpdate = "https://download.visualstudio.microsoft.com/download/pr/396abf58-60df-4892-b086-9ed9c7a914ba/eb344c08fa7fc303f46d6905a0cb4ea3/dotnet-sdk-6.0.428-win-x64.exe"
 $MQRAUserAgent = "MQRA v0.50 PS"
 $MQRAdir = "C:\Program Files\MQRA"
 
@@ -166,7 +167,7 @@ catch [System.InvalidOperationException]{}
 
 $dateshort= Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 try {
-  $script:LogFile = "\\$($tmp)\SecAud\$($hostname)_Install-SecurityFixes_$($dateshort).log"
+  $script:LogFile = "$($tmp)\SecAud\$($hostname)_Install-SecurityFixes_$($dateshort).log"
   Start-Transcript $script:LogFile -ErrorAction SilentlyContinue
 } catch {
   if ($Error[0].Exception.Message -match 'Transcript is already in progress') {
@@ -190,7 +191,7 @@ if (Get-Command winget -ErrorAction SilentlyContinue) {
 
 function Write-Event { 
   param (
-    [string]$Log = 'Application',
+    [string]$LogName = 'Application',
     [string]$Source = 'MQRA',
     [string]$Type = 'Information',
     [int]$EventID = 2500,
@@ -198,10 +199,10 @@ function Write-Event {
   )
 
   if ($LogToEventLog) {
-    if (!( [System.Diagnostics.EventLog]::SourceExists($SourceName) )) {
-        New-EventLog -LogName $LogName -Source $SourceName
+    if (!( [System.Diagnostics.EventLog]::SourceExists($Source) )) {
+        New-EventLog -LogName "Application" -Source $Source 
     }
-    Write-EventLog -LogName $Log -Source $Source -EntryType $Type -EventId $eventID -Message $msg
+    Write-EventLog -LogName "Application" -Source $Source -EntryType $Type -EventId $eventID -Message $Msg
   }
 }
 
@@ -330,21 +331,22 @@ function Create-IfNotExists {
 
 ################################################# SCRIPT FUNCTIONS ###############################################
 
-function Set-RegistryEntry {
+function Set-RegistryEntry {   # STRINGS ONLY!
     param(
         [string]$Path = "HKLM:\Software\MME Consulting Inc\Install-SecurityFixes",
-        [string]$Name,
-        [object]$Value
+        [Parameter(Mandatory=$true)][string]$Name,
+        [Parameter(Mandatory=$true)][object]$Value
     )
 
     if (-Not(Test-Path -Path $Path)) {
         Write-Verbose "Set-RegistryEntry: !! (Test-Path -Path $Path) - Creating"
         New-Item -Path $Path -Force | Out-Null
     }
-
     $ValueAsString = $Value.ToString()
-    Write-Verbose "Set-RegistryEntry: Creating: Set-ItemProperty -Path $Path -Name $Name -Value $ValueAsString"
-    Set-ItemProperty -Path $Path -Name $Name -Value $ValueAsString
+    if ($Name.length -gt 1 -and $ValueString) {
+      Write-Verbose "Set-RegistryEntry: Creating: Set-ItemProperty -Path $Path -Name $Name -Value $ValueAsString"
+      Set-ItemProperty -Path $Path -Name $Name -Value $ValueAsString
+    }
 }
 
 function Get-RegistryEntry {
@@ -555,7 +557,8 @@ function Update-ScriptFile {   # Need a copy of this, to re-run main script
     if ($NewVersionCheck) {  
         if (Get-YesNo "Found newer version $NewVersionCheck, would you like to copy over this one? ") {
           # Copy the new script over this one..
-          Copy-Item "$($FilenameTmp)" "$($FilenamePerm)" -Force
+          Write-Verbose "Temp file: $FilenameTemp , Perm file: $FilenamePerm"
+          $null = Copy-Item "$($FilenameTmp)" "$($FilenamePerm)" -Force -ErrorAction SilentlyContinue | out-null
           return $true
         }
     } else {
@@ -742,7 +745,8 @@ Function Set-DellBiosProviderDefaults {
 }
 
 function Convert-WuaResultCodeToName {
-  param( [Parameter(Mandatory=$true)]
+  param( 
+    [Parameter(Mandatory=$true)]
     [int] $ResultCode
   )
   $Result = $ResultCode
@@ -1606,19 +1610,6 @@ function Remove-RegistryItem {
   }
 }
 
-function Set-RegistryValue {
-    param (
-        [string]$key,
-        [string]$name,
-        [string]$value
-    )
-
-    if (-not (Test-Path $key)) {
-        New-Item -Path $key -Force | Out-Null
-    }
-    Set-ItemProperty -Path $key -Name $name -Value $value
-}
-
 function Set-AdobeDefaults {
   # This should set Adobe Reader DC to be the default application for PDF files.
 
@@ -1640,15 +1631,15 @@ function Set-AdobeDefaults {
   $regPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\$extension\UserChoice"
 
   # Set the ProgID
-  Set-RegistryValue -key $regPath -name "ProgId" -value $adobeProgID
+  Set-RegistryEntry -path $regPath -name "ProgId" -value $adobeProgID
 
   # Set the Hash (leave empty for simplicity)
   $hash = ""
-  Set-RegistryValue -key $regPath -name "Hash" -value $hash
+  Set-RegistryEntry -path $regPath -name "Hash" -value $hash
 
   # Step 3: Update the DefaultProgram for the current user
   $defaultProgramPath = "HKCU:\Software\Classes\$adobeProgID\shell\open\command"
-  Set-RegistryValue -key $defaultProgramPath -name "(default)" -value "`"$adobePath`" `%1"
+  Set-RegistryEntry -path $defaultProgramPath -name "(default)" -value "`"$adobePath`" `%1"
 
   # Output the results
   Write-Output "File association for .pdf set to $adobeProgID"
@@ -2368,170 +2359,10 @@ function Check-ScheduledTask {
 
 ###################################################################### API Related Calls ##################
 
-############ This is only here temporarily
-function MD5hash {
-  param
-    ( 
-      [string]$input
-    )
-    return [System.BitConverter]::ToString((New-Object Security.Cryptography.MD5CryptoServiceProvider).ComputeHash([Text.Encoding]::UTF8.GetBytes($input))).Replace("-", "").ToLower()
-}
-############
-
-function API-StoreKey {
-  param (
-    [string]$APIKey
-  )
-  $configfile = "C:\Program Files\MQRA\_config.ps1"
-  if (!(Test-Path $configfile)) {
-    Copy-ConfigFile
-  }
-  $APIKeyFound = Find-ConfigFileLine '$APIKey = *'
-  $APIKeyFound = '$APIKey = '+$APIKey
-  if (!($APIKeyFound)) {
-    # Add $APIKey= line to config file
-    SetConfigFileLine -ConfigOldLine "" -ConfigNewLine $APIKeyLine
-    Write-Host "[+] Saved new API Key to _config.ps1." -ForegroundColor Green
-  } else {
-    SetConfigFileLine -ConfigOldLine "APIKey =" -ConfigNewLine $APIKeyLine
-    Write-Host "[+] Overwrite API Key in _config.ps1." -ForegroundColor Green
-  }
-}
-
-Function API-Call {
-  param (
-    [string]$APIRoute, 
-    [string]$UniqueID, 
-    [string]$APIKey, 
-    [string]$Method = "POST",
-    [string]$Useragent = $MQRAUserAgent,
-    [string]$FixData = "n/a"
-  )
-  
-  $url = "$($apiBaseUrl)$($APIRoute)"   # $APIRoute should have initial /
-  
-  $headers = @{
-      'Content-Type' = 'application/json'
-      'Authorization' = "Bearer $APIkey"
-  }
-  if ($FixData -ne "n/a") {
-    $body = @{ 
-        unique_id = $uniqueID
-        fix_data = $FixData
-    } | ConvertTo-Json
-  } else {
-    $body = @{
-      unique_id = $uniqueID
-    } | ConvertTo-Json
-  }
-  try {
-    $Resp = Invoke-RestMethod -Uri $url -UserAgent $UserAgent -Method $Method -Headers $headers -Body $body  
-    Write-Host "[API] API-Call StatusCode:" $_.Exception.Response.StatusCode.value__  -ForegroundColor Green
-  } catch {
-    Write-Host "[API] API-Call Error: StatusCode:" $_.Exception.Response.StatusCode.value__   -ForegroundColor Red
-    Write-Host "[API] API-Call  Error: StatusDescription:" $_.Exception.Response.StatusDescription  -ForegroundColor Red
-  }
-}
 
 
-function API-Checkin {
-  param (
-    [string]$UniqueID,
-    [string]$APIKey
-  )
-  if (!($SkipAPI)) {  
-    $APIRoute = "/checkin"
-    $Response = API-Call -APIRoute $APIRoute -UniqueId $UniqueID -APIKey $APIKey
-    if ($Response -eq $UniqueID) {
-      Write-Host "[API] Checkin Succeeded"
-      return $true
-    } else {
-      Write-Host "[API] Checkin Failed"
-      return $false
-    }
-  }
-}
 
-function API-Hello {
-  param ( 
-    [string]$UniqueID
-  )
-  if (!($SkipAPI)) {  
-    $APIRoute = "/hello"
-    $APIKey = MD5hash("MQRA-HELLO")
-    $APIKey = API-Call -APIRoute $APIRoute -UniqueId $UniqueID -APIKey $APIKey
-    if ($APIKey.Length -eq 16) {   # Better check here
-      Write-Host "[API] Hello Succeeded. API Key = $APIKey "  -ForegroundColor Green
-      return $APIKey
-    } else {
-      Write-Host "[API] Hello FAILED!" -ForegroundColor Red
-    }
-  }
-}
-
-function API-Fixed {
-  param (
-    [string]$UniqueID,
-    [string]$APIKey,
-    [string]$FixData
-  )
-  if (!($SkipAPI)) {  
-    $APIRoute = "/remed"
-    $Response = API-Call -APIRoute $APIRoute -UniqueId $UniqueID -APIKey $APIKey -FixData $FixData
-    if ($Response -eq $UniqueID) {
-      Write-Host "[API] Remed Succeeded"
-      return $true
-    } else {
-      Write-Host "[API] Remed Failed"
-      return $false
-    }
-  } else {
-    
-  }
-}
-
-function API-Checkout {
-  param (
-    [string]$UniqueID,
-    [string]$APIKey
-  )
-  if (!($SkipAPI)) {
-    $APIRoute = "/checkout"
-    $Response = API-Call -APIRoute $APIRoute -UniqueId $UniqueID -APIKey $APIKey
-    if ($Response -eq 1) {
-      Write-Host "[API] Checkin Succeeded"
-      return $true
-    } else {
-      Write-Host "[API] Checkin Failed"
-      return $false
-    }
-  } else {
-    Write-Host "[-] Skipping API calls.. SkipAPI=true"
-  }
-}
-
-function API-SendLogs {
-  param (
-    [string]$UniqueID,
-    [string]$APIKey,
-    [string]$LogFile
-  )
-  if (!($SkipAPI)) {
-    $APIRoute = "/sendlogs"
-    $Logs = Get-Content $LogFile
-    $Response = API-Call -APIRoute $APIRoute -UniqueId $UniqueID -APIKey $APIKey -Logs $Logs
-    if ($Response -eq 1) {
-      Write-Host "[API] Checkin Succeeded"
-      return $true
-    } else {
-      Write-Host "[API] Checkin Failed"
-      return $false
-    }
-  } else {
-    Write-Host "[-] Skipping API calls.. SkipAPI=true"
-  }
-}
-
+#######################################################
 
 # All the microsoft office products with their corresponding dword value
 $RemediationValues = @{ "Excel" = "Excel.exe"; "Graph" = "Graph.exe"; "Access" = "MSAccess.exe"; "Publisher" = "MsPub.exe"; "PowerPoint" = "PowerPnt.exe"; "OldPowerPoint" = "PowerPoint.exe" ; "Visio" = "Visio.exe"; "Project" = "WinProj.exe"; "Word" = "WinWord.exe"; "Wordpad" = "Wordpad.exe" }
@@ -2609,7 +2440,7 @@ if ($Servername -ne "non-domain") {
     }
   }
 }
-if (Get-Item "C:\Program Files\MQRA\Install-SecurityFixes.ps1" -ErrorAction SilentlyContinue) {  # we will be keeping the qualys scans here from now on, and deleting them when not in use..
+if (!($CSVFile) -and (Get-Item "C:\Program Files\MQRA\Install-SecurityFixes.ps1" -ErrorAction SilentlyContinue)) {  # we will be keeping the qualys scans here from now on, and deleting them when not in use..
   $oldpwd = "C:\Program Files\MQRA"
   $servername = "non-domain"
 }  else {  # Can't ping $ServerName, lets see if there is a good location, or localhost?
@@ -2620,7 +2451,7 @@ if (Get-Item "C:\Program Files\MQRA\Install-SecurityFixes.ps1" -ErrorAction Sile
       $ServerName = "$($env:computername)"
       Set-RegistryEntry "ServerName" -Value $ServerName
       
-      $SecAudPath = "."  # for now?.. ###########################################################################
+      $SecAudPath = "C:\Program Files\MQRA" 
       $ServerName = $SecAudPath
 
       $script:ServerShare = $SecAudPath  # Where logs are copied to
@@ -2726,7 +2557,8 @@ if (!($CSVFile -like "*.csv")) {  # Check for command line param -CSVFile
 if ($AddScheduledTask) { Check-ScheduledTask -ServerName $ServerName ; Exit }
 
 # READ CSV
-if (!(Test-Path $CSVFilename)) {  # Split path from file if it doesn't exist
+
+if (!(Test-Path -Path $CSVFilename -ErrorAction SilentlyContinue)) {  # Split path from file if it doesn't exist
   if (!(Test-Path "$($oldpwd)\$(Split-Path $CSVFilename -leaf)")) {
     Write-Host "[!] Error: Couldn't locate $CSVFilename or $($oldpwd)\$(Split-Path $CSVFilename -leaf) in $($oldpwd) !" -ForegroundColor Red
     exit
@@ -2763,23 +2595,7 @@ if ($null -eq $CSVFilename) {
 }
 
 # We've found CSV file, now perform API Related calls, checkin, and/or hello as needed
-$UniqueID = Get-UniqueID -csvPath $CSVFullPath
-Write-Host "[API] Using UniqueID: $UniqueID" -ForegroundColor White
-Write-Host "[API] Using API Key: $APIKey" -ForegroundColor White
-$Checkin = (API-Checkin -UniqueID $UniqueID -APIKey $APIKey) 
-if (!$Checkin) {
-  Write-Host "[API] Checkin failed! Sending Hello for UniqueID: $UniqueID" -ForegroundColor Yellow
-  $APIKey = API-Hello -UniqueID $UniqueID
-  if (!($APIKey.Length -eq 16)) { 
-    Write-Host "[API] Checkin failed and HELLO failed!! UniqueID: $UniqueID" -ForegroundColor Red
-    # If logging failed here, lets still write to eventlog and maybe we can catch up with it later
-    $LogToEventLog = $true
-  } else {
-    Write-Host "[API] Hello complete. API Key returned: $APIKey" -ForegroundColor Green
-  }
-} else {
-  Write-Host "[API] Checkin complete!" -ForegroundColor Green
-}
+
 ######## Find if there are any new vulnerabilities not listed ########
 
 $Rows = @()
@@ -4804,6 +4620,16 @@ foreach ($CurrentQID in $QIDs) {
         $QIDsMSXMLParser4 = 1
       }
 
+      { $QIDs_dotNET_Core6 } { 
+        if (Get-YesNo "$_ Install newest .NET Core 6.0.428 update? " -Results $Results -QID $ThisQID) { 
+          Write-Host "[.] Downloading installer to $($tmp)\netcore.exe .."
+          Invoke-WebRequest -UserAgent $AgentString -Uri $NetCore6NewestUpdate -OutFile "$($tmp)\netcore.exe"
+          Write-Host "[.] Running installer: $($tmp)\netcore.exe .."
+          Start-Process -Wait "$($tmp)\netcore.exe" -ArgumentList '/install /quiet /norestart'
+        }
+        $QIDsMSXMLParser4 = 1
+      }
+
     ############################################
       # Default - QID not found!  3-28-24 - Lets check for specific Results here. I don't know what the QID numbers will be, but for now, if there are specific KB's in the results, it is likely missing these patches
       #   But - lets check that those patches are not installed.
@@ -4913,23 +4739,7 @@ Stop-Transcript
 Write-Host "[+] Log written to: $script:LogFile , copying to $LogPath `n"
 if (!(Test-Path $LogPath)) {
 
-  <#
-  New-Item : The path is not of a legal form.
-At \\dc-server\data\SecAud\Install-SecurityFixes.ps1:4875 char:11
-+   $null = New-Item -ItemType Directory -Path $LogPath | Out-Null
-+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : InvalidArgument: (Logs:String) [New-Item], ArgumentException
-    + FullyQualifiedErrorId : CreateDirectoryArgumentError,Microsoft.PowerShell.Commands.NewItemCommand
-
-Copy-Item : Cannot find path '\\C:\Users\ADMINI~1.EMS\AppData\Local\Temp\SecAud\SecAud\_Install-SecurityFixes_2024-11-11 09:07:07.log' because it does not exist.
-At \\dc-server\data\SecAud\Install-SecurityFixes.ps1:4878 char:3
-+   Copy-Item $script:LogFile $LogPath -Force
-+   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : ObjectNotFound: (\\C:\Users\ADMI...11 09:07:07.log:String) [Copy-Item], ItemNotFoundException
-    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.CopyItemCommand
-
-    #>
-    $null = New-Item -ItemType Directory -Path $LogPath | Out-Null
+    Create-IfNotExists $LogPath
 }
 try {
   Copy-Item $script:LogFile $LogPath -Force
