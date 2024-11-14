@@ -61,8 +61,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.07"
-# New in this version:  Further updates
+$Version = "0.50.08"
+# New in this version:  .NET Core 6.0.36, Teamviewer delete registry if its not installed
 
 $VersionInfo = "v$($Version) - Last modified: 11/14/2024"
 
@@ -2446,43 +2446,37 @@ if ($Servername -ne "non-domain") {
 if (!($CSVFile) -and (Get-Item "C:\Program Files\MQRA\Install-SecurityFixes.ps1" -ErrorAction SilentlyContinue)) {  # we will be keeping the qualys scans here from now on, and deleting them when not in use..
   $oldpwd = "C:\Program Files\MQRA"
   $servername = "non-domain"
-}  else {  # Can't ping $ServerName, lets see if there is a good location, or localhost?
-  if (-not $script:Automated) {
-      $script:ServerShare = $SecAudPath  # Where logs are copied to
-      if (!(Test-Path $SecAudPath)) {
-        $null = New-Item -ItemType Directory -Path $SecAudPath | Out-Null
-      }
-
-      Write-Host "[.] Searching for files modified within the last 30 days that match the pattern '*_Internal_*.csv' in path - $path"
-      $dateLimit = (Get-Date).AddDays(-30)
-      $files = Get-ChildItem -Path $path -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt $dateLimit } | Sort-Object $_.LastWriteTime -Descending
-
-      if ($files.Count -gt 0) {
-          # Use the full path of the first found file
-          $CSVFilename = $files[0].FullName
-          $CSVFile = $CSVFilename  # This needs to be set below as well
-          Write-Host "[+] Latest CSV File found: $CSVFilename" -ForegroundColor Green
-      } else {
-          Write-Host "[-] No recent (within 30d) matching CSV files found in [ $path ] "
-          $files = Get-ChildItem -Path $path -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue 
-          if ($files) {
-            Write-Host "[-] List of files found MORE THAN 30 days old: " -ForegroundColor Yellow
-            $files
-          } else {
-            $files = Get-ChildItem -Path $path 
-            Write-Host "[-] No matching CSV Files found in $path"
-            $files
-          }
-          Write-Host "[!] ERROR: Can't find a CSV to use, or the servername to check.." -ForegroundColor Red
-          Write-Verbose "Creating Log: Application Source: Type: Error ID: 2500 - CSV not found"
-          Write-Event -type "error" -eventid 2500 -msg "Error - CSV not found"
-          exit
-      }
-    }
-  } else { 
-    Write-Host "[!] ERROR: Can't find a recent (within 30d) CSV to use, or the servername to check, and -Automated was specified.." -ForegroundColor Red
-    exit
+} 
+if (-not $script:Automated) {
+  $script:ServerShare = $SecAudPath  # Where logs are copied to
+  if (!(Test-Path $SecAudPath)) {
+    $null = New-Item -ItemType Directory -Path $SecAudPath | Out-Null
   }
+}
+Write-Host "[.] Searching for files modified within the last 30 days that match the pattern '*_Internal_*.csv' in path - $SecAudPath"
+$dateLimit = (Get-Date).AddDays(-30)
+$files = Get-ChildItem -Path $SecAudPath -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt $dateLimit } | Sort-Object $_.LastWriteTime -Descending
+
+if ($files.Count -gt 0) {
+  # Use the full path of the first found file
+  $CSVFilename = $files[0].FullName
+  $CSVFile = $CSVFilename  # This needs to be set below as well
+  Write-Host "[+] Latest CSV File found: $CSVFilename" -ForegroundColor Green
+} else {
+  Write-Host "[-] No recent (within 30d) matching CSV files found in [ $path ] "
+  $files = Get-ChildItem -Path $SecAudPath -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue 
+  if ($files) {
+    Write-Host "[-] List of files found MORE THAN 30 days old: " -ForegroundColor Yellow
+    $files
+  } else {
+    $files = Get-ChildItem -Path $SecAudPath
+    Write-Host "[-] No matching CSV Files found in $SecAudPath"
+    $files
+  }
+  Write-Host "[!] ERROR: Can't find a CSV to use, or the servername to check.." -ForegroundColor Red
+  Write-Verbose "Creating Log: Application Source: Type: Error ID: 2500 - CSV not found"
+  Write-Event -type "error" -eventid 2500 -msg "Error - CSV not found"
+  exit
 }
 Set-RegistryEntry -Name "ServerName" -Value $ServerName # This should be legit or we don't get out of the above, without a CSV.
 
@@ -3254,6 +3248,18 @@ foreach ($CurrentQID in $QIDs) {
         if (Get-YesNo "$_ Install newest Teamviewer? " -Results $Results -QID $ThisQID) { 
             #  Teamviewer - https://ninite.com/teamviewer15/ninite.exe
             Update-Application -Uri "https://ninite.com/teamviewer15/ninite.exe" -OutFile "$($tmp)\ninite.exe" -KillProcess "TeamViewer.exe" -UpdateString "TeamViewer 15"
+            if (!(Search-Software "TeamViewer")) {
+              if (Get-YesNo "$_ Teamviewer appears to not be installed, should we remove the old Teamviewer registry entry?") {
+                $registryPath = 'HKLM:\SOFTWARE\TeamViewer'
+                $backupFolder = 'C:\Program Files\MQRA\backup'
+                $backupFile = Join-Path $backupFolder 'TeamViewerRegistryBackup.reg'
+                if (!(Test-Path -Path $backupFolder)) {
+                    New-Item -ItemType Directory -Path $backupFolder -Force
+                }
+                reg export "HKLM\SOFTWARE\TeamViewer" $backupFile /y
+                Remove-Item -Path $registryPath -Recurse -Force
+              }
+            }
             $QIDsTeamViewer = 1
         } else { $QIDsTeamViewer = 1 }
       }
@@ -4595,10 +4601,10 @@ foreach ($CurrentQID in $QIDs) {
         }
         $QIDsMSXMLParser4 = 1
       }
-
-      $QIDs_dotNET_Core6 { 
-        if (Get-YesNo "$_ Install newest .NET Core 6.0.428 update? " -Results $Results -QID $ThisQID) { 
+      { $QIDs_dotNET_Core6 -contains $_ }  { 
+        if (Get-YesNo "$_ Install newest .NET Core 6.0.36 update? " -Results $Results -QID $ThisQID) { 
           Write-Host "[.] Downloading installer to $($tmp)\netcore.exe .."
+          
           Invoke-WebRequest -UserAgent $AgentString -Uri $NetCore6NewestUpdate -OutFile "$($tmp)\netcore.exe"
           Write-Host "[.] Running installer: $($tmp)\netcore.exe .."
           Start-Process -Wait "$($tmp)\netcore.exe" -ArgumentList '/install /quiet /norestart'
