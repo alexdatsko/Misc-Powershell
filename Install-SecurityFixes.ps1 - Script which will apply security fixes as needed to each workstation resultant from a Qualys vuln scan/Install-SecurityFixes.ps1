@@ -2493,19 +2493,8 @@ $oldpwd=(Get-Location).Path
 Set-Location "$($SecAudPath)\temp"  # Fix for Cmd.exe cannot be run from a server share.. lets run from MQRA folder though now.
 
 ### Find CSV File name. 2024-05- This is dumb using 2 variables, I have added on to this so many times its terribly messy, but works. Ugh. Needs a rewrite/refactor SO badly.
-if (!($CSVFile -like "*.csv")) {  # Check for command line param -CSVFile
-  $CSVFilename = Find-ServerCSVFile "$($ServerName)\$($CSVLocation)"
-  if ($null -eq $CSVFilename) {
-    $CSVFilename = Find-LocalCSVFile "." $OldPwd
-  }
-} else {
-  if (!($CSVFilename)) {
-    Write-Verbose "Parameter found: -CSVFile $CSVFile"
-    Write-Verbose "Using: $($oldPwd)\$($CSVFile)"
-    $CSVFilename = "$($oldPwd)\$($CSVFile)"
-  } else {
-    Write-Verbose "Using: $($CSVFilename)"
-  }
+if ($CSVFile -like "*.csv") {  # Check for command line param -CSVFile
+  $CSVFilename = $CSVFile  # use it, lets not check anything..
 }
 
 ########### Scheduled task check:
