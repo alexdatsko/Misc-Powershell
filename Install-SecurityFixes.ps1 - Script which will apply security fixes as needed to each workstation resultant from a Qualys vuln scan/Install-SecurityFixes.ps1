@@ -61,10 +61,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.10"
-# New in this version:  More steps in converting to C:\Program Files\MQRA base location
+$Version = "0.50.11"
+# New in this version:  Adding MQRA logging 
 
-$VersionInfo = "v$($Version) - Last modified: 11/14/2024"
+$VersionInfo = "v$($Version) - Last modified: 11/18/2024"
 
 
 # CURRENT BUGS TO FIX:
@@ -529,7 +529,7 @@ function Update-File {  # Not even used currently, but maybe eventually?
     $NewVersionCheck = (Get-NewerScriptVersion -Filename "$($FilenameTmp)" -VersionStr $($VersionStr) -VersionToCheck $VersionToCheck)
     if ($NewVersionCheck) {  
         If (Get-YesNo "Found newer version $($NewVersionCheck), would you like to copy over this one? ") {
-          Copy-Item "$($FilenameTmp)" "$($FilenamePerm)" -Force
+          Copy-Item -Path "$($FilenameTmp)" -Destination "$($FilenamePerm)" -Force
         }
         return $true
     } else {
@@ -2315,7 +2315,7 @@ function Check-ScheduledTask {
     }
     Write-Verbose "ST_StartTime: $ST_StartTime ST_DayOfWeek: $ST_DayOfWeek"
     #$FirstRun = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $ST_DayOfWeek -WeeksInterval 1 -At $ST_StartTime -RandomDelay 01:00:00
-    $FirstRun = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $ST_DayOfWeek -WeeksInterval 4 -At $ST_StartTime  -RandomDelay 01:00:00
+    $FirstRun = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $ST_DayOfWeek -WeeksInterval 2 -At $ST_StartTime  -RandomDelay 01:00:00
 
     #IGNORING 2nd run date now, can retrigger remotely eventually..
     #$SecondRunDate = (Get-Date -Day 14).AddHours($ST_StartTimeHours)
@@ -2413,13 +2413,14 @@ if (Update-QIDLists) {
  . "$($QIDsListFile)" 
  }
 
- $MQRAPath = "C:\Program Files\MQRA"
- if (!(Test-Path $MQRAPath)) {
-  Create-IfNotExists $MQRAPath
-  $null = Copy-Item "Install-SecurityFixes.ps1" -Destination $MQRAPath -Force -ErrorAction SilentlyContinue | Out-null
-  $null = Copy-Item "QIDList.ps1" -Destination $MQRAPath -Force -ErrorAction SilentlyContinue | Out-null
-  $null = Copy-Item "_config.ps1" -Destination $MQRAPath -Force -ErrorAction SilentlyContinue | Out-null
-  $null = Copy-Item "*.csv" -Destination $MQRAPath -Force -ErrorAction SilentlyContinue | Out-null
+if (!(Test-Path $MQRAdir)) {
+  Create-IfNotExists $MQRAdir
+  Write-Output "[.] Copying necessary files to $MQRAdir .."
+  $null = Copy-Item "Install-SecurityFixes.ps1" -Destination $MQRAdir -Force -ErrorAction SilentlyContinue | Out-null
+  $null = Copy-Item "QIDList.ps1" -Destination $MQRAdir -Force -ErrorAction SilentlyContinue | Out-null
+  $null = Copy-Item "_config.ps1" -Destination $MQRAdir -Force -ErrorAction SilentlyContinue | Out-null
+  $null = Copy-Item "*.csv" -Destination $MQRAdir -Force -ErrorAction SilentlyContinue | Out-null
+  sl $MQRApath
  }
 
 # Lets check the Cofnig 1st, Registry 2nd, default hostnames 3rd for a place with our CSV file shared in \\$serverName\Data\SecAud
@@ -2430,11 +2431,10 @@ if (!($ServerName)) {
 }
 
 if (!($CSVFile) -and (Get-Item "C:\Program Files\MQRA\Install-SecurityFixes.ps1" -ErrorAction SilentlyContinue)) {  # we will be keeping the qualys scans here from now on, and deleting them when not in use..
-  $oldpwd = "C:\Program Files\MQRA"
-  $servername = "non-domain"
+#  $servername = "non-domain"
 } 
 if (!($CSVFile)) {
-  $script:ServerShare = $SecAudPath  # Where logs are copied to
+  $SecAudPath  = $MQRAdir
   if (!(Test-Path $SecAudPath)) {
     $null = New-Item -ItemType Directory -Path $SecAudPath | Out-Null
   }
@@ -2464,7 +2464,6 @@ if (!($CSVFile)) {
     exit
   }  
 }
-Set-RegistryEntry -Name "ServerName" -Value $ServerName # This should be legit or we don't get out of the above, without a CSV.
 
 if (!$OnlyQIDs) {   # If we are not just trying a fix for one CSV, we will also see if we can install the Dell BIOS provider and set WOL to on, and backup Bitlocker keys to AD if possible
   if ([int](Get-OSType) -eq 1) {
@@ -2491,10 +2490,11 @@ if (!(Test-Path $($tmp))) {
 }
 $oldpwd=(Get-Location).Path
 Set-Location "$($SecAudPath)\temp"  # Fix for Cmd.exe cannot be run from a server share.. lets run from MQRA folder though now.
+Create-IfNotExists "$($SecAudPath)\temp"
 
 ### Find CSV File name. 2024-05- This is dumb using 2 variables, I have added on to this so many times its terribly messy, but works. Ugh. Needs a rewrite/refactor SO badly.
 if ($CSVFile -like "*.csv") {  # Check for command line param -CSVFile
-  $CSVFilename = $CSVFile  # use it, lets not check anything..
+  $CSVFilename = $CSVFile  # use it, lets not check
 }
 
 ########### Scheduled task check:
@@ -4445,7 +4445,7 @@ foreach ($CurrentQID in $QIDs) {
       90019 {
         $LmCompat = (Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa").LmCompatibilityLevel
         if ($LmCompat -eq 5) {
-          Write-Output "$_ Fix already in place it appears: LMCompatibilityLevel = 5, Good!"
+          Write-Output "$_ Fix already in place it appears: LMCompatibilityLevel = 5, Good!" | tee -append "$($tmp)\$($ThisQID)-ntlmv1.log"
         } else {
           if (Get-YesNo "$_ Fix LanMan/NTLMv1 Authentication? Currently LmCompatibilityLevel = $LmCompat ? " -Results $Results -QID $ThisQID) { 
             <#
@@ -4457,20 +4457,21 @@ foreach ($CurrentQID in $QIDs) {
             5- Clients use only NTLMv2 authentication, and they use NTLMv2 session security if the server supports it. Domain controller refuses LM and NTLM authentication responses, but it accepts NTLMv2.
             #>
             if (Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa" -Name "LmCompatibilityLevel") {
-              Write-Output "[+] Setting registry item: HKLM\System\CurrentControlSet\Control\Lsa LMCompatibilityLevel = 5"
+              Write-Output "[+] Setting registry item: HKLM\System\CurrentControlSet\Control\Lsa LMCompatibilityLevel = 5" | tee -append "$($tmp)\$($ThisQID)-ntlmv1.log"
               Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Lsa" -Name "LmCompatibilityLevel" -Value "5" -Force | Out-Null
             } else {
-              Write-Output "[+] Creating registry item: HKLM\System\CurrentControlSet\Control\Lsa LMCompatibilityLevel = 5"
+              Write-Output "[+] Creating registry item: HKLM\System\CurrentControlSet\Control\Lsa LMCompatibilityLevel = 5" | tee -append "$($tmp)\$($ThisQID)-ntlmv1.log"
               New-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Lsa" -Name "LmCompatibilityLevel" -Value "5" -Force | Out-Null
             }
-            Write-Output "[.] Checking fix: HKLM\System\CurrentControlSet\Control\Lsa LMCompatibilityLevel = 5"
+            Write-Output "[.] Checking fix: HKLM\System\CurrentControlSet\Control\Lsa LMCompatibilityLevel = 5" | tee -append "$($tmp)\$($ThisQID)-ntlmv1.log"
             if ((Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa").LmCompatibilityLevel -eq 5) {
-              Write-Output "[+] Found: LMCompatibilityLevel = 5, Good!"
+              Write-Output "[+] Found: LMCompatibilityLevel = 5, Good!" | tee -append "$($tmp)\$($ThisQID)-ntlmv1.log"
             } else {
-              Write-Output "[+] Found: LMCompatibilityLevel = $((Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa").LmCompatibilityLevel) - not 5!"
+              Write-Output "[+] Found: LMCompatibilityLevel = $((Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa").LmCompatibilityLevel) - not 5!" | tee -append "$($tmp)\$($ThisQID)-ntlmv1.log"
             }
           }
         }
+        API-SendLogs -UniqueID $UniqueID -APIKey $APIKey -clientscan $ScanSummary -QID $ThisQID -LogFile "$($tmp)\$($ThisQID)-ntlmv1.log"
       }
       372294 {
         if (Get-YesNo "$_ Fix service permissions issues? " -Results $Results -QID $ThisQID) {
@@ -4478,10 +4479,10 @@ foreach ($CurrentQID in $QIDs) {
           Write-Verbose "IN MAIN LOOP: Returned from Get-ServicePermIssues: $ServicePermIssues"
           foreach ($file in $ServicePermIssues) {
             if (!(Get-ServiceFilePerms $file)) {
-              Write-Output "[+] Permissions look good for $file ..."
+              "[+] Permissions look good for $file ..." | tee -append "$($tmp)\serviceperms.log"
             } else { # FIX PERMS.
               $objACL = Get-ACL $file
-              Write-Output "[.] Checking owner of $file .. $($objacl.Owner)"
+              Write-Output "[.] Checking owner of $file .. $($objacl.Owner)" | tee -append "$($tmp)\serviceperms.log"
               # Check for file owner, to resolve problems setting inheritance (if needed)
               if ($objacl.Owner -notlike "*$($env:USERNAME)") { # also allow [*\]User besides just User
                 #if (Get-YesNo "Okay to take ownership of $file as $($env:USERNAME) ?") {   
@@ -4492,9 +4493,9 @@ foreach ($CurrentQID in $QIDs) {
                 }
               }
               try {
-                Set-ACL $file -AclObject $objACL  
+                Set-ACL $file -AclObject $objACL  | tee -append "$($tmp)\serviceperms.log"
               } catch {
-                Write-Output "[!] ERROR: Couldn't set owner to $($env:Username) on $($file) .."
+                Write-Output "[!] ERROR: Couldn't set owner to $($env:Username) on $($file) .." | tee -append "$($tmp)\serviceperms.log"
               }
               $objACL = Get-ACL $file
               Write-Verbose "[.] Checking inheritance for $file - $(!($objacl.AreAccessRulesProtected)).."
@@ -4504,12 +4505,12 @@ foreach ($CurrentQID in $QIDs) {
                 $objacl.SetAccessRuleProtection($true,$true)  # 1=protected?, 2=copy inherited ACE? we will modify below
                 #$objacl.SetAccessRuleProtection($true,$false)  # 1=protected?, 2=drop inherited rules
                 try {
-                  Set-ACL $file -AclObject $objACL  
+                  Set-ACL $file -AclObject $objACL  | tee -append "$($tmp)\serviceperms.log"
                 } catch {
-                  Write-Output "[!] ERROR: Couldn't set inheritance on $($file) .."
+                  Write-Output "[!] ERROR: Couldn't set inheritance on $($file) .." | tee -append "$($tmp)\serviceperms.log"
                 }
               }
-              Write-Output "[.] Removing Everyone full permissions on $file .."
+              Write-Output "[.] Removing Everyone full permissions on $file .." | tee -append "$($tmp)\serviceperms.log"
               $Right = [System.Security.AccessControl.FileSystemRights]::ReadAndExecute
               $InheritanceFlag = [System.Security.AccessControl.InheritanceFlags]::None 
               $PropagationFlag = [System.Security.AccessControl.PropagationFlags]::InheritOnly  
@@ -4520,12 +4521,12 @@ foreach ($CurrentQID in $QIDs) {
               $objACL = Get-ACL $file
               $objACL.RemoveAccessRuleAll($objACE) 
               try {
-                Set-ACL $file -AclObject $objACL  
+                Set-ACL $file -AclObject $objACL  | tee -append "$($tmp)\serviceperms.log"
               } catch {
-                Write-Output "[!] ERROR: Couldn't remove Everyone-full permissions on $file .."
+                Write-Output "[!] ERROR: Couldn't remove Everyone-full permissions on $file .." | tee -append "$($tmp)\serviceperms.log"
               }
-              Write-Output "[.] Removing Users-Write/Modify/Append permissions on $file .."
-              # .. Remove write/append/etc from 'Users'. First remove Users rule completely.
+              Write-Output "[.] Removing Users-Write/Modify/Append permissions on $file .." | tee -append "$($tmp)\serviceperms.log"
+              # .. Remove write/append/etc from 'Users'. First remove Users rule completely. 
               $objUser = New-Object System.Security.Principal.NTAccount("Users") 
               $objACE = New-Object System.Security.AccessControl.FileSystemAccessRule `
                   ($objUser, $Right, $InheritanceFlag, $PropagationFlag, $objType) 
@@ -4533,7 +4534,7 @@ foreach ($CurrentQID in $QIDs) {
               try {
                 $objACL.RemoveAccessRuleAll($objACE) 
               } catch {
-                Write-Output "[!] ERROR: Couldn't reset Users permissions on $file .."
+                Write-Output "[!] ERROR: Couldn't reset Users permissions on $file .." | tee -append "$($tmp)\serviceperms.log"
               }
               # Then add ReadAndExecute only for Users
               $Right = [System.Security.AccessControl.FileSystemRights]::ReadAndExecute
@@ -4543,14 +4544,14 @@ foreach ($CurrentQID in $QIDs) {
               try {
                 Set-ACL $file -AclObject $objACL  
               } catch {
-                Write-Output "[!] ERROR: Couldn't modify Users to R+X permissions on $file .."
+                Write-Output "[!] ERROR: Couldn't modify Users to R+X permissions on $file .." | tee -append "$($tmp)\serviceperms.log"
               }
               # Check that issue is actually fixed
               if (!(Get-ServiceFilePerms $file)) {
-                Write-Output "[+] Permissions are good for $file "
+                Write-Output "[+] Permissions are good for $file " | tee -append "$($tmp)\serviceperms.log"
               } else {
-                Write-Output "[!] WARNING: Permissions NOT fixed on $file .. "
-                Get-FilePerms "$($file)"
+                Write-Output "[!] WARNING: Permissions NOT fixed on $file .. " | tee -append "$($tmp)\serviceperms.log"
+                Get-FilePerms "$($file)" | tee -append "$($tmp)\$($ThisQID)-serviceperms.log"
               }
             }
           }
@@ -4565,6 +4566,7 @@ foreach ($CurrentQID in $QIDs) {
             Write-Output "[+] $a"
           }
           #>
+          API-SendLogs -UniqueID $UniqueID -APIKey $APIKey -clientscan $ScanSummary -QID $ThisQID -LogFile "$($tmp)\serviceperms.log"
         }
       }
       $QIDsMSXMLParser4 {
@@ -4573,6 +4575,7 @@ foreach ($CurrentQID in $QIDs) {
           Invoke-WebRequest -UserAgent $AgentString -Uri "https://download.microsoft.com/download/A/7/6/A7611FFC-4F68-4FB1-A931-95882EC013FC/msxml4-KB2758694-enu.exe" -OutFile "$($tmp)\msxml.exe"
           Write-Host "[.] Running installer: $($tmp)\msxml.exe .."
           cmd /c "$($tmp)\msxml.exe /quiet /qn /norestart /log $($tmp)\msxml.log"
+          API-SendLogs -UniqueID $UniqueID -APIKey $APIKey -clientscan $ScanSummary -QID $ThisQID -LogFile "$($tmp)\$($ThisQID)-msxml.log"
         }
         $QIDsMSXMLParser4 = 1
       }
@@ -4582,7 +4585,8 @@ foreach ($CurrentQID in $QIDs) {
           
           Invoke-WebRequest -UserAgent $AgentString -Uri $NetCore6NewestUpdate -OutFile "$($tmp)\netcore.exe"
           Write-Host "[.] Running installer: $($tmp)\netcore.exe .."
-          Start-Process -Wait "$($tmp)\netcore.exe" -ArgumentList '/install /quiet /norestart'
+          Start-Process -Wait "$($tmp)\netcore.exe" -ArgumentList "/install /quiet /norestart /log $($tmp)\netcore.log"
+          API-SendLogs -UniqueID $UniqueID -APIKey $APIKey -clientscan $ScanSummary -QID $ThisQID -LogFile "$($tmp)\$($ThisQID)-netcore.log"
         }
         $QIDs_dotNET_Core6 = 1
       }
@@ -4678,8 +4682,6 @@ if ($SoftwareInstalling.Length -gt 0) {
   #
 }
 
-Write-Host "[o] Done! Stopping transcript" -ForegroundColor Green
-Set-Location $oldpwd
 # Disabling the file deletion step for now, EPDR keeps killing the script for being 'suspicious' at this point.
 #Write-Host "[.] Deleting all temporary files from $tmp .."
 #Remove-Item -Path "$tmp" -Recurse -Force -ErrorAction SilentlyContinue
@@ -4689,15 +4691,19 @@ Set-RegistryEntry -Name "ReRun" -Value $false
 if (!($script:Automated)) {
   $null = Read-Host "--- Press enter to exit ---"
 } else {
-  Write-Host "[AUTOMATED REBOOT] Setting reboot for 5 minutes from now, please use shutdown /a to abort!"
-  shutdown /r /f /t 300
+  if ($RebootNeeded) {
+    Write-Host "[AUTOMATED REBOOT] Setting reboot for 5 minutes from now, please use shutdown /a to abort!"
+    shutdown /r /f /t 300
+  } else { 
+    Write-Host "[-] No reboot needed, exiting after execution."
+  }
 }
+
+Write-Host "[o] Done! Stopping transcript" -ForegroundColor Green
+Set-Location $oldpwd
 Stop-Transcript
 Write-Host "[+] Log written to: $script:LogFile , copying to $LogPath `n"
-if (!(Test-Path $LogPath)) {
-
-    Create-IfNotExists $LogPath
-}
+Create-IfNotExists $LogPath  
 try {
   Copy-Item -Path $script:LogFile -Destination $LogPath -Force
   Write-Host "[+] Log copied to: $LogPath `n"
