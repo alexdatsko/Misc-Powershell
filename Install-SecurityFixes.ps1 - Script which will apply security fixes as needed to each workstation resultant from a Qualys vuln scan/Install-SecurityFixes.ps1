@@ -61,10 +61,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.11"
-# New in this version:  Adding MQRA logging 
+$Version = "0.50.12"
+# New in this version:  Started adding some MQRA logging. Removed old Teams folder
 
-$VersionInfo = "v$($Version) - Last modified: 11/18/2024"
+$VersionInfo = "v$($Version) - Last modified: 11/19/2024"
 
 
 # CURRENT BUGS TO FIX:
@@ -3546,6 +3546,14 @@ foreach ($CurrentQID in $QIDs) {
               }
             } else {
               Write-Host "[!] EXE no longer found: $CheckEXE - likely its already been updated. Let's check.."
+            }
+          }
+          if ($Results -like '*\AppData\Local\Microsoft\Teams\current*') { 
+            $RemoveFolder = ($Results -split("Version is"))[0].trim().replace("%systemdrive%","C:").replace("\Teams.exe","")
+            # %systemdrive%\Users\Administrators\AppData\Local\Microsoft\Teams\current\Teams.exe  Version is  1.5.0.17656  %systemdrive%\Users\Administrator\AppData\Local\Microsoft\Teams\current\Teams.exe  Version is  1.5.0.17656#
+            # This is an old version in another profile
+            if (Get-YesNo "Remove old folder found in $RemoveFolder ?") {
+              Remove-Item $RemoveFolder -Force -Recurse
             }
           }
         }
