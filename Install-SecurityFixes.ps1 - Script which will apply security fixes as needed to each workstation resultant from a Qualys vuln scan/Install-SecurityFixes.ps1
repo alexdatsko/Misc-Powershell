@@ -61,10 +61,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.12"
-# New in this version:  Started adding some MQRA logging. Removed old Teams folder
+$Version = "0.50.13"
+# New in this version:  Quick fix to autofind the CSV in the folder again, this still needs some cleanup for MQRA
 
-$VersionInfo = "v$($Version) - Last modified: 11/19/2024"
+$VersionInfo = "v$($Version) - Last modified: 11/25/2024"
 
 
 # CURRENT BUGS TO FIX:
@@ -324,8 +324,10 @@ function Create-IfNotExists {
   param (
     [string]$directory
   )
-  if (!(Test-Path $directory)) {
-    $null = New-Item -ItemType directory -Path $directory -Force | Out-Null
+  if ($directory) {
+    if (!(Test-Path -Path $directory)) {
+      $null = New-Item -ItemType directory -Path $directory -Force | Out-Null
+    }
   }
 }
 
@@ -1315,9 +1317,37 @@ function Pick-File {    # Show a list of files with a number to the left of each
   exit
 }
 
+function Find-CSVFile {
+  param ( 
+    [string]$SecAudPath
+  )
+
+  Write-Host "[.] Searching for files modified within the last 30 days that match the pattern '*_Internal_*.csv' in path - $SecAudPath"
+  $dateLimit = (Get-Date).AddDays(-30)
+  $files = Get-ChildItem -Path $SecAudPath -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt $dateLimit } | Sort-Object $_.LastWriteTime -Descending
+
+  if ($files.Count -gt 0) {
+    # Use the full path of the first found file
+    $CSVFilename = $files[0].FullName
+    $CSVFile = $CSVFilename  # This needs to be set below as well
+    Write-Host "[+] Latest CSV File found: $CSVFilename" -ForegroundColor Green
+  } else {
+    Write-Host "[-] No recent (within 30d) matching CSV files found in [ $path ] "
+    $files = Get-ChildItem -Path $SecAudPath -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue 
+    if ($files) {
+      Write-Host "[-] List of files found MORE THAN 30 days old: " -ForegroundColor Yellow
+      $files
+    } else {
+      $files = Get-ChildItem -Path $SecAudPath
+      Write-Host "[-] No matching CSV Files found in $SecAudPath"
+      $files
+    }
+  }
+}
+
 
 function Find-LocalCSVFile {
-  param ([string]$Location,
+  param ([string]$Location = "C:\temp\secaud",
          [string]$Oldpwd)
   #write-Host "Find-LocalCSVFile $Location $OldPwd"
   # FIGURE OUT CSV Filename
@@ -1333,14 +1363,15 @@ function Find-LocalCSVFile {
     $Newest = $Filenames | Select-Object -First 1
     return $Newest
   } 
-  
-
+  return $null
   # Used to Pick-File from here, why bother.. automate
 }
 
 function Find-ServerCSVFile {
-  param ([string]$Location)
-  $Servername = $script:Servername
+  param (
+    [string]$Location,
+    [string]$ServerName = "SERVER"
+  )
   Write-Verbose "[Find-ServerCSVFile] Server Name: $Servername"
   Write-Verbose "[Find-ServerCSVFile] Location: $Location"
   if (!(Test-Connection -ComputerName $servername -Count 2 -Delay 1 -Quiet)) {
@@ -2177,15 +2208,19 @@ Function Update-Application {
   if ($WinGetInstalled -and $WingetApplicationList -contains $UpdateString) { 
     Write-Host "[+] Using WinGet to update $UpdateString (if possible).."
     if ($UpdateString -eq "Chrome") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Google.Chrome $WinGetOpts" }
-  if ($UpdateString -eq "MSEdge") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Microsoft.Edge $WinGetOpts" }
+    if ($UpdateString -eq "MSEdge") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Microsoft.Edge $WinGetOpts" }
     if ($UpdateString -eq "Firefox") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Mozilla.Firefox $WinGetOpts" }
     if ($UpdateString -eq "Brave") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Brave.Brave $WinGetOpts" }
-    if ($UpdateString -eq "Teamviewer 15") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update TeamViewer.TeamViewer $WinGetOpts" }
+    if ($UpdateString -like "Teamviewer*") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update TeamViewer.TeamViewer $WinGetOpts" }
     if ($UpdateString -eq "Irfanview") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update IrfanSkiljan.IrfanView $WinGetOpts" }
     if ($UpdateString -eq "Notepad++") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Notepad++.Notepad++ $WinGetOpts" }
     if ($UpdateString -eq "Zoom client") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Zoom.Zoom $WinGetOpts" }
     if ($UpdateString -eq "Dropbox") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Dropbox.Dropbox $WinGetOpts" }
     if ($UpdateString -eq "7-zip") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update 7zip.7zip $WinGetOpts" }
+    if ($UpdateString -eq "Adobe Reader DC") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Adobe.Acrobat.Reader.32-bit $WinGetOpts" }
+    if ($UpdateString -eq "WatchguardWSM") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update WatchGuardTechnologies.WatchGuardSystemManager $WinGetOpts" }
+    if ($UpdateString -eq "WatchguardSSLVPN") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update WatchGuard.MobileVPNWithSSLClient $WinGetOpts" }
+    
     Write-Host "[+] Done."
   } else {
     # Lets use Ninite to update..
@@ -2434,31 +2469,16 @@ if (!($CSVFile) -and (Get-Item "C:\Program Files\MQRA\Install-SecurityFixes.ps1"
 #  $servername = "non-domain"
 } 
 if (!($CSVFile)) {
-  $SecAudPath  = $MQRAdir
-  if (!(Test-Path $SecAudPath)) {
-    $null = New-Item -ItemType Directory -Path $SecAudPath | Out-Null
+  #$SecAudPath  = $MQRAdir
+  Create-IfNotExists $SecAudPath
+  $CSVFile = Find-LocalCSVFile
+  if (!($CSVFile)) {
+    $CSVFile = Find-ServerCSVFile
   }
-  Write-Host "[.] Searching for files modified within the last 30 days that match the pattern '*_Internal_*.csv' in path - $SecAudPath"
-  $dateLimit = (Get-Date).AddDays(-30)
-  $files = Get-ChildItem -Path $SecAudPath -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt $dateLimit } | Sort-Object $_.LastWriteTime -Descending
-  
-  if ($files.Count -gt 0) {
-    # Use the full path of the first found file
-    $CSVFilename = $files[0].FullName
-    $CSVFile = $CSVFilename  # This needs to be set below as well
-    Write-Host "[+] Latest CSV File found: $CSVFilename" -ForegroundColor Green
-  } else {
-    Write-Host "[-] No recent (within 30d) matching CSV files found in [ $path ] "
-    $files = Get-ChildItem -Path $SecAudPath -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue 
-    if ($files) {
-      Write-Host "[-] List of files found MORE THAN 30 days old: " -ForegroundColor Yellow
-      $files
-    } else {
-      $files = Get-ChildItem -Path $SecAudPath
-      Write-Host "[-] No matching CSV Files found in $SecAudPath"
-      $files
-    }
+  if (!(Test-Path "$CSVFile")) {
     Write-Host "[!] ERROR: Can't find a CSV to use, or the servername to check.." -ForegroundColor Red
+    Write-Host "[!] You can use the optional -CSVFile parameter to point to the CSV file to use." -ForegroundColor Yellow
+    
     Write-Verbose "Creating Log: Application Source: Type: Error ID: 2500 - CSV not found"
     Write-Event -type "error" -eventid 2500 -msg "Error - CSV not found"
     exit
@@ -2491,6 +2511,7 @@ if (!(Test-Path $($tmp))) {
 $oldpwd=(Get-Location).Path
 Set-Location "$($SecAudPath)\temp"  # Fix for Cmd.exe cannot be run from a server share.. lets run from MQRA folder though now.
 Create-IfNotExists "$($SecAudPath)\temp"
+Create-IfNotExists "$($SecAudPath)\logs"
 
 ### Find CSV File name. 2024-05- This is dumb using 2 variables, I have added on to this so many times its terribly messy, but works. Ugh. Needs a rewrite/refactor SO badly.
 if ($CSVFile -like "*.csv") {  # Check for command line param -CSVFile
@@ -3412,23 +3433,23 @@ foreach ($CurrentQID in $QIDs) {
       }
       { ($QIDsAdobeReader -contains $_) -or ($VulnDesc -like "*Adobe Reader*" -and ($QIDsAdobeReader -ne 1)) } {
         if ((!($Automated)) -or ($Automated -and ($AutoUpdateAdobeReader))) {  
-          if (Get-YesNo "$_ Remove older versions of Adobe Reader ? " -Results $Results -QID $ThisQID) { 
-            $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Adobe Reader*'})
-            if ($Products) {
-              Write-Host "[.] Products found matching *Adobe Reader* : "
-              $Products
-              Remove-Software -Products $Products -Results $Results
-            } else {
-              Write-Host "[!] Adobe products not found under 'Adobe Reader*' : `n    $Products !!`n" -ForegroundColor Red
-            }  
-          }
+#          if (Get-YesNo "$_ Remove older versions of Adobe Reader ? " -Results $Results -QID $ThisQID) { 
+#            $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Adobe Reader*'})
+#            if ($Products) {
+#              Write-Host "[.] Products found matching *Adobe Reader* : "
+#              $Products
+#              Remove-Software -Products $Products -Results $Results
+#            } else {
+#              Write-Host "[!] Adobe products not found under 'Adobe Reader*' : `n    $Products !!`n" -ForegroundColor Red
+#            }  
+#          }
           if (Get-YesNo "$_ Install newest Adobe Reader DC ? ") {
-            Get-NewestAdobeReader
-            #cmd /c "$($tmp)\readerdc.exe"
-            $Outfile = "$($tmp)\readerdc.exe"
-            # silent install
-            Start-Process -FilePath $Outfile -ArgumentList "/sAll /rs /rps /msi /norestart /quiet EULA_ACCEPT=YES" -WorkingDirectory $env:TEMP -Wait -LoadUserProfile
-            $QIDsAdobeReader = 1
+            Update-Application -UpdateString "Adobe Reader DC"
+#            Get-NewestAdobeReader
+#            $Outfile = "$($tmp)\readerdc.exe"
+#            # silent install
+#            Start-Process -FilePath $Outfile -ArgumentList "/sAll /rs /rps /msi /norestart /quiet EULA_ACCEPT=YES" -WorkingDirectory $env:TEMP -Wait -LoadUserProfile
+           $QIDsAdobeReader = 1
           } else { $QIDsAdobeReader = 1 }
         } else {
           Write-Host "[!] Skipping Adobe Reader vulns for automated, not sure if I should remove old and install newest Reader DC etc."
