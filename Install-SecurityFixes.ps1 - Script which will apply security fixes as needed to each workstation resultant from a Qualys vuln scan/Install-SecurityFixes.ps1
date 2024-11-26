@@ -62,9 +62,9 @@ $AllHelp = "########################################################
 
 # No comments after the version number on the next line- Will screw up updates!
 $Version = "0.50.16"
-# New in this version:  .NET Core 6.0.36, Teamviewer delete registry if its not installed
+# New in this version:  Reverted for now
 
-$VersionInfo = "v$($Version) - Last modified: 11/14/2024"
+$VersionInfo = "v$($Version) - Last modified: 11/26/2024"
 
 
 # CURRENT BUGS TO FIX:
@@ -4715,7 +4715,7 @@ if (!($script:Automated)) {
   $null = Read-Host "--- Press enter to exit ---"
 } else {
   Write-Host "[AUTOMATED REBOOT] Setting reboot for 5 minutes from now, please use shutdown /a to abort!"
-  shutdown /r /f /t 5
+  shutdown /r /f /t 300
 }
 Stop-Transcript
 Write-Host "[+] Log written to: $script:LogFile , copying to $LogPath `n"
