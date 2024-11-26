@@ -102,7 +102,7 @@ $UpdateBrowserWait = 60                      # Default to 60 seconds for updatin
 $UpdateNiniteWait = 90                       # How long to wait for the Ninite updater to finish and then force-close, default 90 seconds
 $UpdateDellCommandWait = 60                  # How long to wait for Dell Command Update to re-install/update
 $SoftwareInstallWait = 60                    # How long to wait for generic software to finish installing
-$ConfigFile = "C:\Program Files\MQRA\_config.ps1"  # Configuration file 
+$ConfigFile = "_config.ps1"  # Configuration file 
 $OldConfigFile = "$oldpwd\_config.ps1"  # Configuration file 
 $QIDsListFile = "$mqradir\QIDLists.ps1"       # QID List file 
 $tmp = "$($env:temp)\SecAud"                 # "temp" Temporary folder to save downloaded files to, this will be overwritten when checking config ..
@@ -2399,9 +2399,9 @@ if (([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDat
 }
 
 # These variables should be referenced globally:
-if (!(Test-Path $ConfigFile)) {
-  Copy-ConfigFile
-}
+#if (!(Test-Path $ConfigFile)) {
+#  Copy-ConfigFile
+#}
 $ServerName=""
 Write-Verbose "Loading config from $ConfigFile"
 . "$($ConfigFile)"
