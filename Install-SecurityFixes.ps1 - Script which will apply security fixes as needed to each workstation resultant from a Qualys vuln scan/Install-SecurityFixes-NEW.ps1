@@ -9,12 +9,13 @@ param (
   [int] $SkipQID,                  # Allow user to pick one QID to skip
   [switch] $Help,                  # Allow -Help to display help for parameters
   [switch] $Update,                # Allow -Update to only update the script then exit
-  [switch] $SkipAPI = $true,       # Set this to $true to not try to make any calls to the API
+  [switch] $SkipAPI = $false,      # Set this to $true to not try to make any calls to the API for MQRA
   [switch] $Risky = $true,         # Allows for risky behavior like kililng the ninite.exe installer when updating an Application (if Winget is not installed), this should be false for slow machines!
   [switch] $PowerOpts = $false,    # This switch will set all Power options on Windows to never fall asleep or hibernate.
   [switch] $AddScheduledTask = $false,       # This switch will install a scheduled task to run the script first thursday of each month and reboot after
   [switch] $AutoUpdateAdobeReader = $false,  # Auto update adobe reader, INCLUDING REMOVAL OF OLD PRODUCT WHICH COULD BE LICENSED!!! if this flag is set
-  [string] $LogPath = "C:\Program Files\MQRA\logs"    # Where to copy log files to after.  (Should be overwritten from the config file if existing there.)
+  [string] $Log = "C:\Program Files\MQRA\logs",    # Where to copy log files to for each qid/subsystem
+  [string] $Scan = "C:\Program Files\MQRA\scans"  # Where to copy scan files to 
 )
  
 
@@ -61,10 +62,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.16"
-# New in this version:  .NET Core 6.0.36, Teamviewer delete registry if its not installed
+$Version = "0.60.00"
+# New in this version:  Quick fix to autofind the CSV in the folder again, this still needs some cleanup for MQRA
 
-$VersionInfo = "v$($Version) - Last modified: 11/14/2024"
+$VersionInfo = "v$($Version) - Last modified: 11/25/2024"
 
 
 # CURRENT BUGS TO FIX:
@@ -82,6 +83,8 @@ if ($Help) {
   exit
 }
 
+Import-Module ActiveDirectory -ErrorAction SilentlyContinue
+
 # ----------- Script specific vars:  ---------------
 $apiBaseUrl = "https://mqra.mme-sec.us/api/v1"
 $AgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.67 Safari/537.36"
@@ -90,9 +93,14 @@ $DCUUrl = "https://dl.dell.com/FOLDER11914075M/1/Dell-Command-Update-Application
 $ghostscripturl = "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10031/gs10031w64.exe"
 $AdobeReaderUpdateUrl = "https://rdc.adobe.io/reader/products?lang=mui&site=enterprise&os=Windows%2011&country=US&nativeOs=Windows%2010&api_key=dc-get-adobereader-cdn"
 $NetCore6NewestUpdate = "https://download.visualstudio.microsoft.com/download/pr/396abf58-60df-4892-b086-9ed9c7a914ba/eb344c08fa7fc303f46d6905a0cb4ea3/dotnet-sdk-6.0.428-win-x64.exe"
-$MQRAUserAgent = "MQRA v0.50 PS"
+$MQRAUserAgent = "MQRA v0.60 PS"
 $MQRAdir = "C:\Program Files\MQRA"
+$MQRAAgent = "MQRA-APITest v0.4"
+$apibaseurl = "https://mqra.mme-sec.us/api/v1"
+$hostname = "$(hostname)".ToUpper()
+$NetBIOS = $hostname
 
+$SecAudPath = $MQRADir
 $DCUFilename = ($DCUUrl -split "/")[-1]
 $DCUVersion = (($DCUUrl -split "_WIN_")[1] -split "_A0")[0]
 $CheckOptionalUpdates = $true                # Set this to false to ignore Optional Updates registry value
@@ -102,9 +110,10 @@ $UpdateBrowserWait = 60                      # Default to 60 seconds for updatin
 $UpdateNiniteWait = 90                       # How long to wait for the Ninite updater to finish and then force-close, default 90 seconds
 $UpdateDellCommandWait = 60                  # How long to wait for Dell Command Update to re-install/update
 $SoftwareInstallWait = 60                    # How long to wait for generic software to finish installing
-$ConfigFile = "C:\Program Files\MQRA\_config.ps1"  # Configuration file 
-$OldConfigFile = "$oldpwd\_config.ps1"  # Configuration file 
-$QIDsListFile = "$mqradir\QIDLists.ps1"       # QID List file 
+$OldConfigFile = "$oldpwd\_config.ps1"       # OLD Configuration file 
+$ConfigFile = "$($mqradir)\_config.ps1"      # New Configuration file location
+$CSVPath = "$($mqradir)\scans"               # CSV Path
+$QIDsListFile = "$($mqradir)\QIDLists.ps1"   # QID List file location
 $tmp = "$($env:temp)\SecAud"                 # "temp" Temporary folder to save downloaded files to, this will be overwritten when checking config ..
 $LogToEventLog = $true                       # Set this to $false to not log to event viewer Application log, source "MQRA", also picked up in _config.ps1
 $OSVersion = ([environment]::OSVersion.Version).Major
@@ -229,6 +238,9 @@ function Init-Script {
   
   # Self-elevate the script if required
   if (-Not ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole] 'Administrator')) {
+      Write-Output "`n[!] Not running under Admin context!!! Exiting.."
+      exit
+      # this stopped working? Idk why
       Write-Output "`n[!] Not running under Admin context - Re-launching as admin!"
       if ([int](Get-CimInstance -Class Win32_OperatingSystem | Select-Object -ExpandProperty BuildNumber) -ge 6000) {
           $Command = "-File `"" + $MyInvocation.MyCommand.Path + "`" " + $MyInvocation.UnboundArguments
@@ -269,6 +281,7 @@ function Init-Script {
       Remove-Item $TestFile -ErrorAction SilentlyContinue
   }
 }
+
 function Print-YesNoHelp {
   Write-Host "[?] Legend: (Not case sensitive)"
   Write-Host "  Y = Yes"
@@ -290,6 +303,7 @@ function Get-YesNo {
     if ($SkipQIDs -notcontains $QID) {
       while ($done -eq 0) {
         $yesno = Read-Host  "`n[?] $text [y/N/a/s/?] "
+        "`n[?] $text [y/N/a/s/?] " | Out-File -Append -FilePath "$($log)\$($QID)-choices.log"
         if ($yesno.ToUpper()[0] -eq 'Y') { return $true } 
         if ($yesno.ToUpper()[0] -eq 'N' -or $yesno -eq '') { return $false } 
         if ($yesno.ToUpper()[0] -eq 'A') { $script:Automated = $true; Write-Host "[!] Enabling Automated mode! Ctrl-C to exit"; return $true } 
@@ -302,7 +316,7 @@ function Get-YesNo {
         }
       } 
     } else {
-      Write-Host "[i] SKIPPING: part of $SkipQIDs" -ForegroundColor Red
+      Write-Host "[i] SKIPPING: part of $SkipQIDs" -ForegroundColor Red | Tee-Object -Append -FilePath "$($log)\$($QID)-choices.log"
       return $false
     }
   } else {  # Automated mode. Show results for -Verbose, then apply fix
@@ -311,10 +325,10 @@ function Get-YesNo {
       foreach ($result in $Results) {
         Write-Verbose "$($result)"
       }
-      Write-Host "[+] AUTOMATED: $QID - Choosing yes for $text .."
+      Write-Host "[+] AUTOMATED: $QID - Choosing yes for $text .." | Tee-Object -Append -FilePath "$($log)\$($QID)-choices.log"
       return $true
     } else {
-      Write-Host "[i] SKIPPING: part of $SkipQIDs" -ForegroundColor Red
+      Write-Host "[i] SKIPPING: part of $SkipQIDs" -ForegroundColor Red | Tee-Object -Append -FilePath "$($log)\$($QID)-choices.log"
       return $false
     }
   }
@@ -324,8 +338,10 @@ function Create-IfNotExists {
   param (
     [string]$directory
   )
-  if (!(Test-Path $directory)) {
-    $null = New-Item -ItemType directory -Path $directory -Force | Out-Null
+  if ($directory) {
+    if (!(Test-Path -Path $directory)) {
+      $null = New-Item -ItemType directory -Path $directory -Force | Out-Null
+    }
   }
 }
 
@@ -529,7 +545,7 @@ function Update-File {  # Not even used currently, but maybe eventually?
     $NewVersionCheck = (Get-NewerScriptVersion -Filename "$($FilenameTmp)" -VersionStr $($VersionStr) -VersionToCheck $VersionToCheck)
     if ($NewVersionCheck) {  
         If (Get-YesNo "Found newer version $($NewVersionCheck), would you like to copy over this one? ") {
-          Copy-Item "$($FilenameTmp)" "$($FilenamePerm)" -Force
+          Copy-Item -Path "$($FilenameTmp)" -Destination "$($FilenamePerm)" -Force
         }
         return $true
     } else {
@@ -586,17 +602,17 @@ function Get-Vars {
 
 Function Update-Script {
   # For 0.32 I am assuming $pwd is going to be the correct path
-  Write-Host "[.] Checking for updated version of script on github.. Current Version = $($Version)"
+  Write-Host "[.] Checking for updated version of script on github.. Current Version = $($Version)"  | Tee-Object -Append -FilePath "$($log)\update.log"
   $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/Install-SecurityFixes.ps1"
   Create-IfNotExists $MQRADir
   if (Update-ScriptFile -URL $url -FilenameTmp "$($tmp)\Install-SecurityFixes.ps1" -FilenamePerm "$($MQRAdir)\Install-SecurityFixes.ps1" -VersionStr '$Version = *' -VersionToCheck $Version) {
     Write-Verbose "Automated: $Automated"
     Write-Verbose "script:Automated: $script:Automated"
     if ($script:Update) { 
-      Write-Host "[!] Script flag -Update mode only detected, exiting!"
+      Write-Host "[!] Script flag -Update mode only detected, exiting!"  | Tee-Object -Append -FilePath "$($log)\update.log"
       exit
     } else {
-      Write-Host "[+] Update found, re-running script .."
+      Write-Host "[+] Update found, re-running script .." | Tee-Object -Append -FilePath "$($log)\update.log"
       Stop-Transcript
       $Vars = Get-Vars
       Write-Verbose "Re-running script with Vars: '$Vars'"
@@ -609,7 +625,7 @@ Function Update-Script {
       exit
     }
   } else {
-    Write-Host "[-] No update found for $($Version)."
+    Write-Host "[-] No update found for $($Version)."  | Tee-Object -Append -FilePath "$($log)\update.log"
     #return $false
   }
 }
@@ -617,17 +633,17 @@ Function Update-Script {
 Function Update-QIDLists {
   # For 0.32 I am assuming $pwd is going to be the correct path
   if (!($QIDsVersion)) { $QIDsVersion = "0.01" }   # If its missing, assume its super old.
-  Write-Host "[.] Checking for updated QIDLists file on github.. Current Version = $($QIDsVersion)"  # Had to change to Write-Host, Write-Output is being send back to caller
+  Write-Host "[.] Checking for updated QIDLists file on github.. Current Version = $($QIDsVersion)"    | Tee-Object -Append -FilePath "$($log)\update.log" # Had to change to Write-Host, Write-Output is being send back to caller
   $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/QIDLists.ps1"
   if (Update-ScriptFile -URL $url -FilenameTmp "$($tmp)\QIDLists.ps1" -FilenamePerm "$($mqradir)\QIDLists.ps1" -VersionStr '$QIDsVersion = *' -VersionToCheck $QIDsVersion) {
-    Write-Host "[+] Updates found, reloading QIDLists.ps1 .."
+    Write-Host "[+] Updates found, reloading QIDLists.ps1 .."  | Tee-Object -Append -FilePath "$($log)\update.log"
     return $true
     #Read-QIDLists  # Doesn't work in this scope, do it below in global scope
 #    if ($script:Automated) {    # This isnt necessary here, just overwriting variables, not rerunning the script!
 #      Set-RegistryEntry -Name "ReRun" -Value $true
 #    }
   } else {
-    Write-Host "[-] No update found for $($QIDsVersion)."
+    Write-Host "[-] No update found for $($QIDsVersion)."  | Tee-Object -Append -FilePath "$($log)\update.log"
     return $false
   }
   return $false
@@ -1174,7 +1190,7 @@ function Get-UniqueID {
 
 function Copy-ConfigFile {  
   param (
-    [string]$ConfigFile = "_config.ps1",
+    [string]$ConfigFile = $script:ConfigFile,
     [string]$NewConfigFile = "C:\Program Files\MQRA\_config.ps1"
   )
 
@@ -1202,7 +1218,7 @@ function Copy-ConfigFile {
 
 function Find-ConfigFileLine {  # CONTEXT Search, a match needs to be found but NOT need to be exact line, i.e '$QIDsFlash = 1,2,3,4' returns true if '#$QIDsFlash = 1,2,3,4,9999,12345' is found
   param (
-    [string]$ConfigFile = "_config.ps1",
+    [string]$ConfigFile = $script:ConfigFile,
     [string]$ConfigLine
   )
 
@@ -1217,7 +1233,7 @@ function Find-ConfigFileLine {  # CONTEXT Search, a match needs to be found but 
 
 function Set-ConfigFileLine {
   param (
-    [string]$ConfigFile = "_config.ps1",
+    [string]$ConfigFile = $script:ConfigFile,
     [string]$ConfigOldLine,
     [string]$ConfigNewLine
   )
@@ -1252,12 +1268,18 @@ function Set-ConfigFileLine {
 }
 
 function Remove-ConfigFileLine {  # Wrapper for Change-ConfigFileLine 
-  param ([string]$ConfigOldLine)
-  Set-ConfigFileLine -ConfigFile $ConfigFile -ConfigOldLine $ConfigOldLine -ConfigNewLine ""
+  param (
+    [string]$ConfigOldLine,
+    [string]$ConfigFile = $script:ConfigFile
+  )
+  Set-ConfigFileLine -ConfigFile $script:ConfigFile -ConfigOldLine $ConfigOldLine -ConfigNewLine ""
 }
 
 function Add-ConfigFileLine {  # Wrapper for Change-ConfigFileLine 
-  param ([string]$ConfigNewLine)
+  param (
+    [string]$ConfigNewLine,
+    [string]$ConfigFile = $script:ConfigFile
+    )
   Set-ConfigFileLine -ConfigFile $ConfigFile -ConfigOldLine "" -ConfigNewLine $ConfigNewLine
 }
 
@@ -1315,32 +1337,64 @@ function Pick-File {    # Show a list of files with a number to the left of each
   exit
 }
 
+function Find-CSVFile {
+  param ( 
+    [string]$SecAudPath
+  )
+
+  Write-Host "[.] Searching for files modified within the last 30 days that match the pattern '*_Internal_*.csv' in path - $SecAudPath"
+  $dateLimit = (Get-Date).AddDays(-30)
+  $files = Get-ChildItem -Path $SecAudPath -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt $dateLimit } | Sort-Object $_.LastWriteTime -Descending
+
+  if ($files.Count -gt 0) {
+    # Use the full path of the first found file
+    $CSVFilename = $files[0].FullName
+    $CSVFile = $CSVFilename  # This needs to be set below as well
+    Write-Host "[+] Latest CSV File found: $CSVFilename" -ForegroundColor Green
+  } else {
+    Write-Host "[-] No recent (within 30d) matching CSV files found in [ $path ] "
+    $files = Get-ChildItem -Path $SecAudPath -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue 
+    if ($files) {
+      Write-Host "[-] List of files found MORE THAN 30 days old: " -ForegroundColor Yellow
+      $files
+    } else {
+      $files = Get-ChildItem -Path $SecAudPath
+      Write-Host "[-] No matching CSV Files found in $SecAudPath"
+      $files
+    }
+  }
+}
+
 
 function Find-LocalCSVFile {
-  param ([string]$Location,
+  param ([string]$Locations = @("C:\temp\secaud","."),
          [string]$Oldpwd)
   #write-Host "Find-LocalCSVFile $Location $OldPwd"
   # FIGURE OUT CSV Filename
-  Write-Verbose "Checking for CSV in Location: $Location"
-  Write-Verbose "OldPwd: $oldPwd"
-  if (($null -eq $Location) -or ("." -eq $Location)) { $Location = $OldPwd }
-  [array]$Filenames = (Get-ChildItem "$($Location)\*Internal*.csv"  | Sort-Object LastWriteTime -Descending).Name # Find only internal scans
-  $Newest = $Filenames | Select-Object -First 1
-  return $Newest
+  Foreach ($Location in $Locations) {
+    Write-Verbose "Checking for CSV in Location: $Location"
+    Write-Verbose "OldPwd: $oldPwd"
+    if (($null -eq $Location) -or ("." -eq $Location)) { $Location = $OldPwd }
+    [array]$Filenames = (Get-ChildItem "$($Location)\*Internal*.csv"  | Sort-Object LastWriteTime -Descending).Name # Find only internal scans
+    $Newest = $Filenames | Select-Object -First 1
+    return $Newest
+  }
   if ($Filenames.Length -lt 1) {  # If no files found in $Location, check $OldPwd
     Write-Verbose "Checking for CSV in Location: $OldPwd"
     [array]$Filenames = (Get-ChildItem "$($OldPwd)\*Internal*.csv" | Sort-Object LastWriteTime -Descending).Name  
     $Newest = $Filenames | Select-Object -First 1
-    return $Newest
+    if ($Newest) { return $Newest } else {
+      Write-Verbose "Couldn't find CSV in any location!"
+    }
   } 
-  
-
-  # Used to Pick-File from here, why bother.. automate
+  return $null
 }
 
 function Find-ServerCSVFile {
-  param ([string]$Location)
-  $Servername = $script:Servername
+  param (
+    [string]$Location,
+    [string]$ServerName = "SERVER"
+  )
   Write-Verbose "[Find-ServerCSVFile] Server Name: $Servername"
   Write-Verbose "[Find-ServerCSVFile] Location: $Location"
   if (!(Test-Connection -ComputerName $servername -Count 2 -Delay 1 -Quiet)) {
@@ -2177,15 +2231,19 @@ Function Update-Application {
   if ($WinGetInstalled -and $WingetApplicationList -contains $UpdateString) { 
     Write-Host "[+] Using WinGet to update $UpdateString (if possible).."
     if ($UpdateString -eq "Chrome") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Google.Chrome $WinGetOpts" }
-  if ($UpdateString -eq "MSEdge") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Microsoft.Edge $WinGetOpts" }
+    if ($UpdateString -eq "MSEdge") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Microsoft.Edge $WinGetOpts" }
     if ($UpdateString -eq "Firefox") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Mozilla.Firefox $WinGetOpts" }
     if ($UpdateString -eq "Brave") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Brave.Brave $WinGetOpts" }
-    if ($UpdateString -eq "Teamviewer 15") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update TeamViewer.TeamViewer $WinGetOpts" }
+    if ($UpdateString -like "Teamviewer*") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update TeamViewer.TeamViewer $WinGetOpts" }
     if ($UpdateString -eq "Irfanview") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update IrfanSkiljan.IrfanView $WinGetOpts" }
     if ($UpdateString -eq "Notepad++") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Notepad++.Notepad++ $WinGetOpts" }
     if ($UpdateString -eq "Zoom client") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Zoom.Zoom $WinGetOpts" }
     if ($UpdateString -eq "Dropbox") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Dropbox.Dropbox $WinGetOpts" }
     if ($UpdateString -eq "7-zip") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update 7zip.7zip $WinGetOpts" }
+    if ($UpdateString -eq "Adobe Reader DC") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Adobe.Acrobat.Reader.32-bit $WinGetOpts" }
+    if ($UpdateString -eq "WatchguardWSM") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update WatchGuardTechnologies.WatchGuardSystemManager $WinGetOpts" }
+    if ($UpdateString -eq "WatchguardSSLVPN") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update WatchGuard.MobileVPNWithSSLClient $WinGetOpts" }
+    
     Write-Host "[+] Done."
   } else {
     # Lets use Ninite to update..
@@ -2315,7 +2373,7 @@ function Check-ScheduledTask {
     }
     Write-Verbose "ST_StartTime: $ST_StartTime ST_DayOfWeek: $ST_DayOfWeek"
     #$FirstRun = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $ST_DayOfWeek -WeeksInterval 1 -At $ST_StartTime -RandomDelay 01:00:00
-    $FirstRun = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $ST_DayOfWeek -WeeksInterval 4 -At $ST_StartTime  -RandomDelay 01:00:00
+    $FirstRun = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $ST_DayOfWeek -WeeksInterval 2 -At $ST_StartTime  -RandomDelay 01:00:00
 
     #IGNORING 2nd run date now, can retrigger remotely eventually..
     #$SecondRunDate = (Get-Date -Day 14).AddHours($ST_StartTimeHours)
@@ -2362,8 +2420,758 @@ function Check-ScheduledTask {
 
 ###################################################################### API Related Calls ##################
 
+########## API UTILITY FUNCTIONS
+
+function Log {
+  param (
+    [string]$Data = "`r`n",
+    [string]$ForegroundColor,
+    [string]$Logfile = $script:ApiLogfile,
+    [switch]$Both = $false
+  )
+  $eol = [Environment]::NewLine
+  if ($LogFile -eq "") { $LogFile = "$($log)\api.log" }  # not passing this from script scope at times..
+  try {
+    "[API] $Data" | Out-File $LogFile -Append -ErrorAction SilentlyContinue
+  } catch {   # don't care if file is missing, can't write is an issue though
+    $_.Exception.Message
+    Write-Host "[couldn't log][API] $Data"
+  }
+  if ($Both) {
+    $Data             
+  }
+
+}
+
+function MD5hash {
+  param
+    ( 
+      [string]$in
+    )
+    return [System.BitConverter]::ToString((New-Object Security.Cryptography.MD5CryptoServiceProvider).ComputeHash([Text.Encoding]::UTF8.GetBytes($in))).Replace("-", "").ToLower()
+}
+ 
+function Get-ConfigFileLine {
+  param ( 
+    [string]$Search = "*",
+    [string]$ConfigFile = "_config.ps1"
+  )
+  if (!(Test-Path "$ConfigFile")) { "" | Set-Content $ConfigFile }
+  $content = Get-Content $ConfigFile -ErrorAction SilentlyContinue
+
+  foreach ($line in $content) {
+    if ($line -like "$($Search)*") {
+      Log "Line: $line"
+      Log "Returning Config line: $($line.split("$($Search)")[1].trim().replace('"',''))"
+      return $line.split("$($Search)")[1].trim().replace('"','')
+    } 
+  }
+  return $false
+}
+
+function Set-ConfigFileLine {
+  param ( 
+    [string]$OldLine,  # "" here will add $NewLine string to end of file
+    [string]$NewLine,
+    [string]$ConfigFile = "_config.ps1"
+  )
+  if (!(Test-Path "$ConfigFile")) { "" | Set-Content $ConfigFile }
+  $content = Get-Content $ConfigFile
+  $content | Set-Content "$($configFile).bak" # make backup
+  if (-not $OldLine) {
+    Add-Content -Path $ConfigFile -Value $NewLine
+    return $true
+  }
+
+  "" | Set-Content "$($configFile)" # empty config file
+  foreach ($line in $content) {
+    if ($line -like "*$($OldLine)*") {
+      Add-Content -Path $ConfigFile -Value $NewLine
+    } else {
+      Add-Content -Path $ConfigFile -Value $line
+    }
+  }
+}
+
+function Put-UniqueId {
+  param (
+    [string]$UniqueId,
+    [string]$configfile = "_config.ps1"
+  )
+  Log "[+] [Put-UniqueId] : $UniqueId" 
+  $UniqueIdFound = Get-ConfigFileLine '$UniqueId = '
+  $UniqueIdLine = '$UniqueId = '+$UniqueId
+  if (!($UniqueIdFound)) {
+    Set-ConfigFileLine -OldLine '' -NewLine $UniqueIdLine
+    Log "[+] Saved UniqueId to $configfile" -ForegroundColor Green
+  } else {
+    Set-ConfigFileLine -OldLine '$UniqueId =' -NewLine $UniqueIdLine
+    Log "[+] Overwrite UniqueId in $configfile" -ForegroundColor Yellow
+  }
+}
+
+function Get-UniqueId {
+  param (
+    [string]$FilePath = '_config.ps1'
+  )
+  try {
+    (Get-Content $filepath -ErrorAction SilentlyContinue) | ForEach-Object {
+      if ($_ -match '^\$UniqueId\s*=') {
+        $UniqueId = ($_ -split "UniqueId =")[1].trim().replace('"','')
+      }
+    } 
+  } catch {
+    Log "=== [Get-UniqueId] couldn't read from config.. $_"
+    return $false
+  }
+  if ($UniqueId.length -eq 16) { return $UniqueId } else { return $false }
+}
+
+function New-UniqueId {
+  $UniqueId = -join ((65..90) + (97..122) | Get-Random -Count 16 | ForEach-Object {[char]$_})
+  return $UniqueId
+}
+
+function Show-FixData { 
+  param (
+    [psobject]$FixData
+  )
+
+  foreach ($key in $FixData.Keys) {
+    Log "[FixData]  $key : $($FixData[$key])"
+  }
+}
+
+function Verify-Data {
+  param (
+        $requiredKeys = @('qualys_ids', 'description', 'note'),
+        [Parameter(Mandatory=$true)]
+        [psobject]$Data
+  )
+
+  if ($Data) {
+    foreach ($key in $requiredKeys) {
+        if (-not $Data.ContainsKey($key)) {
+            Log "[Verify-Data] -Data doesn't contain $key"
+            return $false
+        }
+    }
+    return $true
+  }
+}
 
 
+############ API FUNCTIONS
+
+function API-GetClientGuid {
+  param (
+        [string]$AccountName,
+        [string]$APIRoute = "/client/lookup",
+        [string]$Method = "POST",
+        [string]$UserAgent = $script:UserAgent,
+        [string]$APIKey,
+        [string]$UniqueID
+    )
+
+    Log "[API-GetClientGuid] ---------- $uri $UserAgent $Method $(($Headers).Authorization)"
+    $uri = "$($apiBaseUrl)$($APIRoute)"
+    $headers = @{
+        'Authorization' = "Bearer $APIKey"
+    }
+    $body = @{
+        uniqueid = $UniqueID
+        apikey = $APIKey
+        accountname = $AccountName
+    } | ConvertTo-Json
+    Log "---- body: uniqueid: $($body.uniqueid) apikey: $($body.apikey) accountname: $($body.accountname)"
+    try {
+        Log "[API-GetClientGuid] Calling IRM : -Uri '$uri' -UserAgent '$UserAgent' -Method '$Method' `
+                      -Headers Authorization $(($Headers).Authorization) -Body $($body|select *|fl)" -ForegroundColor Yellow
+        $Resp = Invoke-RestMethod -Uri $uri -UserAgent $UserAgent -Method $Method -Headers $headers -Body $body
+        Log "[API-GetClientGuid] Response: $($Resp)"
+        return ($Resp)
+    } catch {
+        Log "[API-GetClientGuid] Error: StatusCode: $_.Exception.Response.StatusCode.value__"
+        $resp
+        return '{"error":"' + $_.Exception.Response.ReasonPhrase + '"}'
+    }
+    return '{"error":"unknown"}'
+}
+
+function API-FileDownload {
+    param (
+        [string]$APIRoute = "/api/v1/import/fullinternal",
+        [string]$Method = "POST",
+        [string]$UserAgent = "$MQRAAgent",
+        [string]$APIKey,
+        [string]$ClientGuid,
+        [string]$Filename,
+        [string]$UniqueID
+    )
+
+    $uri = "$($script:apiBaseUrl)$($APIRoute)"  # Ensure $apiBaseUrl is defined elsewhere
+    Log "[API-FileUpload] uri: $uri"
+    $headers = @{
+        'Authorization' = "Bearer $APIKey"
+    }
+
+    try {
+        $body = @{
+            uniqueid = $UniqueID
+            apikey = $APIKey
+            client_guid = $ClientGuid
+            filename = $Filename
+        } | ConvertTo-Json -Depth 100
+
+        Log "[API-FileDownload] Calling IRM with file upload: IRM -Uri $uri -Method $Method -Headers $($headers|select *|fl) -Body {not shown}"
+        Log "[API-FileDownload] Body: "
+        Log ($body | select *)
+        $Response = Invoke-RestMethod -Uri $uri -Method "POST" -Headers $headers -Body $body
+
+        #Log "[API-FileDownload] Response: $($Resp | select *|fl)"
+        if ($Response."csv_content") {
+          $Response.csv_content | Set-Content "$FileName"
+          Log "[API-FileDownload] File downloaded successfully" 
+          return $true
+        } else {
+           Log "[API-FileDownload] Response does not contain 'csv_content': $($Response | ConvertFrom-Json)"
+          return $false
+        }
+        return ($Response)
+    } catch {
+        Log "[API-FileDownload] Error: StatusCode: $_.Exception.Response.StatusCode.value__"
+        return '{"error":"' + $_.Exception.Response.ReasonPhrase + '"}'
+    }
+    return '{"error":"unknown"}'
+}
+
+function API-FileUpload {
+    param (
+        [string]$APIRoute = "/api/v1/import/fullinternal",
+        [string]$Method = "POST",
+        [string]$UserAgent = "APItest.ps1",
+        [string]$APIKey,
+        [string]$ClientGuid,
+        [string]$Filename,
+        [string]$UniqueID
+    )
+
+    $uri = "$($script:apiBaseUrl)$($APIRoute)"  # Ensure $apiBaseUrl is defined elsewhere
+    Log "[API-FileUpload] uri: $uri"
+    $headers = @{
+        'Authorization' = "Bearer $APIKey"
+    }
+
+    try {
+        $body = @{
+            uniqueid = $UniqueID
+            apikey = $APIKey
+            client_guid = $ClientGuid
+            filename = (Split-Path $Filename -Leaf)
+            file = (Get-Content -Path $Filename)
+        } | ConvertTo-Json -Depth 100
+
+        Log "[API-FileUpload] Calling IRM with file upload: IRM -Uri $uri -Method $Method -Headers $($headers|select *|fl) -Body {not shown}"
+        Log "[API-FileUpload] Body: "
+        Log "$($body | select *)"
+        $Response = Invoke-RestMethod -Uri $uri -Method $Method -Headers $headers -Body $body
+
+        Log "[API-FileUpload] Response: $($Resp | select *|fl)"
+        $key = "Message"
+        if (-not $Response.ContainsKey($key)) {
+            Log "[API-FileUpload] Response doesn't contain $key"
+            return $false
+        }
+        if ($Response."Message") {
+          if ($Response["Message"] -like "*imported successfully*") {
+            Log "[API-FileUpload] Response shows file imported successfully!" 
+            return $true
+          } else {
+            Log "[API-FileUpload] Response doesn't show a successful file import." 
+            return $false
+          }
+        } else {
+           Log "[API-FileUpload] Response does not contain 'Message': $($Response | ConvertFrom-Json)"
+          return $false
+        }
+        return ($Response)
+    } catch {
+        Log "[API-FileUpload] Error: StatusCode: $_.Exception.Response.StatusCode.value__"
+        return '{"error":"' + $_.Exception.Response.ReasonPhrase + '"}'
+    }
+
+    return '{"error":"unknown"}'
+}
+
+
+Function API-Call {
+  param (
+    [string]$APIRoute, 
+    [string]$UniqueID = "", 
+    [string]$APIKey = "", 
+    [string]$AccountName = "",
+    [string]$AssetInventory = "",
+    [string]$NetBios = "",
+    [string]$Domain = "",
+    [string]$Lanipv4 = "",
+    [string]$Lanipv6 = "",
+    [string]$Wanipv4 = "",
+    [string]$Filename = "",
+    [string]$ScanSummary = "",
+    [string]$ClientScan = "",
+    [string]$ClientGuid = "",
+    [string]$QID = "",
+    [string]$Method = "POST",
+    [string]$Useragent = "$Script:UserAgent",
+    [string]$Logs,
+    [psobject]$FixData = "?"
+  )
+  $domain = $env:userdnsdomain
+
+  $url = "$($apiBaseUrl)$($APIRoute)"   # $APIRoute should have initial /
+ 
+  $headers = @{
+      'Content-Type' = 'application/json'
+      'Authorization' = "Bearer $APIkey"
+  }
+  if ($APIRoute -eq "/remed") { # /Remed
+    Log "[API-Call] Fixdata: $(Show-FixData $FixData)"
+    if (Verify-Data -Data $FixData) {
+      $qualys_ids = ($FixData["qualys_ids"] -replace "\n","" -replace "\\","")  | ConvertTo-Json
+      $description = $FixData["description"]
+      $note = $FixData["note"]
+    } else {
+      Log "[!] Error: $FixData is missing one or more required fields."
+    }
+    $body = @{                            # /Remed
+        apikey = $APIKey
+        uniqueid = $uniqueID
+        filename = $FileName
+        qualys_ids = $qualys_ids
+        description = $description
+        note = $note
+    } | ConvertTo-Json
+  } else {
+    if ($APIRoute -eq "/hello") {         # /Hello
+      if (!($APIKey)) { $APIKey = $HelloMsg }
+      $body = @{
+        uniqueid = $uniqueID
+        netbios = $NetBios
+        domain = $Domain
+        wanipv4 = $wanipv4
+        lanipv4 = $lanipv4
+        lanipv6 = $lanipv6
+#        assetinventory = $AssetInventory
+#        accountname = $AccountName
+        apikey = $APIKey
+      }   | ConvertTo-Json
+    } else { 
+      if ($APIRoute -eq "/sendlogs") {    # /Sendlogs
+        $body = @{  
+          uniqueid = $uniqueID
+          apikey = $APIKey
+          clientscan = $ClientScan
+          name = "QID $QID"
+          logs = $Logs
+        } | ConvertTo-Json
+      } else {
+        if ($APIRoute -eq "/clientscan/csv") { # /Clientscan/CSV
+          $client = 
+          $body = @{  
+            uniqueid = $uniqueID
+            apikey = $APIKey
+            filename = $Filename
+          } | ConvertTo-Json
+        } else {
+          if ($APIRoute -eq "/clientscan/latest") { # /ClientScan/Latest
+            $body = @{ 
+              uniqueid = $uniqueID
+              apikey = $APIKey
+            } | ConvertTo-Json
+          } else {
+            if ($APIRoute -eq "/checkin" -or $APIRoute -eq '/checkout') { # /Checkin or /Checkout
+              $body = @{ 
+                uniqueid = $uniqueID
+                apikey = $APIKey
+              } | ConvertTo-Json
+            } else {
+              if ($APIRoute -eq "/test") {
+                $body = @{ 
+                  test = "test"
+                } | ConvertTo-Json
+              }
+             }
+          }
+        }
+      }
+    }
+  }
+  try {
+    Log "[API-Call] Calling IRM : -Uri '$url' -UserAgent '$UserAgent' -Method '$Method' -Headers '$($headers | out-string) $($headers.Value)' -Body '$body'"
+    $Resp = Invoke-RestMethod -Uri $url -UserAgent $UserAgent -Method $Method -Headers $headers -Body $body -Contenttype 'application/json'
+    Log "[API-Call] response: $($Resp)"
+    return ($Resp)
+  } catch {
+    Log "[API-Call] Error: StatusCode: $($_.Exception.Response.StatusCode.value__)"
+#    Log "[API-Call] Error: StatusDescription: $_.Exception.Response.ReasonPhrase"
+#    Log "[API-Call]  Error: raw text: $($Response)"
+    return '{"error": '+$_.Exception.Response.ReasonPhrase+'"}'
+  }
+ 
+  return '{"error":"unknown"}'
+}
+ 
+ 
+function API-Remed {
+  param (
+    [string]$APIKey,
+    [psobject]$FixData,
+    [string]$APIRoute,
+    [string]$UniqueID = "",
+    [string]$AccountName = "",
+    [string]$AssetInventory = "",
+    [string]$ScanSummary = "",
+    [string]$NetBios = $script:hostname,
+    [string]$FileName = ""
+  )
+  if (!($SkipAPI)) {  
+    $APIRoute = "/remed"
+    Log "[API-REMED] API-Call:
+    APIKey: $APIKey
+    FixData: $($FixData)
+    APIRoute: $APIRoute
+    UniqueID: $UniqueID
+    Accountname: $AccountName
+    AssetInventory: $AssetInventory
+    ScanSummary: $ScanSummary
+    NetBios: $NetBios
+    FileName: $FileName"
+    $Response = API-Call -APIRoute $APIRoute -UniqueId $UniqueID -APIKey $APIKey -FixData $FixData -AccountName $AccountName `
+                        -AssetInventory $AssetInventory -NetBios $NetBios -Filename $Filename -ScanSummary $ScanSummary
+    Log "[API-Remed] Response: $response"
+    if ($(($Response)."status") -like "*Remediation recorded*") {
+      return $true
+    } else {
+      return $false
+    }
+    if ($Response."error") {  
+      return $false
+    } else {
+      return $false
+    }
+  } else {
+     # API Call skipped...
+  }
+}
+ 
+function API-Check {
+  param (
+    [string]$UniqueID,
+    [string]$APIKey,
+    [string]$Direction
+  )
+  if (!($SkipAPI)) {
+    $APIRoute = "/check$($Direction)"
+    $Response = API-Call -APIRoute $APIRoute -UniqueId $UniqueID -APIKey $APIKey
+    if ($Response -like "*timestamp recorded*") {
+      if ($Response -like "*timestamp recorded*") {
+        Log "[API-Check] Check$($Direction) Succeeded"
+        return $true
+      } else {
+        Log "[API-Check] Check$($Direction) Failed - no timestamp recorded"
+        return $false
+      }
+    } else {
+        Log "[API-Check] Check$($Direction) Failed - couldn't find 'timestamp recorded' in response."
+        return $false
+    }
+  } else {
+    Log "[-] Skipping API calls.. SkipAPI=true"
+  }
+}
+ 
+function API-Hello {
+  param ( 
+    [string]$UniqueID,
+    [string]$AccountName,
+    [string]$AssetInventory,
+    [string]$domain,
+    [string]$hostname = (hostname).ToUpper(),
+    [string]$lanipv4 = ((Get-NetIPAddress | Where-Object { $_.AddressFamily -eq 'IPv4' -and $_.InterfaceAlias -notlike '*Loopback*' }).IPAddress),
+    [string]$lanipv6 = ((Get-NetIPAddress | Where-Object { $_.AddressFamily -eq 'IPv6' -and $_.InterfaceAlias -notlike '*Loopback*' }).IPAddress),
+    [string]$wanipv4 = (Invoke-WebRequest "ifconfig.me").Content,
+    [string]$HelloMsg = "65f7218ee72d8aeab272130a042de1e3"
+  )
+  $domain = $env:userdnsdomain
+  $NetBios = $hostname
+  if (!($SkipAPI)) {  
+    $APIRoute = "/hello"
+    $Resp = API-Call -APIRoute $APIRoute -APIKey $HelloMsg -NetBios $NetBIOS -domain $domain -lanipv4 $lanipv4 -lanipv6 $lanipv6 -wanipv4 $wanipv4 -uniqueid $UniqueId
+
+    Log "------ Resp.StatusCode: $($Resp.statuscode)"
+    if ($Resp -like "*api_key*") {
+      $APIKey = $Resp."api_key"
+      if ($APIKey.Length -ge 64) {   # Better check here
+        Log "[API-Hello] Hello Succeeded. API Key = $APIKey "  -ForegroundColor Green
+        return $ApiKey
+      } else {
+        Log "[API-Hello] Hello FAILED!" -ForegroundColor Red
+        return $false
+      }
+    }  
+  }
+}
+ 
+####################### API KEY FUNCTIONS #################################################
+
+function API-StoreKey {
+  param (
+    [string]$APIKey,
+    [string]$configfile = "_config.ps1"
+  )
+  $APIKeyFound = Get-ConfigFileLine '$APIKey = '
+  $APIKeyLine = '$APIKey = '+$APIKey
+  if (!($APIKeyFound)) {
+    Set-ConfigFileLine -OldLine '' -NewLine $APIKeyLine
+    Log "[+] Saved new API Key to $configfile" -ForegroundColor Green
+    return $true
+  } else {
+    Set-ConfigFileLine -OldLine '$APIKey =' -NewLine $APIKeyLine
+    Log "[+] Overwrite API Key in $configfile" -ForegroundColor Green
+    return $true
+  }
+  return $false
+}
+
+function API-SendLogs {
+  param (
+    [string]$UniqueID,
+    [string]$APIKey,
+    [string]$ClientScan,
+    [string]$LogFile,
+    [string]$QID
+  )
+  if (!($SkipAPI)) {
+    $APIRoute = "/sendlogs"
+    $Logs = Get-Content $LogFile
+    $Response = API-Call -APIRoute $APIRoute -UniqueId $UniqueID -APIKey $APIKey -ClientScan $ClientScan -Logs $Logs -QID $QID
+    if ($Response."messages") {
+      Log "messages"
+      if ($Response."messages" -like "*Logs received*") {
+        Log "logs received"
+        return $true
+      } else {
+       return $false
+      }
+    }
+  } else {
+    Write-Host "[-] Skipping API calls.. SkipAPI=true"
+  }
+}
+
+function API-GetLatestClientScan {
+  param (
+    [string]$UniqueID,
+    [string]$APIKey
+  )
+  if (!($SkipAPI)) {
+    $APIRoute = "/clientscan/latest"
+    $Response = API-Call -APIRoute $APIRoute -Method "POST" -UniqueId $UniqueID -APIKey $APIKey
+    if ($Response."filename") {
+      if ($Response."filename" -like "*.csv*") {
+        return $Response."filename"
+      } else {
+       return $false
+      }
+    }
+  } else {
+    Write-Host "[-] Skipping API calls.. SkipAPI=true"
+  }
+}
+
+
+############################## API SCAN UPLOADS and DOWNLOADS ##################################################
+
+function API-DownloadScan {
+  param (
+    [string]$UniqueID,
+    [string]$APIKey,
+    [string]$Filename,
+    [string]$WriteTo
+  )
+  if (!($SkipAPI)) {
+    $APIRoute = "/clientscan/csv"
+    $Response = API-Call -APIRoute $APIRoute -Method "POST" -UniqueId $UniqueID -APIKey $APIKey -Filename $Filename
+    if ($Response."csv_content") {
+      $Response."csv_content" | Set-Content "$($WriteTo)\$($Filename)"
+      Log "[+] Recieved CSV, saved to '$($WriteTo)\$($Filename)'"
+      return "$($WriteTo)\$($Filename)"
+    } else {
+     return $false
+    }
+  } else {
+    Write-Host "[-] Skipping API calls.. SkipAPI=true"
+  }
+}
+
+function API-UploadScan {
+  param (
+    [string]$Filename, 
+    [string]$UniqueID, 
+    [string]$ClientGuid, 
+    [string]$APIKey,
+    [string]$Type
+  )
+
+  $APIRoute = "/import/full$($type)"
+  if (!($SkipAPI)) {
+    Log "[API-UploadScan] launching API-FileUpload APIRoute: $APIRoute UniqueID: $UniqueId APIKey: $APIKey Filename: $Filename ClientGuid: $ClientGuid"
+    $Response = API-FileUpload -APIRoute $APIRoute -UniqueID $UniqueID -APIKey $APIKey -Filename $Filename -ClientGuid $ClientGuid
+    if ($Response) { return $true } else { return $false }
+  } else {
+    Log "[-] Skipping API calls.. SkipAPI=true"
+  }
+}
+
+function API-CheckScan {
+  param (
+        $APIRoute = "/clientscan/latest",
+        $UniqueId,
+        $APIKey,
+        $AccountName,
+        $NetBios
+  )
+  if (!($SkipAPI)) {
+    Log "[API-CheckScan] launching API-Call APIRoute: $APIRoute UniqueID: $UniqueId APIKey: $APIKey"
+    $Response = API-Call -APIRoute $APIRoute -UniqueID $UniqueID -APIKey $APIKey
+    Log "[API-CheckScan] API-Call response: $Response"
+    if ($Response.filename) { return $Response.filename } else { return $false }
+  } else {
+    Log "[-] Skipping API calls.. SkipAPI=true"
+  }
+}	
+
+function API-Test {
+  param (
+    [switch]$ping
+  )
+
+  $APIRoute = "/test"
+  if (!($SkipAPI)) {
+    Log "[API-Test] launching API-Call APIRoute: $APIRoute "
+    if ($ping) {
+      $ping=(ping -n 1 -w 3 mqra.mme-sec.us | findstr /i reply).split(' ')[4].split('=')[1].split('ms')[0]  # Test-Netconnection sucks
+      $Response = API-Call -APIRoute $APIRoute 
+      if ($Response) { return $ping } else { return $false }
+    } else {
+      $Response = API-Call -APIRoute $APIRoute 
+      if ($Response) { return $true } else { return $false }
+    }
+  } else {
+    Log "[-] Skipping API calls.. SkipAPI=true"
+  }
+}
+
+
+################################### MAIN ROUTINES ############################################
+
+
+$datetime = Get-Date -Format "yyyy-MM-dd HH:mm:ss" 
+Log;Log;Log;Log "################################################################################################# API START $datetime" -Both
+$UniqueId = Get-UniqueId
+if (!($UniqueId)) {
+  $UniqueId = New-UniqueId
+  Put-UniqueId $UniqueId
+  Log "[+] Created and stored UniqueId: $UniqueId" -Both
+} else {
+  Log "[+] Found UniqueId: $UniqueId" -Both
+}
+
+if ($APIKey = Get-ConfigFileLine -Search '$APIKey = ') {
+  Log "[+] Got API key" -ForegroundColor Green -Both
+} else {
+  Log "[-] Couldn't get API key from $configfile !!" -ForegroundColor Red -Both
+  $APIKey = $null
+}
+
+if (!($ping = API-Test)) {
+  Log "[-] ERROR: API not functional."  -ForegroundColor Red -Both
+} else {
+  $colors = @("Red","Orange","Yellow","Light Green","Green")
+  $pings = @(125,100,75,50,25)
+  foreach ($ping in $pings) {
+    if ($ping -gt 100) {
+        $color = $colors[0]
+    } elseif ($ping -gt 75) {
+        $color = $colors[1]
+    } elseif ($ping -gt 50) {
+        $color = $colors[2]
+    } elseif ($ping -gt 25) {
+        $color = $colors[3]
+    } else {
+        $color = $colors[4]
+    }
+  }
+  #$color = $colors[$ping]
+  Log "[+] API up and running, MQRA server: $($ping)ms"  -ForegroundColor $color -Both
+}
+
+Log;Log "-------------- API-CheckIn ---------------------------" -Both
+if (!(API-Check -Direction "in" -UniqueID $UniqueID -APIKey $APIKey)) {   # "in" must stay lowercase!
+  Log "[API] Failed Checkin. Trying Hello.." -Both
+
+  Log;Log "-------------- API-Hello tests ---------------------------" -Both
+  $Result = API-Hello -APIKey $APIKey -UniqueID $UniqueID -NetBios $NetBios -hostname $hostname
+  Log "--- API-Hello Result: $Result" -Both
+  if ($Result.length -eq 64) {
+    $APIKey = $Result
+  } else {
+    Log "--- Bad Response: $Result" -Both  # not sure?
+  }
+  if ($APIKey) {
+    Log "[+] Hello success! API_Key = $APIKey" -Both
+    if (API-ReplaceStoreKey -APIKey $APIKey -FilePath "C:\Program Files\MQRA\_config.ps1") {
+      Log "[+] Success, updated C:\Program Files\MQRA\_config.ps1 file with API key." -ForegroundColor Green
+    } else {
+      Log '[-] Error replacing $APIKey line in _config.ps1 file! Check permissions or file exists, etc' -ForegroundColor Red -Both
+    }
+    if ($APIKey = Get-ConfigFileLine -Search '$APIKey = ') {
+      Log "[+] Success, got API key from _config.ps1" -ForegroundColor Yellow
+    }
+
+    Log;Log "-------------- API-CheckIn tests ---------------------------"
+    if (API-Check -Direction "in" -UniqueID $UniqueID -APIKey $APIKey) {   # "in" must stay lowercase!
+      Log "[+] Checkin Success." -Both
+    } else {
+      Log "[-] Checkin Failure!" -Both
+    } 
+  } else {
+    Log "[-] Hello Failure! ... "
+    #Log "[-] Hello Failure! ... Skipping API for now." -Both
+    #$SkipAPI = $true
+  }
+} else {
+  Log "[+] Checkin: Success!" -ForegroundColor Green -Both
+}
+
+$Filename = API-GetLatestClientScan -UniqueID $UniqueId -APIKey $APIKey
+if ($Filename) {
+  Log "[+] Received Filename: '$Filename'" -ForegroundColor Green
+} else {
+  Log "[-] API-GetLatestClientScan - Couldn't get filename!!" -ForegroundColor Red
+}
+$FileDown = API-DownloadScan -WriteTo $CSVPath -Filename $Filename -UniqueID $UniqueId -APIKey $APIKey
+if ($FileDown) {
+  Log "[+] Downloaded Filename: '$FileDown'" -ForegroundColor Green
+} else {
+  Log "[-] API-DownloadScan Couldn't get filename!!" -ForegroundColor Red
+}
+
+$CSVFilename = $FileDown
+$CSVFile = $FileDown
+
+$datetime = Get-Date -Format "yyyy-MM-dd HH:mm:ss" 
+Log "################################################################################################# API END $datetime"
 
 #######################################################
 
@@ -2398,10 +3206,21 @@ if (([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDat
   }
 }
 
+if (!(Test-Path $MQRAdir)) {
+  Create-IfNotExists $MQRAdir
+  Write-Output "[.] Copying necessary files to $MQRAdir .."
+  $null = Copy-Item "Install-SecurityFixes.ps1" -Destination $MQRAdir -Force -ErrorAction SilentlyContinue | Out-null
+  $null = Copy-Item "QIDList.ps1" -Destination $MQRAdir -Force -ErrorAction SilentlyContinue | Out-null
+  $null = Copy-Item "_config.ps1" -Destination $MQRAdir -Force -ErrorAction SilentlyContinue | Out-null
+  $null = Copy-Item "*.csv" -Destination $MQRAdir -Force -ErrorAction SilentlyContinue | Out-null
+#  sl $MQRApath
+}
+
 # These variables should be referenced globally:
 if (!(Test-Path $ConfigFile)) {
   Copy-ConfigFile
 }
+
 $ServerName=""
 Write-Verbose "Loading config from $ConfigFile"
 . "$($ConfigFile)"
@@ -2417,68 +3236,31 @@ if (Update-QIDLists) {
 #Config should have already loaded $ServerName
 Write-Verbose "Found ServerName $ServerName"
 if (!($ServerName)) {
-  $ServerName = Get-RegistryEntry "ServerName"
+  $ServerName = Get-RegistryEntry -Name "ServerName"
 }
-if ($Servername -ne "non-domain") {
-  if (Test-Connection -ComputerName $ServerName -Count 1 -Delay 1 -Quiet -ErrorAction SilentlyContinue) {
-    Write-Output "[.] Checking location \\$($ServerName)\$($CSVLocation) .."
-    if (Get-Item "\\$($ServerName)\$($CSVLocation)\Install-SecurityFixes.ps1" -ErrorAction SilentlyContinue) {
-      Write-Host "[.] Found \\$($ServerName)\$($CSVLocation)\Install-SecurityFixes.ps1 .. Cleared to proceed." -ForegroundColor Green
-      $SecAudPath = "\\$($ServerName)\$($CSVLocation)"
-    }
-  } else {
-    # Lets also check SERVER, DC-SERVER, localhost in case config is wrong?
-    $ServerNames = "SERVER","DC-SERVER",($env:computername)
-    foreach ($ServerName in $ServerNames) {
-      Write-Output "[.] Checking default locations: \\$($ServerName)\Data\SecAud .."
-      if (Test-Connection -ComputerName "$($ServerName)" -Count 1 -Delay 1 -Quiet -ErrorAction SilentlyContinue) {
-        if (Get-Item "\\$($ServerName)\Data\SecAud\Install-SecurityFixes.ps1" -ErrorAction SilentlyContinue) {
-          $ServerName = "$($ServerName)"
-          $CSVLocation = "Data\SecAud"
-          $script:ServerShare = "$($ServerName)\$($CSVLocation)"
-          $SecAudPath = "\\$($ServerName)\$($CSVLocation)"
-          Write-Host "[.] Found \\$($SecAudPath)\Install-SecurityFixes.ps1 .. Cleared to proceed." -ForegroundColor Green
-        }
-      } else { Write-Output "[-] No response found, Trying next.." }
-    }
-  }
-}
-if (!($CSVFile) -and (Get-Item "C:\Program Files\MQRA\Install-SecurityFixes.ps1" -ErrorAction SilentlyContinue)) {  # we will be keeping the qualys scans here from now on, and deleting them when not in use..
-  $oldpwd = "C:\Program Files\MQRA"
-  $servername = "non-domain"
-} 
-if (-not $script:Automated) {
-  $script:ServerShare = $SecAudPath  # Where logs are copied to
-  if (!(Test-Path $SecAudPath)) {
-    $null = New-Item -ItemType Directory -Path $SecAudPath | Out-Null
-  }
-}
-Write-Host "[.] Searching for files modified within the last 30 days that match the pattern '*_Internal_*.csv' in path - $SecAudPath"
-$dateLimit = (Get-Date).AddDays(-30)
-$files = Get-ChildItem -Path $SecAudPath -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt $dateLimit } | Sort-Object $_.LastWriteTime -Descending
 
-if ($files.Count -gt 0) {
-  # Use the full path of the first found file
-  $CSVFilename = $files[0].FullName
-  $CSVFile = $CSVFilename  # This needs to be set below as well
-  Write-Host "[+] Latest CSV File found: $CSVFilename" -ForegroundColor Green
-} else {
-  Write-Host "[-] No recent (within 30d) matching CSV files found in [ $path ] "
-  $files = Get-ChildItem -Path $SecAudPath -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue 
-  if ($files) {
-    Write-Host "[-] List of files found MORE THAN 30 days old: " -ForegroundColor Yellow
-    $files
-  } else {
-    $files = Get-ChildItem -Path $SecAudPath
-    Write-Host "[-] No matching CSV Files found in $SecAudPath"
-    $files
+Write-Verbose "Found CSVFile $CSVFile"
+Write-Verbose "Found CSVFilename $CSVFilename"
+#if (!($CSVFile) -and (Get-Item "C:\Program Files\MQRA\Install-SecurityFixes.ps1" -ErrorAction SilentlyContinue)) {  # we will be keeping the qualys scans here from now on, and deleting them when not in use..
+#  $servername = "non-domain"
+#} 
+if (!($CSVFile)) {
+  Create-IfNotExists $SecAudPath
+  $CSVFile = Find-LocalCSVFile @($SecAudPath,$MQRAdir,'.')
+  if (!($CSVFile)) {
+    $CSVFile = Find-ServerCSVFile
   }
-  Write-Host "[!] ERROR: Can't find a CSV to use, or the servername to check.." -ForegroundColor Red
-  Write-Verbose "Creating Log: Application Source: Type: Error ID: 2500 - CSV not found"
-  Write-Event -type "error" -eventid 2500 -msg "Error - CSV not found"
-  exit
+  if (!(Test-Path "$CSVFile")) {
+    Write-Host "[!] ERROR: Can't find a CSV to use, or the servername to check.." -ForegroundColor Red  | Tee-Object -Append -FilePath "$($log)/csv.log"
+    Write-Host "[!] You can use the optional -CSVFile parameter to point to the CSV file to use." -ForegroundColor Yellow  | Tee-Object -Append -FilePath "$($log)/csv.log"
+    
+    Write-Verbose "Creating Log: Application Source: Type: Error ID: 2500 - CSV not found"
+    Write-Event -type "error" -eventid 2500 -msg "Error - CSV not found"
+    exit
+  }  
 }
-Set-RegistryEntry -Name "ServerName" -Value $ServerName # This should be legit or we don't get out of the above, without a CSV.
+Write-Verbose "Found CSVFile $CSVFile"
+Write-Verbose "Found CSVFilename $CSVFilename"
 
 if (!$OnlyQIDs) {   # If we are not just trying a fix for one CSV, we will also see if we can install the Dell BIOS provider and set WOL to on, and backup Bitlocker keys to AD if possible
   if ([int](Get-OSType) -eq 1) {
@@ -2496,30 +3278,21 @@ $OSVersionInfo = Get-OSVersionInfo
 
 if (!(Test-Path $($tmp))) {
   try {
-    Write-Host "[ ] Creating $($tmp) .." -ForegroundColor Gray
+    Write-Host "[ ] Creating $($tmp) .." -ForegroundColor Gray  | Tee-Object -Append -FilePath "$($log)/_main.log"
     $null=New-Item $($tmp) -ItemType Directory -ErrorAction SilentlyContinue
   } catch {
-    Write-Host "[X] Couldn't create folder $($tmp) !! This is needed for temporary storage." -ForegroundColor Red
+    Write-Host "[X] Couldn't create folder $($tmp) !! This is needed for temporary storage." -ForegroundColor Red  | Tee-Object -Append -FilePath "$($log)/_main.log"
     Exit
   }
 }
 $oldpwd=(Get-Location).Path
-Set-Location "$($tmp)"  # Fix for Cmd.exe cannot be run from a server share..
+Set-Location "$($SecAudPath)\temp"  # Fix for Cmd.exe cannot be run from a server share.. lets run from MQRA folder though now.
+Create-IfNotExists "$($SecAudPath)\temp"
+Create-IfNotExists "$($SecAudPath)\logs"
 
 ### Find CSV File name. 2024-05- This is dumb using 2 variables, I have added on to this so many times its terribly messy, but works. Ugh. Needs a rewrite/refactor SO badly.
-if (!($CSVFile -like "*.csv")) {  # Check for command line param -CSVFile
-  $CSVFilename = Find-ServerCSVFile "$($ServerName)\$($CSVLocation)"
-  if ($null -eq $CSVFilename) {
-    $CSVFilename = Find-LocalCSVFile "." $OldPwd
-  }
-} else {
-  if (!($CSVFilename)) {
-    Write-Verbose "Parameter found: -CSVFile $CSVFile"
-    Write-Verbose "Using: $($oldPwd)\$($CSVFile)"
-    $CSVFilename = "$($oldPwd)\$($CSVFile)"
-  } else {
-    Write-Verbose "Using: $($CSVFilename)"
-  }
+if ($CSVFile.toupper() -like "*.CSV") {  # Check for command line param -CSVFile
+  $CSVFilename = $CSVFile  # use it, lets not check
 }
 
 ########### Scheduled task check:
@@ -2530,14 +3303,14 @@ if ($AddScheduledTask) { Check-ScheduledTask -ServerName $ServerName ; Exit }
 
 if (!(Test-Path -Path $CSVFilename -ErrorAction SilentlyContinue)) {  # Split path from file if it doesn't exist
   if (!(Test-Path "$($oldpwd)\$(Split-Path $CSVFilename -leaf)")) {
-    Write-Host "[!] Error: Couldn't locate $CSVFilename or $($oldpwd)\$(Split-Path $CSVFilename -leaf) in $($oldpwd) !" -ForegroundColor Red
+    Write-Host "[!] Error: Couldn't locate $CSVFilename or $($oldpwd)\$(Split-Path $CSVFilename -leaf) in $($oldpwd) !" -ForegroundColor Red | Tee-Object -Append -FilePath "$($log)/csv.log"
     exit
   } else {
     $CSVFilename = Split-Path $CSVFilename -leaf
   }
 }
 if ($null -eq $CSVFilename) {
-  Write-Host "[X] Couldn't find CSV file : $CSVFilename " -ForegroundColor Red
+  Write-Host "[X] Couldn't find CSV file : $CSVFilename " -ForegroundColor Red  | Tee-Object -Append -FilePath "$($log)/csv.log"
   Exit
 } else {
   if ($CSVFilename -ne $(Split-Path $CSVFilename -leaf) -and $CSVFilename -like "*\\") {
@@ -2549,18 +3322,18 @@ if ($null -eq $CSVFilename) {
     
     Write-Verbose "Finding delimeter for $CSVFullPath"
     $delimiter = Find-Delimiter $CSVFullPath
-    Write-Host "`n[.] Importing data from $CSVFullPath" -ForegroundColor Yellow
+    Write-Host "`n[.] Importing data from $CSVFullPath" -ForegroundColor Yellow  | Tee-Object -Append -FilePath "$($log)/csv.log"
     $CSVData = Import-CSV $CSVFullPath -Delimiter $delimiter | Sort-Object "Vulnerability Description"
   } catch {
-    Write-Host "[X] Couldn't open CSV file : $CSVFullPath " -ForegroundColor Red
+    Write-Host "[X] Couldn't open CSV file : $CSVFullPath " -ForegroundColor Red  | Tee-Object -Append -FilePath "$($log)/csv.log"
     Set-Location $pwd
     Exit
   }
   if (!($CSVData)) {
-    Write-Host "[X] Couldn't read CSV data from file : $CSVFullPath " -ForegroundColor Red
+    Write-Host "[X] Couldn't read CSV data from file : $CSVFullPath " -ForegroundColor Red  | Tee-Object -Append -FilePath "$($log)/csv.log"
     Exit
   } else {
-    Write-Host "[i] Read CSV data from : $CSVFullPath - Good." -ForegroundColor Cyan
+    Write-Host "[i] Read CSV data from : $CSVFullPath - Good." -ForegroundColor Cyan  | Tee-Object -Append -FilePath "$($log)/csv.log"
   }
 }
 
@@ -2681,7 +3454,7 @@ $CSVData | ForEach-Object {
     }
   }
 }
-Write-Output "[.] Done checking for new vulns.`n"
+Write-Output "[.] Done checking for new vulns.`n"  | Tee-Object -Append -FilePath "$($log)/csv.log"
 
 ############################### Find applicable rows to this machine #################################
 # FIND ROWS WITH HOSTNAME = $Hostname
@@ -2692,10 +3465,10 @@ $CSVData | ForEach-Object {
   }
 }
 
-Write-Host "[i] CSV Rows applicable to $Hostname : $($Rows.Count)" -ForegroundColor Cyan
+Write-Host "[i] CSV Rows applicable to $Hostname : $($Rows.Count)" -ForegroundColor Cyan  | Tee-Object -Append -FilePath "$($log)/csv.log"
 if ($Rows.Count -lt 1) {
-  Write-Host "[!] There are no rows applicable to $hostname !! Exiting.." -ForegroundColor Red
-  Write-Host "[?] Maybe you meant to pick from a different file? "
+  Write-Host "[!] There are no rows applicable to $hostname !! Exiting.." -ForegroundColor Red  | Tee-Object -Append -FilePath "$($log)/csv.log"
+  Write-Host "[?] Maybe you meant to pick from a different file? "  | Tee-Object -Append -FilePath "$($log)/csv.log"
   Write-Host $Filenames
   Exit
 } else {
@@ -2738,13 +3511,13 @@ $Rows | ForEach-Object {
 }
 
 # DISPLAY QIDs FOUND FOR THIS HOST
-Write-Host "[i] QIDs found: $($QIDs.Count) - $QIDs" -ForegroundColor Cyan
+Write-Host "[i] QIDs found: $($QIDs.Count) - $QIDs" -ForegroundColor Cyan  | Tee-Object -Append -FilePath "$($log)/csv.log"
 ForEach ($Qv in $QIDsVerbose) {  # Show ignored QIDs only if -verbose parameter is supplied
   Write-Verbose $Qv
 }
 
 if (!($QIDs)) {
-  Write-Host "[X] No QIDs found to fix for $hostname !! Exiting " -ForegroundColor Red
+  Write-Host "[X] No QIDs found to fix for $hostname !! Exiting " -ForegroundColor Red  | Tee-Object -Append -FilePath "$($log)/csv.log"
   exit
 }
 Write-Host "`n"
@@ -2772,10 +3545,21 @@ foreach ($CurrentQID in $QIDs) {
         if (Get-YesNo "$_ Remove Dell SupportAssist ? " -Results $Results -QID $ThisQID) {
           $Products = Search-Software "*SupportAssist*" 
           if ($Products) {
-            Remove-Software -Products $Products -Results $Results
+            Remove-Software -Products $Products -Results $Results | Tee-Object -Append -FilePath "$($log)/$($ThisQID)-supportassist.log"
           } else {
-            Write-Host "[!] Dell SupportAssist not found!" -ForegroundColor Red            
+            Write-Host "[!] Dell SupportAssist not found!" -ForegroundColor Red  | Tee-Object -Append -FilePath "$($log)/$($ThisQID)-supportassist.log"
           }     
+            $Filename = "MME Consulting Inc_Internal_2024-10-07.csv"
+          $FixData = @{
+            qualys_ids = "$ThisQID"
+            description = "Removed Dell SupportAssist"
+            note = "Removed via Remove-Software : $Products"
+          }
+          Log;Log "-------------- API-Remed tests ---------------------------"
+          if (API-Remed -APIRoute $APIRoute -UniqueId $UniqueID -APIKey $APIKey -FileName $FileName -ScanSummary $ScanSummary `
+                        -AccountName $AccountName -AssetInventory $AssetInventory -NetBios $NetBios -FixData $FixData) {
+            Log "[+] Success for /remed" -Both
+          }
         }
       }
       105228 { 
@@ -3437,23 +4221,23 @@ foreach ($CurrentQID in $QIDs) {
       }
       { ($QIDsAdobeReader -contains $_) -or ($VulnDesc -like "*Adobe Reader*" -and ($QIDsAdobeReader -ne 1)) } {
         if ((!($Automated)) -or ($Automated -and ($AutoUpdateAdobeReader))) {  
-          if (Get-YesNo "$_ Remove older versions of Adobe Reader ? " -Results $Results -QID $ThisQID) { 
-            $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Adobe Reader*'})
-            if ($Products) {
-              Write-Host "[.] Products found matching *Adobe Reader* : "
-              $Products
-              Remove-Software -Products $Products -Results $Results
-            } else {
-              Write-Host "[!] Adobe products not found under 'Adobe Reader*' : `n    $Products !!`n" -ForegroundColor Red
-            }  
-          }
+#          if (Get-YesNo "$_ Remove older versions of Adobe Reader ? " -Results $Results -QID $ThisQID) { 
+#            $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Adobe Reader*'})
+#            if ($Products) {
+#              Write-Host "[.] Products found matching *Adobe Reader* : "
+#              $Products
+#              Remove-Software -Products $Products -Results $Results
+#            } else {
+#              Write-Host "[!] Adobe products not found under 'Adobe Reader*' : `n    $Products !!`n" -ForegroundColor Red
+#            }  
+#          }
           if (Get-YesNo "$_ Install newest Adobe Reader DC ? ") {
-            Get-NewestAdobeReader
-            #cmd /c "$($tmp)\readerdc.exe"
-            $Outfile = "$($tmp)\readerdc.exe"
-            # silent install
-            Start-Process -FilePath $Outfile -ArgumentList "/sAll /rs /rps /msi /norestart /quiet EULA_ACCEPT=YES" -WorkingDirectory $env:TEMP -Wait -LoadUserProfile
-            $QIDsAdobeReader = 1
+            Update-Application -UpdateString "Adobe Reader DC"
+#            Get-NewestAdobeReader
+#            $Outfile = "$($tmp)\readerdc.exe"
+#            # silent install
+#            Start-Process -FilePath $Outfile -ArgumentList "/sAll /rs /rps /msi /norestart /quiet EULA_ACCEPT=YES" -WorkingDirectory $env:TEMP -Wait -LoadUserProfile
+           $QIDsAdobeReader = 1
           } else { $QIDsAdobeReader = 1 }
         } else {
           Write-Host "[!] Skipping Adobe Reader vulns for automated, not sure if I should remove old and install newest Reader DC etc."
@@ -3571,6 +4355,14 @@ foreach ($CurrentQID in $QIDs) {
               }
             } else {
               Write-Host "[!] EXE no longer found: $CheckEXE - likely its already been updated. Let's check.."
+            }
+          }
+          if ($Results -like '*\AppData\Local\Microsoft\Teams\current*') { 
+            $RemoveFolder = ($Results -split("Version is"))[0].trim().replace("%systemdrive%","C:").replace("\Teams.exe","")
+            # %systemdrive%\Users\Administrators\AppData\Local\Microsoft\Teams\current\Teams.exe  Version is  1.5.0.17656  %systemdrive%\Users\Administrator\AppData\Local\Microsoft\Teams\current\Teams.exe  Version is  1.5.0.17656#
+            # This is an old version in another profile
+            if (Get-YesNo "Remove old folder found in $RemoveFolder ?") {
+              Remove-Item $RemoveFolder -Force -Recurse
             }
           }
         }
@@ -4464,13 +5256,13 @@ foreach ($CurrentQID in $QIDs) {
             }
           }
         }
-
+        API-SendLogs -QID $ThisQID -LogFile "$($log)\$($ThisQID)-intelwireless.log"
       }
       
       90019 {
         $LmCompat = (Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa").LmCompatibilityLevel
         if ($LmCompat -eq 5) {
-          Write-Output "$_ Fix already in place it appears: LMCompatibilityLevel = 5, Good!"
+          Write-Output "$_ Fix already in place it appears: LMCompatibilityLevel = 5, Good!" | tee -append "$($log)\$($ThisQID)-ntlmv1.log"
         } else {
           if (Get-YesNo "$_ Fix LanMan/NTLMv1 Authentication? Currently LmCompatibilityLevel = $LmCompat ? " -Results $Results -QID $ThisQID) { 
             <#
@@ -4482,20 +5274,21 @@ foreach ($CurrentQID in $QIDs) {
             5- Clients use only NTLMv2 authentication, and they use NTLMv2 session security if the server supports it. Domain controller refuses LM and NTLM authentication responses, but it accepts NTLMv2.
             #>
             if (Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa" -Name "LmCompatibilityLevel") {
-              Write-Output "[+] Setting registry item: HKLM\System\CurrentControlSet\Control\Lsa LMCompatibilityLevel = 5"
+              Write-Output "[+] Setting registry item: HKLM\System\CurrentControlSet\Control\Lsa LMCompatibilityLevel = 5" | tee -append "$($log)\$($ThisQID)-ntlmv1.log"
               Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Lsa" -Name "LmCompatibilityLevel" -Value "5" -Force | Out-Null
             } else {
-              Write-Output "[+] Creating registry item: HKLM\System\CurrentControlSet\Control\Lsa LMCompatibilityLevel = 5"
+              Write-Output "[+] Creating registry item: HKLM\System\CurrentControlSet\Control\Lsa LMCompatibilityLevel = 5" | tee -append "$($log)\$($ThisQID)-ntlmv1.log"
               New-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Lsa" -Name "LmCompatibilityLevel" -Value "5" -Force | Out-Null
             }
-            Write-Output "[.] Checking fix: HKLM\System\CurrentControlSet\Control\Lsa LMCompatibilityLevel = 5"
+            Write-Output "[.] Checking fix: HKLM\System\CurrentControlSet\Control\Lsa LMCompatibilityLevel = 5" | tee -append "$($log)\$($ThisQID)-ntlmv1.log"
             if ((Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa").LmCompatibilityLevel -eq 5) {
-              Write-Output "[+] Found: LMCompatibilityLevel = 5, Good!"
+              Write-Output "[+] Found: LMCompatibilityLevel = 5, Good!" | tee -append "$($log)\$($ThisQID)-ntlmv1.log"
             } else {
-              Write-Output "[+] Found: LMCompatibilityLevel = $((Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa").LmCompatibilityLevel) - not 5!"
+              Write-Output "[+] Found: LMCompatibilityLevel = $((Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa").LmCompatibilityLevel) - not 5!" | tee -append "$($log)\$($ThisQID)-ntlmv1.log"
             }
           }
         }
+        API-SendLogs -QID $ThisQID -LogFile "$($log)\$($ThisQID)-ntlmv1.log"
       }
       372294 {
         if (Get-YesNo "$_ Fix service permissions issues? " -Results $Results -QID $ThisQID) {
@@ -4503,10 +5296,10 @@ foreach ($CurrentQID in $QIDs) {
           Write-Verbose "IN MAIN LOOP: Returned from Get-ServicePermIssues: $ServicePermIssues"
           foreach ($file in $ServicePermIssues) {
             if (!(Get-ServiceFilePerms $file)) {
-              Write-Output "[+] Permissions look good for $file ..."
+              "[+] Permissions look good for $file ..." | tee -append "$($tmp)\serviceperms.log"
             } else { # FIX PERMS.
               $objACL = Get-ACL $file
-              Write-Output "[.] Checking owner of $file .. $($objacl.Owner)"
+              Write-Output "[.] Checking owner of $file .. $($objacl.Owner)" | tee -append "$($tmp)\serviceperms.log"
               # Check for file owner, to resolve problems setting inheritance (if needed)
               if ($objacl.Owner -notlike "*$($env:USERNAME)") { # also allow [*\]User besides just User
                 #if (Get-YesNo "Okay to take ownership of $file as $($env:USERNAME) ?") {   
@@ -4517,9 +5310,9 @@ foreach ($CurrentQID in $QIDs) {
                 }
               }
               try {
-                Set-ACL $file -AclObject $objACL  
+                Set-ACL $file -AclObject $objACL  | tee -append "$($tmp)\serviceperms.log"
               } catch {
-                Write-Output "[!] ERROR: Couldn't set owner to $($env:Username) on $($file) .."
+                Write-Output "[!] ERROR: Couldn't set owner to $($env:Username) on $($file) .." | tee -append "$($tmp)\serviceperms.log"
               }
               $objACL = Get-ACL $file
               Write-Verbose "[.] Checking inheritance for $file - $(!($objacl.AreAccessRulesProtected)).."
@@ -4529,12 +5322,12 @@ foreach ($CurrentQID in $QIDs) {
                 $objacl.SetAccessRuleProtection($true,$true)  # 1=protected?, 2=copy inherited ACE? we will modify below
                 #$objacl.SetAccessRuleProtection($true,$false)  # 1=protected?, 2=drop inherited rules
                 try {
-                  Set-ACL $file -AclObject $objACL  
+                  Set-ACL $file -AclObject $objACL  | tee -append "$($tmp)\serviceperms.log"
                 } catch {
-                  Write-Output "[!] ERROR: Couldn't set inheritance on $($file) .."
+                  Write-Output "[!] ERROR: Couldn't set inheritance on $($file) .." | tee -append "$($tmp)\serviceperms.log"
                 }
               }
-              Write-Output "[.] Removing Everyone full permissions on $file .."
+              Write-Output "[.] Removing Everyone full permissions on $file .." | tee -append "$($tmp)\serviceperms.log"
               $Right = [System.Security.AccessControl.FileSystemRights]::ReadAndExecute
               $InheritanceFlag = [System.Security.AccessControl.InheritanceFlags]::None 
               $PropagationFlag = [System.Security.AccessControl.PropagationFlags]::InheritOnly  
@@ -4545,12 +5338,12 @@ foreach ($CurrentQID in $QIDs) {
               $objACL = Get-ACL $file
               $objACL.RemoveAccessRuleAll($objACE) 
               try {
-                Set-ACL $file -AclObject $objACL  
+                Set-ACL $file -AclObject $objACL  | tee -append "$($tmp)\serviceperms.log"
               } catch {
-                Write-Output "[!] ERROR: Couldn't remove Everyone-full permissions on $file .."
+                Write-Output "[!] ERROR: Couldn't remove Everyone-full permissions on $file .." | tee -append "$($tmp)\serviceperms.log"
               }
-              Write-Output "[.] Removing Users-Write/Modify/Append permissions on $file .."
-              # .. Remove write/append/etc from 'Users'. First remove Users rule completely.
+              Write-Output "[.] Removing Users-Write/Modify/Append permissions on $file .." | tee -append "$($tmp)\serviceperms.log"
+              # .. Remove write/append/etc from 'Users'. First remove Users rule completely. 
               $objUser = New-Object System.Security.Principal.NTAccount("Users") 
               $objACE = New-Object System.Security.AccessControl.FileSystemAccessRule `
                   ($objUser, $Right, $InheritanceFlag, $PropagationFlag, $objType) 
@@ -4558,7 +5351,7 @@ foreach ($CurrentQID in $QIDs) {
               try {
                 $objACL.RemoveAccessRuleAll($objACE) 
               } catch {
-                Write-Output "[!] ERROR: Couldn't reset Users permissions on $file .."
+                Write-Output "[!] ERROR: Couldn't reset Users permissions on $file .." | tee -append "$($tmp)\serviceperms.log"
               }
               # Then add ReadAndExecute only for Users
               $Right = [System.Security.AccessControl.FileSystemRights]::ReadAndExecute
@@ -4568,14 +5361,14 @@ foreach ($CurrentQID in $QIDs) {
               try {
                 Set-ACL $file -AclObject $objACL  
               } catch {
-                Write-Output "[!] ERROR: Couldn't modify Users to R+X permissions on $file .."
+                Write-Output "[!] ERROR: Couldn't modify Users to R+X permissions on $file .." | tee -append "$($tmp)\serviceperms.log"
               }
               # Check that issue is actually fixed
               if (!(Get-ServiceFilePerms $file)) {
-                Write-Output "[+] Permissions are good for $file "
+                Write-Output "[+] Permissions are good for $file " | tee -append "$($tmp)\serviceperms.log"
               } else {
-                Write-Output "[!] WARNING: Permissions NOT fixed on $file .. "
-                Get-FilePerms "$($file)"
+                Write-Output "[!] WARNING: Permissions NOT fixed on $file .. " | tee -append "$($tmp)\serviceperms.log"
+                Get-FilePerms "$($file)" | tee -append "$($log)\$($ThisQID)-serviceperms.log"
               }
             }
           }
@@ -4590,6 +5383,7 @@ foreach ($CurrentQID in $QIDs) {
             Write-Output "[+] $a"
           }
           #>
+          API-SendLogs -QID $ThisQID -LogFile "$($tmp)\serviceperms.log"
         }
       }
       $QIDsMSXMLParser4 {
@@ -4598,6 +5392,7 @@ foreach ($CurrentQID in $QIDs) {
           Invoke-WebRequest -UserAgent $AgentString -Uri "https://download.microsoft.com/download/A/7/6/A7611FFC-4F68-4FB1-A931-95882EC013FC/msxml4-KB2758694-enu.exe" -OutFile "$($tmp)\msxml.exe"
           Write-Host "[.] Running installer: $($tmp)\msxml.exe .."
           cmd /c "$($tmp)\msxml.exe /quiet /qn /norestart /log $($tmp)\msxml.log"
+          API-SendLogs -QID $ThisQID -LogFile "$($log)\$($ThisQID)-msxml.log"
         }
         $QIDsMSXMLParser4 = 1
       }
@@ -4607,7 +5402,8 @@ foreach ($CurrentQID in $QIDs) {
           
           Invoke-WebRequest -UserAgent $AgentString -Uri $NetCore6NewestUpdate -OutFile "$($tmp)\netcore.exe"
           Write-Host "[.] Running installer: $($tmp)\netcore.exe .."
-          Start-Process -Wait "$($tmp)\netcore.exe" -ArgumentList '/install /quiet /norestart'
+          Start-Process -Wait "$($tmp)\netcore.exe" -ArgumentList "/install /quiet /norestart /log $($tmp)\netcore.log"
+          API-SendLogs -QID $ThisQID -LogFile "$($log)\$($ThisQID)-netcore.log"
         }
         $QIDs_dotNET_Core6 = 1
       }
@@ -4633,11 +5429,11 @@ foreach ($CurrentQID in $QIDs) {
               $CheckEXEVersion = Get-FileVersion $CheckEXE
               Write-Verbose "Get-FileVersion results: $CheckEXEVersion"
               if ($CheckEXEVersion) {
-                Write-Verbose "EXE/DLL version found : $CheckEXE - $CheckEXEVersion .. checking against -- $ResultsVersion --"
+                Write-Verbose "EXE/DLL version found : $CheckEXE - $CheckEXEVersion .. checking against -- $ResultsVersion --" 
                 if ([version]$CheckEXEVersion -le [version]$ResultsVersion) {
-                  Write-Host "[!] Vulnerable version of $CheckEXE found : $CheckEXEVersion <= $ResultsVersion - Update missing: $ResultsMissing" -ForegroundColor Red
+                  Write-Host "[!] Vulnerable version of $CheckEXE found : $CheckEXEVersion <= $ResultsVersion - Update missing: $ResultsMissing" -ForegroundColor Red | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-default.log"
                   if ($CheckOptionalUpdates -and -not $AlreadySetOptionalUpdates) {
-                    Write-Host "[!] It is possible that Optional Windows updates are disabled, checking.." -ForegroundColor Red
+                    Write-Host "[!] It is possible that Optional Windows updates are disabled, checking.." -ForegroundColor Red | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-default.log"
                     Write-Verbose "NOTE: This only applies to Windows 10, version 2004 (May 2020 Update) and later:"
                     $registryPath = "HKLM:\SOFTWARE\Policies\Microsoft\Windows\WindowsUpdate"
                     $valueName = "AllowOptionalContent"
@@ -4646,17 +5442,17 @@ foreach ($CurrentQID in $QIDs) {
                       $value = Get-ItemProperty -Path $registryPath -Name $valueName -ErrorAction SilentlyContinue
 
                       if ($value -and $value.$valueName -eq 1) {
-                          Write-Host "[!] The 'AllowOptionalContent' value is already set to 1. Optional Updates reg key has been applied already. Please remediate manually for now or check again next month."
-                      }
-                      else {
-                          Set-ItemProperty -Path $registryPath -Name $valueName -Value 1 -Type DWord
-                          Write-Host "[+] The $registryPath value 'AllowOptionalContent' value has been set to 1." -ForegroundColor Green
+                        Write-Host "[!] The 'AllowOptionalContent' value is already set to 1. Optional Updates reg key has been applied already. Please remediate manually for now or check again next month." | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-default.log"
+                      } else {
+                        Set-ItemProperty -Path $registryPath -Name $valueName -Value 1 -Type DWord
+                        Write-Host "[+] The $registryPath value 'AllowOptionalContent' value has been set to 1." -ForegroundColor Green | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-default.log"
                       }
                     } else {
                       New-Item -Path $registryPath -Force | Out-Null
                       New-ItemProperty -Path $registryPath -Name $valueName -Value 1 -PropertyType DWord -Force | Out-Null
-                      Write-Host "The registry key $registryPath has been created and the 'AllowOptionalContent' value has been set to 1."
+                      Write-Host "The registry key $registryPath has been created and the 'AllowOptionalContent' value has been set to 1." | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-default.log"
                       $AlreadySetOptionalUpdates = $true
+                      API-SendLogs -QID $ThisQID -LogFile "$($log)\$($ThisQID)-default.log"
                     }
                   }
                 } else {
@@ -4671,6 +5467,7 @@ foreach ($CurrentQID in $QIDs) {
           }
         } else {  # Not sure what this vuln is yet!
           Write-Host "[X] Skipping QID $_ - $VulnDesc" -ForegroundColor Red
+          
         }
       }
     }
@@ -4703,8 +5500,6 @@ if ($SoftwareInstalling.Length -gt 0) {
   #
 }
 
-Write-Host "[o] Done! Stopping transcript" -ForegroundColor Green
-Set-Location $oldpwd
 # Disabling the file deletion step for now, EPDR keeps killing the script for being 'suspicious' at this point.
 #Write-Host "[.] Deleting all temporary files from $tmp .."
 #Remove-Item -Path "$tmp" -Recurse -Force -ErrorAction SilentlyContinue
@@ -4714,25 +5509,35 @@ Set-RegistryEntry -Name "ReRun" -Value $false
 if (!($script:Automated)) {
   $null = Read-Host "--- Press enter to exit ---"
 } else {
-  Write-Host "[AUTOMATED REBOOT] Setting reboot for 5 minutes from now, please use shutdown /a to abort!"
-  shutdown /r /f /t 5
+  if ($RebootNeeded) {
+    Write-Host "[AUTOMATED REBOOT] Setting reboot for 5 minutes from now, please use shutdown /a to abort!"
+    shutdown /r /f /t 300
+  } else { 
+    Write-Host "[-] No reboot needed, exiting after execution."
+  }
 }
-Stop-Transcript
-Write-Host "[+] Log written to: $script:LogFile , copying to $LogPath `n"
-if (!(Test-Path $LogPath)) {
 
-    Create-IfNotExists $LogPath
-}
+Write-Host "[o] Done! Stopping transcript" -ForegroundColor Green
+Set-Location $oldpwd
+Stop-Transcript
+Write-Host "[+] Log written to: $script:LogFile , copying to $Log `n"
+Create-IfNotExists $Log  
 try {
-  Copy-Item $script:LogFile $LogPath -Force
-  Write-Host "[+] Log copied to: $LogPath `n"
+  Copy-Item -Path $script:LogFile -Destination $Log -Force
+  Write-Host "[+] Log copied to: $Log `n"
 } catch {
   Write-Error "[!] Log copy failed! $_"
 }
-API-SendLogs -LogFile $script:LogFile
-API-Checkout
 
-Write-Event -type "information" -eventid 101 -msg "Script ended"
+$datetime = Get-Date -Format "yyyy-MM-dd hh-mm-ss"
+API-SendLogs -UniqueId $UniqueId -APIKey $APIKey -LogFile $script:LogFile
+if (API-Checkout) {
+  Write-Host "[API] [+] Checked out @ $datetime" 
+} else {
+
+}
+
+Write-Event -type "information" -eventid 101 -msg "Script ended $datetime" 
 Exit
 
 
