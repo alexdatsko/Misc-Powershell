@@ -61,8 +61,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.16"
-# New in this version:  Reverted for now
+$Version = "0.50.18"
+# New in this version:  Reverted- 92176 Oct 2024 .NET 4.8 and 3.5 cumulative update
 
 $VersionInfo = "v$($Version) - Last modified: 11/26/2024"
 
@@ -83,6 +83,7 @@ if ($Help) {
 }
 
 # ----------- Script specific vars:  ---------------
+$pwd = pwd
 $apiBaseUrl = "https://mqra.mme-sec.us/api/v1"
 $AgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.67 Safari/537.36"
 $OLE19x64Url = "https://go.microsoft.com/fwlink/?linkid=2278038"
@@ -90,8 +91,12 @@ $DCUUrl = "https://dl.dell.com/FOLDER11914075M/1/Dell-Command-Update-Application
 $ghostscripturl = "https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10031/gs10031w64.exe"
 $AdobeReaderUpdateUrl = "https://rdc.adobe.io/reader/products?lang=mui&site=enterprise&os=Windows%2011&country=US&nativeOs=Windows%2010&api_key=dc-get-adobereader-cdn"
 $NetCore6NewestUpdate = "https://download.visualstudio.microsoft.com/download/pr/396abf58-60df-4892-b086-9ed9c7a914ba/eb344c08fa7fc303f46d6905a0cb4ea3/dotnet-sdk-6.0.428-win-x64.exe"
+
 $MQRAUserAgent = "MQRA v0.50 PS"
 $MQRAdir = "C:\Program Files\MQRA"
+$ConfigFile = "$($pwd)\_config.ps1"  # Configuration file 
+$OldConfigFile = "$oldpwd\_config.ps1"  # Configuration file 
+$QIDsListFile = "$(pwd)\QIDLists.ps1"       # QID List file 
 
 $DCUFilename = ($DCUUrl -split "/")[-1]
 $DCUVersion = (($DCUUrl -split "_WIN_")[1] -split "_A0")[0]
@@ -102,9 +107,6 @@ $UpdateBrowserWait = 60                      # Default to 60 seconds for updatin
 $UpdateNiniteWait = 90                       # How long to wait for the Ninite updater to finish and then force-close, default 90 seconds
 $UpdateDellCommandWait = 60                  # How long to wait for Dell Command Update to re-install/update
 $SoftwareInstallWait = 60                    # How long to wait for generic software to finish installing
-$ConfigFile = "_config.ps1"  # Configuration file 
-$OldConfigFile = "$oldpwd\_config.ps1"  # Configuration file 
-$QIDsListFile = "$mqradir\QIDLists.ps1"       # QID List file 
 $tmp = "$($env:temp)\SecAud"                 # "temp" Temporary folder to save downloaded files to, this will be overwritten when checking config ..
 $LogToEventLog = $true                       # Set this to $false to not log to event viewer Application log, source "MQRA", also picked up in _config.ps1
 $OSVersion = ([environment]::OSVersion.Version).Major
@@ -2853,6 +2855,28 @@ foreach ($CurrentQID in $QIDs) {
           cmd /c "msiexec /p $($tmp)\vbe7-x-none.msp /qn"
         }
       }
+      110416 { 
+        if (Get-YesNo "$_ Fix Microsoft Office Security Update for Sept 2023? " -Results $Results -QID $ThisQID) { 
+          Write-Host "[.] Downloading CAB: https://download.microsoft.com/download/b/3/9/b3928d9f-ef05-4832-ab2b-d99d5628c9c4/mso2013-kb5002477-fullfile-x86-glb.exe .."
+          Invoke-WebRequest -UserAgent $AgentString -Uri "https://download.microsoft.com/download/b/3/9/b3928d9f-ef05-4832-ab2b-d99d5628c9c4/mso2013-kb5002477-fullfile-x86-glb.exe" -outfile "$($tmp)\mso2013-kb5002477.exe"
+          #Write-Host "[.] Running installer: : "$($tmp)\mso2013-kb5002477.exe"
+          #cmd /c "C:\Windows\System32\expand.exe -F:* $($tmp)\excel-x-none.msp $($tmp)"
+          Write-Host "[.] Installing patch: $($tmp)\mso2013-kb5002477.exe"
+          cmd /c "msiexec /i $($tmp)\mso2013-kb5002477.exe /qn"
+        }       
+      }
+      92176 {
+        if (Get-YesNo "$_ Update Microsoft .NET 3.5 and 4.8 Cumulative Update for Oct 2024? " -Results $Results -QID $ThisQID) { 
+          Write-Host "[.] Downloading CABs: https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2024/09/windows10.0-kb5044029-x64-ndp481_7636169b12979c1597e66706e08b6f8557a3fa31.msu"
+          Write-Host "[.] Downloading CABs: https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2024/09/windows10.0-kb5044020-x64-ndp48_01927b68990bab8f4b74bfc58e91b0cb2c99f983.msu"
+          Invoke-WebRequest -UserAgent $AgentString -Uri "https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2024/09/windows10.0-kb5044029-x64-ndp481_7636169b12979c1597e66706e08b6f8557a3fa31.msu" -outfile "$($tmp)\ndp481.msu"
+          Invoke-WebRequest -UserAgent $AgentString -Uri "https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2024/09/windows10.0-kb5044020-x64-ndp48_01927b68990bab8f4b74bfc58e91b0cb2c99f983.msu" -outfile "$($tmp)\ndp48.msu"
+          Write-Host "[.] Installing patch: $($tmp)\ndp481.msu"
+          cmd /c "wusa.exe $($tmp)\ndp481.msu /quiet /norestart"
+          Write-Host "[.] Installing patch: $($tmp)\ndp48.msu"
+          cmd /c "wusa.exe $($tmp)\ndp48.msu /quiet /norestart"
+        }
+      }
       91738 {
         if (Get-YesNo "$_  - fix ipv4 source routing bug/ipv6 global reassemblylimit? " -Results $Results -QID $ThisQID) { 
             netsh int ipv4 set global sourceroutingbehavior=drop
@@ -2928,10 +2952,11 @@ foreach ($CurrentQID in $QIDs) {
       90044 {
         if (Get-YesNo "$_ - Allowed SMB Null session ? " -Results $Results -QID $ThisQID) {
           $out = @()
+          Write-Host "[.] Adding new registry entries for SMB Null session."
           $out += (New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'RestrictAnonymous' -Value 1 -PropertyType DWord -Force).PSPath
           $out += (New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'RestrictAnonymousSAM' -Value 1 -PropertyType DWord -Force).PSPath
           $out += (New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'EveryoneIncludesAnonymous' -Value 0 -PropertyType DWord -Force).PSPath
-          Foreach ($line in $out) { Write-Verbose $line }
+          Foreach ($line in $out) { Write-Host $line }
         }
       }
       90007 {
