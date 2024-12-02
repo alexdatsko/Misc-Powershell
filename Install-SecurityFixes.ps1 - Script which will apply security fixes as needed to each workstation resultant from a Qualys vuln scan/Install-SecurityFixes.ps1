@@ -61,10 +61,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.18"
-# New in this version:  Reverted- 92176 Oct 2024 .NET 4.8 and 3.5 cumulative update
+$Version = "0.50.20"
+# New in this version:  Another fix for -CSVFile
 
-$VersionInfo = "v$($Version) - Last modified: 11/26/2024"
+$VersionInfo = "v$($Version) - Last modified: 12/02/2024"
 
 
 # CURRENT BUGS TO FIX:
@@ -2179,7 +2179,7 @@ Function Update-Application {
   if ($WinGetInstalled -and $WingetApplicationList -contains $UpdateString) { 
     Write-Host "[+] Using WinGet to update $UpdateString (if possible).."
     if ($UpdateString -eq "Chrome") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Google.Chrome $WinGetOpts" }
-  if ($UpdateString -eq "MSEdge") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Microsoft.Edge $WinGetOpts" }
+    if ($UpdateString -eq "MSEdge") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Microsoft.Edge $WinGetOpts" }
     if ($UpdateString -eq "Firefox") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Mozilla.Firefox $WinGetOpts" }
     if ($UpdateString -eq "Brave") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Brave.Brave $WinGetOpts" }
     if ($UpdateString -eq "Teamviewer 15") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update TeamViewer.TeamViewer $WinGetOpts" }
@@ -2223,14 +2223,14 @@ Function Update-Chrome {
   Write-Host "[.] Killing all chrome browser windows .."
   taskkill.exe /f /im chrome.exe
   Write-Host "[.] Updating to newest Chrome.."
-  Update-Application -Uri "https://ninite.com/chrome/ninite.exe" -Outfile "$($tmp)\ninitechrome.exe" -UpdateString "Chrome"
+  Update-Application -Uri "https://ninite.com/chrome/ninite.exe" -Outfile "$($tmp)\ninitechrome.exe" -UpdateString "Chrome" -KillProcess "chrome.exe"
 }
 
 Function Update-Firefox {
   Write-Host "[.] Killing all Firefox browser windows .."
   taskkill.exe /f /im firefox.exe
   Write-Host "[.] Updating to newest Firefox.."
-  Update-Application -Uri "https://ninite.com/firefox/ninite.exe" -OutFile "$($tmp)\ninitefirefox.exe" -UpdateString "Firefox"
+  Update-Application -Uri "https://ninite.com/firefox/ninite.exe" -OutFile "$($tmp)\ninitefirefox.exe" -UpdateString "Firefox" -KillProcess "firefox.exe"
 }
 
 # Test's if the script is running in an elevated fashion (required for HKLM edits)
@@ -2455,32 +2455,34 @@ if (-not $script:Automated) {
     $null = New-Item -ItemType Directory -Path $SecAudPath | Out-Null
   }
 }
-Write-Host "[.] Searching for files modified within the last 30 days that match the pattern '*_Internal_*.csv' in path - $SecAudPath"
-$dateLimit = (Get-Date).AddDays(-30)
-$files = Get-ChildItem -Path $SecAudPath -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt $dateLimit } | Sort-Object $_.LastWriteTime -Descending
+if (!($CSVFile -like "*.csv")) {  
+  Write-Host "[.] Searching for files modified within the last 30 days that match the pattern '*_Internal_*.csv' in path - $SecAudPath"
+  $dateLimit = (Get-Date).AddDays(-30)
+  $files = Get-ChildItem -Path $SecAudPath -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt $dateLimit } | Sort-Object $_.LastWriteTime -Descending
 
-if ($files.Count -gt 0) {
-  # Use the full path of the first found file
-  $CSVFilename = $files[0].FullName
-  $CSVFile = $CSVFilename  # This needs to be set below as well
-  Write-Host "[+] Latest CSV File found: $CSVFilename" -ForegroundColor Green
-} else {
-  Write-Host "[-] No recent (within 30d) matching CSV files found in [ $path ] "
-  $files = Get-ChildItem -Path $SecAudPath -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue 
-  if ($files) {
-    Write-Host "[-] List of files found MORE THAN 30 days old: " -ForegroundColor Yellow
-    $files
+  if ($files.Count -gt 0) {
+    # Use the full path of the first found file
+    $CSVFilename = $files[0].FullName
+    $CSVFile = $CSVFilename  # This needs to be set below as well
+    Write-Host "[+] Latest CSV File found: $CSVFilename" -ForegroundColor Green
   } else {
-    $files = Get-ChildItem -Path $SecAudPath
-    Write-Host "[-] No matching CSV Files found in $SecAudPath"
-    $files
+    Write-Host "[-] No recent (within 30d) matching CSV files found in [ $path ] "
+    $files = Get-ChildItem -Path $SecAudPath -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue 
+    if ($files) {
+      Write-Host "[-] List of files found MORE THAN 30 days old: " -ForegroundColor Yellow
+      $files
+    } else {
+      $files = Get-ChildItem -Path $SecAudPath
+      Write-Host "[-] No matching CSV Files found in $SecAudPath"
+      $files
+    }
+    Write-Host "[!] ERROR: Can't find a CSV to use, or the servername to check.." -ForegroundColor Red
+    Write-Verbose "Creating Log: Application Source: Type: Error ID: 2500 - CSV not found"
+    Write-Event -type "error" -eventid 2500 -msg "Error - CSV not found"
+    exit
   }
-  Write-Host "[!] ERROR: Can't find a CSV to use, or the servername to check.." -ForegroundColor Red
-  Write-Verbose "Creating Log: Application Source: Type: Error ID: 2500 - CSV not found"
-  Write-Event -type "error" -eventid 2500 -msg "Error - CSV not found"
-  exit
+  Set-RegistryEntry -Name "ServerName" -Value $ServerName # This should be legit or we don't get out of the above, without a CSV.
 }
-Set-RegistryEntry -Name "ServerName" -Value $ServerName # This should be legit or we don't get out of the above, without a CSV.
 
 if (!$OnlyQIDs) {   # If we are not just trying a fix for one CSV, we will also see if we can install the Dell BIOS provider and set WOL to on, and backup Bitlocker keys to AD if possible
   if ([int](Get-OSType) -eq 1) {
@@ -4109,7 +4111,7 @@ foreach ($CurrentQID in $QIDs) {
                 if ([version]$CheckEXEVersion -le [version]$ResultsVersion) {
                   Write-Host "[!] Vulnerable version $CheckEXE still found : $CheckEXEVersion <= $ResultsVersion - Update missing: $ResultsMissing" -ForegroundColor Red
                 } else {
-                  Write-Host "[+] EXE patched version found : $CheckEXEVersion > $VulnDescChromeWinVersion - good!" -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..  
+                  Write-Host "[+] EXE patched version found : $CheckEXEVersion > $ResultsVersion - good!" -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..  
                 }  
               }
             } else {
@@ -4754,8 +4756,8 @@ try {
 } catch {
   Write-Error "[!] Log copy failed! $_"
 }
-API-SendLogs -LogFile $script:LogFile
-API-Checkout
+#API-SendLogs -LogFile $script:LogFile
+#API-Checkout
 
 Write-Event -type "information" -eventid 101 -msg "Script ended"
 Exit
