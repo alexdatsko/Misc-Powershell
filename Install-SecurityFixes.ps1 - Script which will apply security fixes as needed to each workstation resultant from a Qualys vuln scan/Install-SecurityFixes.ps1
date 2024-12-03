@@ -14,7 +14,10 @@ param (
   [switch] $PowerOpts = $false,    # This switch will set all Power options on Windows to never fall asleep or hibernate.
   [switch] $AddScheduledTask = $false,       # This switch will install a scheduled task to run the script first thursday of each month and reboot after
   [switch] $AutoUpdateAdobeReader = $false,  # Auto update adobe reader, INCLUDING REMOVAL OF OLD PRODUCT WHICH COULD BE LICENSED!!! if this flag is set
-  [string] $LogPath = "C:\Program Files\MQRA\logs"    # Where to copy log files to after.  (Should be overwritten from the config file if existing there.)
+  [string] $hostname = $env:computername,    # Set the hostname of this computer to a variable
+  [string] $LogPath = "C:\Program Files\MQRA\logs",   # Where to copy log files to after.  (Should be overwritten from the config file if existing there.)
+  [string] $tmp = "$($env:temp)\SecAud",              # "temp" Temporary folder to save downloaded files to, this will be overwritten when checking config ..
+  [string] $LogFile = "$($tmp)\$($hostname)_Install-SecurityFixes_$($dateshort).log"  # Save Log to %temp% first.
 )
  
 
@@ -61,10 +64,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.20"
+$Version = "0.50.21"
 # New in this version:  Another fix for -CSVFile
 
-$VersionInfo = "v$($Version) - Last modified: 12/02/2024"
+$VersionInfo = "v$($Version) - Last modified: 12/03/2024"
 
 
 # CURRENT BUGS TO FIX:
@@ -107,7 +110,6 @@ $UpdateBrowserWait = 60                      # Default to 60 seconds for updatin
 $UpdateNiniteWait = 90                       # How long to wait for the Ninite updater to finish and then force-close, default 90 seconds
 $UpdateDellCommandWait = 60                  # How long to wait for Dell Command Update to re-install/update
 $SoftwareInstallWait = 60                    # How long to wait for generic software to finish installing
-$tmp = "$($env:temp)\SecAud"                 # "temp" Temporary folder to save downloaded files to, this will be overwritten when checking config ..
 $LogToEventLog = $true                       # Set this to $false to not log to event viewer Application log, source "MQRA", also picked up in _config.ps1
 $OSVersion = ([environment]::OSVersion.Version).Major
 $SoftwareInstalling=[System.Collections.ArrayList]@()
@@ -169,7 +171,7 @@ catch [System.InvalidOperationException]{}
 
 $dateshort= Get-Date -Format "yyyy-MM-dd HH:mm:ss"
 try {
-  $script:LogFile = "$($tmp)\SecAud\$($hostname)_Install-SecurityFixes_$($dateshort).log"
+  $script:LogFile = "$($tmp)\$($hostname)_Install-SecurityFixes_$($dateshort).log"
   Start-Transcript $script:LogFile -ErrorAction SilentlyContinue
 } catch {
   if ($Error[0].Exception.Message -match 'Transcript is already in progress') {
@@ -4730,8 +4732,6 @@ if ($SoftwareInstalling.Length -gt 0) {
   #
 }
 
-Write-Host "[o] Done! Stopping transcript" -ForegroundColor Green
-Set-Location $oldpwd
 # Disabling the file deletion step for now, EPDR keeps killing the script for being 'suspicious' at this point.
 #Write-Host "[.] Deleting all temporary files from $tmp .."
 #Remove-Item -Path "$tmp" -Recurse -Force -ErrorAction SilentlyContinue
@@ -4741,20 +4741,22 @@ Set-RegistryEntry -Name "ReRun" -Value $false
 if (!($script:Automated)) {
   $null = Read-Host "--- Press enter to exit ---"
 } else {
-  Write-Host "[AUTOMATED REBOOT] Setting reboot for 5 minutes from now, please use shutdown /a to abort!"
+  Write-Host "`n[AUTOMATED REBOOT] Suspending Bitlocker for 1 reboot.."
+  manage-bde -protectors -disable c: -rebootcount 1
+  Write-Host "`n[AUTOMATED REBOOT] Setting reboot for 5 minutes from now, please use shutdown /a to abort!"
   shutdown /r /f /t 300
 }
+
+Write-Host "[o] Done! Stopping transcript" -ForegroundColor Green
+Set-Location $oldpwd
 Stop-Transcript
 Write-Host "[+] Log written to: $script:LogFile , copying to $LogPath `n"
-if (!(Test-Path $LogPath)) {
-
-    Create-IfNotExists $LogPath
-}
+Create-IfNotExists $LogPath
 try {
   Copy-Item $script:LogFile $LogPath -Force
   Write-Host "[+] Log copied to: $LogPath `n"
 } catch {
-  Write-Error "[!] Log copy failed! $_"
+  Write-Error "[!] Log copy failed! $_" | Tee-Object -Append -Path $script:LogFile 
 }
 #API-SendLogs -LogFile $script:LogFile
 #API-Checkout
