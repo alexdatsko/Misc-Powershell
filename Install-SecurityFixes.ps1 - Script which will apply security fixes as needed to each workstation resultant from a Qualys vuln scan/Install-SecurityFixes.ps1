@@ -64,14 +64,14 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.21"
-# New in this version:  Another fix for -CSVFile
+$Version = "0.50.22"
+# New in this version:  Created FixDB which is a local CSV file for now, some other simple fixes
 
 $VersionInfo = "v$($Version) - Last modified: 12/03/2024"
 
 
 # CURRENT BUGS TO FIX:
-#    - VLC update broken - Winget? also ninite backup?
+#    - VLC update broken - Winget? also ninite?
 #    - Notepad++ update broken
 
 #### VERSION ###################################################
@@ -97,9 +97,10 @@ $NetCore6NewestUpdate = "https://download.visualstudio.microsoft.com/download/pr
 
 $MQRAUserAgent = "MQRA v0.50 PS"
 $MQRAdir = "C:\Program Files\MQRA"
-$ConfigFile = "$($pwd)\_config.ps1"  # Configuration file 
-$OldConfigFile = "$oldpwd\_config.ps1"  # Configuration file 
-$QIDsListFile = "$(pwd)\QIDLists.ps1"       # QID List file 
+$ConfigFile = "$($pwd)\_config.ps1"     # Configuration file 
+$OldConfigFile = "$oldpwd\_config.ps1"  # Configuration file  (old location)
+$QIDsListFile = "$(pwd)\QIDLists.ps1"   # QID List file 
+$SQLiteDB = "$($MQRADir)\client.db"     # SQLite DB (eventually..)
 
 $DCUFilename = ($DCUUrl -split "/")[-1]
 $DCUVersion = (($DCUUrl -split "_WIN_")[1] -split "_A0")[0]
@@ -120,7 +121,7 @@ $ST_DayOfWeek = "0" #default Scheduled task settings - Day of week - Sun=0, Mon=
 $ST_IgnoreComputers = @() # default comptuers that should NOT have a Scheduled task  (no servers will, they will be manual remediation)
 
 # Applications we currently support updating through WinGet:
-$WingetApplicationList = @("Teamviewer 15","Irfanview","Notepad++","Zoom client","Dropbox","7-zip")   
+$WingetApplicationList = @("Chrome","MSEdge","Firefox","Brave","Teamviewer 15","Irfanview","Notepad++","Zoom client","Dropbox","7-zip","Visual Studio Code","iTunes","iCloud")   
 $WinGetOpts = "-h --accept-source-agreements --accept-package-agreements"
 
 ################################################### INITIAL CHECKS ########
@@ -191,6 +192,57 @@ if (Get-Command winget -ErrorAction SilentlyContinue) {
 }
 
 ####################################################### GENERAL FUNCTIONS #######################################################
+
+function Create-FixDB {
+  $dbPath = "C:\Program Files\MQRA\db"
+  $csvFile = "$dbPath\QIDsFixed.csv"
+
+  if (-not (Test-Path $dbPath)) {
+      New-Item -ItemType Directory -Path $dbPath -Force | Out-Null
+  }
+
+  if (-not (Test-Path $csvFile)) {
+      @"
+QID,Datefixed
+"@ | Set-Content -Path $csvFile -Force
+  }
+}
+
+function Set-Fix {
+  param (
+      [Parameter(Mandatory)]
+      [string]$QID,
+      [string]$dbPath = "C:\Program Files\MQRA\db\QIDsFixed.csv"
+  )
+
+  if (-not (Test-Path $dbPath)) {
+      Create-FixDB
+  }
+  $dateFixed = (Get-Date).ToString("yyyy-MM-dd")
+  $entry = "$QID,$dateFixed"
+  Add-Content -Path $dbPath -Value $entry
+}
+
+function Get-Fix {
+  param (
+      [Parameter(Mandatory)]
+      [string]$QID = 0,
+      [string]$dbPath = "C:\Program Files\MQRA\db\QIDsFixed.csv"
+  )
+  if ($QID -eq 0) { return $null } # some Get-YesNo have no QID, because its the question is not related to a QID fix
+  if (-not (Test-Path $dbPath)) {
+      Create-FixDB
+      return $null
+  }
+
+  $csvContent = Import-Csv -Path $dbPath
+  $record = $csvContent | Where-Object { $_.QID -eq $QID }
+  if ($record) {
+      return $record.Datefixed
+  } else {
+      return $null
+  }
+}
 
 
 function Write-Event { 
@@ -285,42 +337,49 @@ function Print-YesNoHelp {
 function Get-YesNo {
   param ([string] $text,
          [string] $results,
-         [string] $QID)
+         [string] $QID = 0)
   
   $done = 0
   $SkipQIDs = $script:SkipQIDs
-  if (-not $script:Automated) {    # Catch the global var or the registry entry
-    Write-Verbose "Qid: $QID - SkipQIDs: $SkipQIDs"
-    if ($SkipQIDs -notcontains $QID) {
-      while ($done -eq 0) {
-        $yesno = Read-Host  "`n[?] $text [y/N/a/s/?] "
-        if ($yesno.ToUpper()[0] -eq 'Y') { return $true } 
-        if ($yesno.ToUpper()[0] -eq 'N' -or $yesno -eq '') { return $false } 
-        if ($yesno.ToUpper()[0] -eq 'A') { $script:Automated = $true; Write-Host "[!] Enabling Automated mode! Ctrl-C to exit"; return $true } 
-        if ($yesno.ToUpper()[0] -eq '?') { Print-YesNoHelp } 
-        if ($yesno.ToUpper()[0] -eq 'S') { 
-            Write-Host "[i] Results: " -ForegroundColor Yellow
-            foreach ($result in $Results) {
-              Write-Host "$($result)" -ForegroundColor Yellow
-            }
-        }
-      } 
-    } else {
-      Write-Host "[i] SKIPPING: part of $SkipQIDs" -ForegroundColor Red
-      return $false
-    }
-  } else {  # Automated mode. Show results for -Verbose, then apply fix
-    if ($SkipQIDs -notcontains $QID) {
-      Write-Verbose "[i] AUTOMATED: Results: "
-      foreach ($result in $Results) {
-        Write-Verbose "$($result)"
+  
+  if (-not (Get-Fix -QID $QID)) {
+    if (-not $script:Automated) {    # Catch the global var or the registry entry
+      Write-Verbose "Qid: $QID - SkipQIDs: $SkipQIDs"
+      if ($SkipQIDs -notcontains $QID) {
+        while ($done -eq 0) {
+          $yesno = Read-Host  "`n[?] $text [y/N/a/s/?] "
+          if ($yesno.ToUpper()[0] -eq 'Y') { Set-Fix -QID $QID; return $true } 
+          if ($yesno.ToUpper()[0] -eq 'N' -or $yesno -eq '') { return $false } 
+          if ($yesno.ToUpper()[0] -eq 'A') { $script:Automated = $true; Write-Host "[!] Enabling Automated mode! Ctrl-C to exit"; Set-Fix -QID $QID; return $true } 
+          if ($yesno.ToUpper()[0] -eq '?') { Print-YesNoHelp } 
+          if ($yesno.ToUpper()[0] -eq 'S') { 
+              Write-Host "[i] Results: " -ForegroundColor Yellow
+              foreach ($result in $Results) {
+                Write-Host "$($result)" -ForegroundColor Yellow
+              }
+          }
+        } 
+      } else {
+        Write-Host "[i] SKIPPING: part of $SkipQIDs" -ForegroundColor Red
+        return $false
       }
-      Write-Host "[+] AUTOMATED: $QID - Choosing yes for $text .."
-      return $true
-    } else {
-      Write-Host "[i] SKIPPING: part of $SkipQIDs" -ForegroundColor Red
-      return $false
+    } else {  # Automated mode. Show results for -Verbose, then apply fix
+      if ($SkipQIDs -notcontains $QID) {
+        Write-Verbose "[i] AUTOMATED: Results: "
+        foreach ($result in $Results) {
+          Write-Verbose "$($result)"
+        }
+        Write-Host "[+] AUTOMATED: $QID - Choosing yes for $text .."
+        Set-Fix -QID $QID
+        return $true
+      } else {
+        Write-Host "[i] SKIPPING: part of $SkipQIDs" -ForegroundColor Red
+        return $false
+      }
     }
+  } else {
+    $FixedDate = Get-Fix -QID $QID
+    Write-Host "[i] SKIPPING: Already fixed on $FixedDate" -ForegroundColor Red
   }
 }
 
@@ -2177,7 +2236,6 @@ Function Update-Application {
     [string]$KillProcess,
     [string]$UpdateString
   )
-  #$WingetApplicationList = @("Teamviewer 15","Irfanview","Notepad++","Zoom client","Dropbox","7-zip")   
   if ($WinGetInstalled -and $WingetApplicationList -contains $UpdateString) { 
     Write-Host "[+] Using WinGet to update $UpdateString (if possible).."
     if ($UpdateString -eq "Chrome") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Google.Chrome $WinGetOpts" }
@@ -2190,13 +2248,17 @@ Function Update-Application {
     if ($UpdateString -eq "Zoom client") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Zoom.Zoom $WinGetOpts" }
     if ($UpdateString -eq "Dropbox") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Dropbox.Dropbox $WinGetOpts" }
     if ($UpdateString -eq "7-zip") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update 7zip.7zip $WinGetOpts" }
+    if ($UpdateString -eq "Visual Studio Code") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Microsoft.VisualStudioCode $WinGetOpts" }
+    if ($UpdateString -eq "Apple iTunes") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Apple.iTunes $WinGetOpts" }
+    if ($UpdateString -eq "Apple iCloud") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Apple.iCloud $WinGetOpts" }
+    
     Write-Host "[+] Done."
   } else {
     # Lets use Ninite to update..
     Write-Host "[.] Updating to newest $UpdateString using Ninite.."
     Write-Host "[.] Downloading $uri from Ninite, to: $OutFile .."
     Invoke-WebRequest -UserAgent $AgentString -Uri $Uri -OutFile $OutFile
-    Write-Host "[.] Killing all $Updatetring processess ( $KillProcess ) .."
+    Write-Host "[.] Killing all $Updatestring processess ( $KillProcess ) .."
     taskkill.exe /f /im $(($KillProcess -split "\\")[-1]) # Works without a \ in $KillProcess either.
     Write-Host "[.] Waiting 5 seconds .."
     Start-Sleep 5 # Wait 5 seconds to make sure all processes are killed, could take longer.
@@ -2208,7 +2270,7 @@ Function Update-Application {
       Write-Host "[.] Killing the Ninite updater window, hopefully it is stuck at 'Done'"
       taskkill.exe /f /im $(($OutFile -split "\\")[-1])  # Grab filename from full path if given
     } else {
-      Write-Host "[.] Running the Ninite $Updatetring updater, please close this window by hitting DONE when complete! Otherwise, we will kill the proce after $UpdateNiniteWait seconds."
+      Write-Host "[.] Running the Ninite $Updatestring updater, please close this window by hitting DONE when complete! Otherwise, we will kill the proce after $UpdateNiniteWait seconds."
       Start-Process -FilePath $OutFile -NoNewWindow -Wait
       if ($Risky) {
         Start-Sleep $UpdateNiniteWait # Wait X seconds to make sure the app has updated, usually 30-45s or so at least!! Longer for slower machines!
@@ -2801,9 +2863,9 @@ foreach ($CurrentQID in $QIDs) {
               Write-Host "[!] Skipping: No account named ""Guest"" found."
             }
           } else {
-            cmd /c 'net user Guest /active:no'
+            start-process -wait 'net' -argumentlist 'user Guest /active:no'
             Write-Host "[.] Guest account disabled with: 'net user Guest /active:no'"
-            cmd /c 'wmic useraccount where name="Guest" rename NoVisitors'
+            Start-process -wait 'wmic' -argumentlist 'useraccount where name="Guest" rename NoVisitors'
             Write-Host "[.] Guest account renamed with: 'wmic useraccount where name=""Guest"" rename NoVisitors'"
           }
         }  
@@ -2827,8 +2889,8 @@ foreach ($CurrentQID in $QIDs) {
       110414 {
         if (Get-YesNo "$_ Fix Microsoft Outlook Denial of Service (DoS) Vulnerability Security Update August 2022 ? " -Results $Results -QID $ThisQID) { 
           Invoke-WebRequest -UserAgent $AgentString -Uri "https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/outlook-x-none_1763a730d8058df2248775ddd907e32694c80f52.cab" -outfile "$($tmp)\outlook-x-none.cab"
-          cmd /c "C:\Windows\System32\expand.exe -F:* $($tmp)\outlook-x-none.cab $($tmp)"
-          cmd /c "msiexec /p $($tmp)\outlook-x-none.msp /qn"
+          Start-Process -Wait "C:\Windows\System32\expand.exe" -argumentlist "-F:* $($tmp)\outlook-x-none.cab $($tmp)"
+          Start-Process -Wait "msiexec.exe" -ArgumentList "/p $($tmp)\outlook-x-none.msp /qn"
         }
       }
       110413 {
@@ -2836,17 +2898,16 @@ foreach ($CurrentQID in $QIDs) {
           Write-Host "[.] Downloading CAB: https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/msohevi-x-none_a317be1090606cd424132687bc627baffec45292.cab .."
           Invoke-WebRequest -UserAgent $AgentString -Uri "https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/msohevi-x-none_a317be1090606cd424132687bc627baffec45292.cab" -outfile "$($tmp)\msohevi-x-none.msp"
           Write-Host "[.] Extracting cab: C:\Windows\System32\expand.exe -F: $($tmp)\msohevi-x-none.msp $($tmp)"
-          cmd /c "C:\Windows\System32\expand.exe -F:* $($tmp)\msohevi-x-none.msp $($tmp)"
+          Start-Process -Wait "C:\Windows\System32\expand.exe" -ArgumentList "-F:* $($tmp)\msohevi-x-none.msp $($tmp)"
           Write-Host "[.] Installing patch: $($tmp)\msohevi-x-none.msp"
-          cmd /c "msiexec /p $($tmp)\msohevi-x-none.msp /qn"
+          Start-Process -Wait "msiexec.exe" -ArgumentList "/p $($tmp)\msohevi-x-none.msp /qn"
 
           Write-Host "[.] Downloading CAB: https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/excel-x-none_355a1faf5d9fb095c7be862eb16105cfb2f24ca2.cab .."
           Invoke-WebRequest -UserAgent $AgentString -Uri "https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/excel-x-none_355a1faf5d9fb095c7be862eb16105cfb2f24ca2.cab" -outfile "$($tmp)\excel-x-none.cab"
           Write-Host "[.] Extracting cab: C:\Windows\System32\expand.exe -F: $($tmp)\excel-x-none.msp $($tmp)"
-          cmd /c "C:\Windows\System32\expand.exe -F:* $($tmp)\excel-x-none.msp $($tmp)"
+          Start-Process -Wait "C:\Windows\System32\expand.exe" -ArgumentList "-F:* $($tmp)\excel-x-none.msp $($tmp)"
           Write-Host "[.] Installing patch: $($tmp)\excel-x-none.msp"
-          cmd /c "msiexec /p $($tmp)\excel-x-none.msp /qn"
-
+          Start-Process -Wait "msiexec.exe" -ArgumentList "/p $($tmp)\excel-x-none.msp /qn"
         }
       }
       110412 {
@@ -2854,9 +2915,9 @@ foreach ($CurrentQID in $QIDs) {
           Write-Host "[.] Downloading CAB: https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/excel-x-none_355a1faf5d9fb095c7be862eb16105cfb2f24ca2.cab .."
           Invoke-WebRequest -UserAgent $AgentString -Uri "http://catalog.s.download.windowsupdate.com/d/msdownload/update/software/secu/2022/06/vbe7-x-none_1b914b1d60119d31176614c2414c0e372756076e.cab" -outfile "$($tmp)\vbe7-x-none.cab"
           Write-Host "[.] Extracting cab: C:\Windows\System32\expand.exe -F: $($tmp)\vbe7-x-none.msp $($tmp)"
-          cmd /c "C:\Windows\System32\expand.exe -F:* $($tmp)\excel-x-none.msp $($tmp)"
+          Start-Process -Wait "C:\Windows\System32\expand.exe" -ArgumentList "-F:* $($tmp)\excel-x-none.msp $($tmp)"
           Write-Host "[.] Installing patch: $($tmp)\vbe7-x-none.msp"
-          cmd /c "msiexec /p $($tmp)\vbe7-x-none.msp /qn"
+          Start-Process -Wait "msiexec.exe" -ArgumentList "/p $($tmp)\vbe7-x-none.msp /qn"
         }
       }
       110416 { 
@@ -2866,7 +2927,7 @@ foreach ($CurrentQID in $QIDs) {
           #Write-Host "[.] Running installer: : "$($tmp)\mso2013-kb5002477.exe"
           #cmd /c "C:\Windows\System32\expand.exe -F:* $($tmp)\excel-x-none.msp $($tmp)"
           Write-Host "[.] Installing patch: $($tmp)\mso2013-kb5002477.exe"
-          cmd /c "msiexec /i $($tmp)\mso2013-kb5002477.exe /qn"
+          Start-Process -Wait "msiexec.exe" -ArgumentList "/i $($tmp)\mso2013-kb5002477.exe /qn"
         }       
       }
       92176 {
@@ -2876,9 +2937,9 @@ foreach ($CurrentQID in $QIDs) {
           Invoke-WebRequest -UserAgent $AgentString -Uri "https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2024/09/windows10.0-kb5044029-x64-ndp481_7636169b12979c1597e66706e08b6f8557a3fa31.msu" -outfile "$($tmp)\ndp481.msu"
           Invoke-WebRequest -UserAgent $AgentString -Uri "https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2024/09/windows10.0-kb5044020-x64-ndp48_01927b68990bab8f4b74bfc58e91b0cb2c99f983.msu" -outfile "$($tmp)\ndp48.msu"
           Write-Host "[.] Installing patch: $($tmp)\ndp481.msu"
-          cmd /c "wusa.exe $($tmp)\ndp481.msu /quiet /norestart"
+          Start-Process -Wait "wusa.exe" -ArgumentList "$($tmp)\ndp481.msu /quiet /norestart"
           Write-Host "[.] Installing patch: $($tmp)\ndp48.msu"
-          cmd /c "wusa.exe $($tmp)\ndp48.msu /quiet /norestart"
+          Start-Process -Wait "wusa.exe" -ArgumentList "$($tmp)\ndp48.msu /quiet /norestart"
         }
       }
       91738 {
@@ -3013,10 +3074,38 @@ foreach ($CurrentQID in $QIDs) {
       }
       }
 
+      ###################################################### START OF UPDATERS ################################################
+      ####################################################### Installers #######################################
+        # Install newest apps via Winget or Ninite, using $UpdateString
 
-        ####################################################### Installers #######################################
-        # Install newest apps via Winget or Ninite
-
+      110330 {  
+        if (Get-YesNo "$_ - Install Microsoft Office KB4092465? " -Results $Results -QID $ThisQID) {
+            Invoke-WebRequest -UserAgent $AgentString -Uri "https://download.microsoft.com/download/3/6/E/36EF356E-85E4-474B-AA62-80389072081C/mso2007-kb4092465-fullfile-x86-glb.exe" -outfile "$($tmp)\kb4092465.exe"
+            cmd.exe /c "$($tmp)\kb4092465.exe /quiet /passive /norestart"
+        }
+      }
+      372348 {
+        if (Get-YesNo "$_ - Install Intel Chipset INF util ? " -Results $Results -QID $ThisQID) {
+            Invoke-WebRequest -UserAgent $AgentString -Uri "https://downloadmirror.intel.com/774764/SetupChipset.exe" -OutFile "$($tmp)\setupchipset.exe"
+            # https://downloadmirror.intel.com/774764/SetupChipset.exe
+            start-process -Wait "$($tmp)\setupchipset.exe" -ArgumentList "-s -accepteula  -norestart -log $($tmp)\intelchipsetinf.log"
+            # This doesn't seem to be working, lets just download it and run it for now..
+            #cmd /c "$($tmp)\setupchipset.exe -log $($tmp)\intelchipsetinf.log"
+            # may be 'Error: this platform is not supported' ..
+        }
+      }
+      372300 {
+        if (Get-YesNo "$_ - Install latest Intel RST ? " -Results $Results -QID $ThisQID) {
+            #Invoke-WebRequest -UserAgent $AgentString -Uri "https://downloadmirror.intel.com/655256/SetupRST.exe" -OutFile "$($tmp)\setuprst.exe"
+            Invoke-WebRequest -UserAgent $AgentString -Uri "https://downloadmirror.intel.com/773229/SetupRST.exe" -OutFile "$($tmp)\setuprst.exe"
+            
+            start-process -Wait "$($tmp)\setuprst.exe" -ArgumentList " -s -accepteula -norestart -log $($tmp)\intelrstinf.log"
+            # OR, extract MSI from this exe and run: 
+            # msiexec.exe /q ALLUSERS=2 /m MSIDTJBS /i “RST_x64.msi” REBOOT=ReallySuppress
+        }   
+      }
+      
+     
       { ($QIDsGhostScript -contains $_) -or ($VulnDesc -like "*GhostScript*" -and ($QIDsGhostScript -ne 1)) } {
         if (Get-YesNo "$_ Install GhostScript 10.03.1 64bit? " -Results $Results -QID $ThisQID) {
           Write-Host "[.] Searching for old versions of GPL Ghostscript .."
@@ -3034,7 +3123,7 @@ foreach ($CurrentQID in $QIDs) {
             Write-Host "This product CAN NOT be installed automatically anymore with 10.01 and > : You will need to remediate manually!!"
           } else {
             Invoke-WebRequest -UserAgent $AgentString -Uri   $ghostscripturl -OutFile "$($tmp)\ghostscript.exe"
-            cmd.exe /c "$($tmp)\ghostscript.exe /S"
+            Start-Process -Wait "$($tmp)\ghostscript.exe" -ArgumentList "/S"
             #Delete results file, i.e        "C:\Program Files (x86)\GPLGS\gsdll32.dll found#" as lots of times the installer does not clean this up.. may install the new one in a new location etc
             $path = Split-Path -Path $results
             $sep=" found#"
@@ -3050,32 +3139,6 @@ foreach ($CurrentQID in $QIDs) {
           }
         }
         $QIDsGhostScript = 1
-      }
-      110330 {  
-        if (Get-YesNo "$_ - Install Microsoft Office KB4092465? " -Results $Results -QID $ThisQID) {
-            Invoke-WebRequest -UserAgent $AgentString -Uri "https://download.microsoft.com/download/3/6/E/36EF356E-85E4-474B-AA62-80389072081C/mso2007-kb4092465-fullfile-x86-glb.exe" -outfile "$($tmp)\kb4092465.exe"
-            cmd.exe /c "$($tmp)\kb4092465.exe /quiet /passive /norestart"
-        }
-      }
-      372348 {
-        if (Get-YesNo "$_ - Install Intel Chipset INF util ? " -Results $Results -QID $ThisQID) {
-            Invoke-WebRequest -UserAgent $AgentString -Uri "https://downloadmirror.intel.com/774764/SetupChipset.exe" -OutFile "$($tmp)\setupchipset.exe"
-            # https://downloadmirror.intel.com/774764/SetupChipset.exe
-            cmd /c "$($tmp)\setupchipset.exe -s -accepteula  -norestart -log $($tmp)\intelchipsetinf.log"
-            # This doesn't seem to be working, lets just download it and run it for now..
-            #cmd /c "$($tmp)\setupchipset.exe -log $($tmp)\intelchipsetinf.log"
-            # may be 'Error: this platform is not supported' ..
-        }
-      }
-      372300 {
-        if (Get-YesNo "$_ - Install latest Intel RST ? " -Results $Results -QID $ThisQID) {
-            #Invoke-WebRequest -UserAgent $AgentString -Uri "https://downloadmirror.intel.com/655256/SetupRST.exe" -OutFile "$($tmp)\setuprst.exe"
-            Invoke-WebRequest -UserAgent $AgentString -Uri "https://downloadmirror.intel.com/773229/SetupRST.exe" -OutFile "$($tmp)\setuprst.exe"
-            
-            cmd /c "$($tmp)\setuprst.exe -s -accepteula -norestart -log $($tmp)\intelrstinf.log"
-            # OR, extract MSI from this exe and run: 
-            # msiexec.exe /q ALLUSERS=2 /m MSIDTJBS /i “RST_x64.msi” REBOOT=ReallySuppress
-        }   
       }
       { ($QIDsIntelGraphicsDriver  -contains $_) -or ($VulnDesc -like "*Intel Graphics*" -and ($QIDsIntelGraphicsDriver -ne 1)) } {
         if (Get-YesNo "$_ Install newest Intel Graphics Driver? " -Results $Results -QID $ThisQID) { 
@@ -3116,23 +3179,16 @@ foreach ($CurrentQID in $QIDs) {
       }
       
       { ($QIDsAppleiCloud -contains $_) -or ($VulnDesc -like "*Apple iCloud*" -and ($QIDsAppleiCloud -ne 1)) } {
-        <#
-        if (Get-YesNo "$_ Install newest Apple iCloud? ") { 
-            Invoke-WebRequest -UserAgent $AgentString -Uri "" -OutFile "$($tmp)\icloud.exe"
-            cmd /c "$($tmp)\icloud.exe"
-            $QIDsAppleiCloud = 1 # All done, remove variable to prevent this from running twice
-        } else { $QIDsAppleiCloud = 1 } # Do not ask again
-        #>
-        # https://silentinstallhq.com/apple-icloud-install-and-uninstall-powershell/  # THIS SHOULD BE USEFUL.....
-        "$_ Can't deploy Apple iCloud via script yet!!! Please install manually! Opening Browser to iCloud page: "
-        explorer "https://apps.microsoft.com/store/detail/icloud/9PKTQ5699M62?hl=en-us&gl=us"
+        if (Get-YesNo "$_ Install newest Apple iCloud ? " -Results $Results -QID $ThisQID) { 
+          Update-Application -Uri "https://ninite.com/icloud/ninite.exe" -Outfile "$($tmp)\NiniteiCloud.exe" -Killprocess "iCloud.exe" -UpdateString "Apple iCloud"
+        }
+        $QIDsAppleiCloud = 1
       }
       { ($QIDsAppleiTunes -contains $_ ) -or ($VulnDesc -like "*Apple iTunes*" -and ($QIDsAppleiTunes -ne 1))} {
-        if (Get-YesNo "$_ Install newest Apple iTunes from Ninite? " -Results $Results -QID $ThisQID) { 
-            Invoke-WebRequest -UserAgent $AgentString -Uri "https://ninite.com/itunes/ninite.exe" -OutFile "$($tmp)\itunes.exe"
-            cmd /c "$($tmp)\itunes.exe"
-            $QIDsAppleiTunes = 1 # All done, remove variable to prevent this from running twice
-        } else { $QIDsAppleiTunes = 1 } # Do not ask again
+        if (Get-YesNo "$_ Install newest Apple iTunes ? " -Results $Results -QID $ThisQID) { 
+          Update-Application -Uri "https://ninite.com/itunes/ninite.exe" -Outfile "$($tmp)\NiniteiTunes.exe" -Killprocess "iTunes.exe" -UpdateString "Apple iTunes"
+        }
+        $QIDsAppleiTunes = 1
       }
       { ($QIDsChrome -contains $_) -or ($VulnDesc -like "*Google Chrome*" -and ($QIDsChrome -ne 1))} {
         if (Get-YesNo "$_ Check if Google Chrome is up to date? " -Results $Results -QID $ThisQID) { 
@@ -3245,8 +3301,8 @@ foreach ($CurrentQID in $QIDs) {
         if (Get-YesNo "$_ Install newest IrfanView? " -Results $Results -QID $ThisQID) { 
             $IrfanviewUrl = "https://ninite.com/irfanview/ninite.exe"
             Update-Application -Uri $IrfanviewUrl -Outfile "NiniteIrfanview.exe" -Killprocess "Irfanview.exe" -UpdateString "Irfanview"
-            $QIDsIrfanView = 1
-        } else { $QIDsIrfanView = 1 }
+        }
+        $QIDsIrfanView = 1
       }      
       { ($QIDsNotepadPP -contains $_) -or ($VulnDesc -like "Notepad++*" -and ($QIDsNotepadPP -ne 1)) } {
         if (Get-YesNo "$_ Install newest Notepad++? " -Results $Results -QID $ThisQID) { 
@@ -3278,7 +3334,7 @@ foreach ($CurrentQID in $QIDs) {
             #  Teamviewer - https://ninite.com/teamviewer15/ninite.exe
             Update-Application -Uri "https://ninite.com/teamviewer15/ninite.exe" -OutFile "$($tmp)\ninite.exe" -KillProcess "TeamViewer.exe" -UpdateString "TeamViewer 15"
             if (!(Search-Software "TeamViewer")) {
-              if (Get-YesNo "$_ Teamviewer appears to not be installed, should we remove the old Teamviewer registry entry?") {
+              if (Get-YesNo "$_ Teamviewer appears to not be installed, should we remove the old Teamviewer registry entry?" -Results $Results -QID $ThisQID) {
                 $registryPath = 'HKLM:\SOFTWARE\TeamViewer'
                 $backupFolder = 'C:\Program Files\MQRA\backup'
                 $backupFile = Join-Path $backupFolder 'TeamViewerRegistryBackup.reg'
@@ -3339,13 +3395,18 @@ foreach ($CurrentQID in $QIDs) {
         }
         $QIDsVLC = 1 # Whether updated or not, don't ask again.
       }
-      378839 {
+      $QIDs7zip {
         if (Get-YesNo "$_ Install newest 7-Zip? " -Results $Results -QID $ThisQID) { 
-          Update-Application -Uri "https://ninite.com/7-zip/ninite.exe" -OutFile "$($tmp)\7zninite.exe" -KillProcess "7zfm.exe"  -Updatetring "7-Zip" 
-          $QIDs7zip = 1
-        } else { $QIDs7zip = 1 }
+          Update-Application -Uri "https://ninite.com/7-zip/ninite.exe" -OutFile "$($tmp)\7zninite.exe" -KillProcess "7zfm.exe"  -Updatestring "7-Zip" 
+        }
+        $QIDs7zip = 1
       }
-  
+      $QIDsVSCode {
+        if (Get-YesNo "$_ Install newest Microsoft Visual Studio Code update? " -Results $Results -QID $ThisQID) {  
+          Update-Application -Uri "https://ninite.com/vscode/ninite.exe" -OutFile "$($tmp)\vscninite.exe" -KillProcess "code.exe"  -Updatestring "Visual Studio Code" 
+        }
+        $QIDsVSCode = 1
+      }
         ############################
         # Others: (non-ninite)
   
@@ -3357,22 +3418,22 @@ foreach ($CurrentQID in $QIDs) {
             . "c:\Program Files (x86)\Common Files\Java\Java Update\jucheck.exe"
             # "C:\Program Files (x86)\Java\jre1.8.0_151" 
             $SoftwareInstalling.Add("Java")
-            $QIDsOracleJava = 1
-        } else { $QIDsOracleJava = 1 }
+        }
+        $QIDsOracleJava = 1
       }
       { ($QIDsAdoptOpenJDK -contains $_) -or ($VulnDesc -like "*Adopt OpenJDK*") } {
         if (Get-YesNo "$_ Install newest Adopt Java JDK? " -Results $Results -QID $ThisQID) { 
             Invoke-WebRequest -UserAgent $AgentString -Uri "https://ninite.com/adoptjavax8/ninite.exe" -OutFile "$($tmp)\ninitejava8x64.exe"
             cmd /c "$($tmp)\ninitejava8x64.exe"
-            $QIDsAdoptOpenJDK = 1
-        } else { $QIDsAdoptOpenJDK = 1 }
+        }
+        $QIDsAdoptOpenJDK = 1
       }
       { ($QIDsVirtualBox -contains $_) -or ($VulnDesc -like "*VirtualBox*" -and ($QIDsVirtualBox -ne 1)) } {
         if (Get-YesNo "$_ Install newest VirtualBox 6.1.36? " -Results $Results -QID $ThisQID) { 
             Invoke-WebRequest -UserAgent $AgentString -Uri "https://download.virtualbox.org/virtualbox/6.1.36/VirtualBox-6.1.36-152435-Win.exe" -OutFile "$($tmp)\virtualbox.exe"
-            cmd /c "$($tmp)\virtualbox.exe"
-            $QIDsVirtualBox = 1
-        } else { $QIDsVirtualBox = 1 } 
+            cmd /c "$($tmp)\virtualbox.exe"    
+        } 
+        $QIDsVirtualBox = 1
       }
       { ($QIDsDellCommandUpdate -contains $_) -or ($VulnDesc -like "*Dell Command Update*" -and ($QIDsDellCommandUpdate -ne 1))} {
         if (Get-YesNo "$_ Install newest Dell Command Update? " -Results $Results -QID $ThisQID) { 
@@ -3440,29 +3501,8 @@ foreach ($CurrentQID in $QIDs) {
           } else {
             Write-Host "[X] Download failed!! $DellCommandURL did not write to SecAudPath : $SecAudPath " -ForegroundColor Red
           }
-          $QIDsDellCommandUpdate  = 1
-        } else { $QIDsDellCommandUpdate  = 1 }
-      }
-      
-      { 106069 -eq $_ } {
-        if (Get-YesNo "$_ Remove EOL/Obsolete Software: Microsoft Access Database Engine 2010 Service Pack 2 ? " -Results $Results -QID $ThisQID) { 
-          $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Microsoft Access Database Engine 2010*'})
-          if ($Products) {
-            Remove-Software -Products $Products -Results $Results
-          } else {
-            Write-Host "[!] Access Database Engine 2010 not found under 'Microsoft Access Database Engine 2010*' : `n    $Products !!`n" -ForegroundColor Red
-          } 
-          $pfx86 = [Environment]::GetEnvironmentVariable("ProgramFiles(x86)") # Powershell is being super clunky about the parenthesis for some reason?? had to resort to this..
-          $TestFile = "$($pfx86)\Common Files\Microsoft Shared\Office14\acecore.dll"
-          if (Test-Path -Path "$TestFile") {
-            Write-Host "[!] File still found: ""$TestFile"" - Removing!"  # I'm a cheater, I know, I'm terrible. Not a good remediation, but its unlikely to be used as a PE, no exploit, just EOL, etc.
-            Remove-Item $TestFile -Force
-          }
-          if (Test-Path -Path "$TestFile") {
-            Write-Host "[!] File still found: ""$TestFile"" - NOT FIXED!" -ForegroundColor Red
-            Remove-Item $TestFile -Force
-          }
         }
+        $QIDsDellCommandUpdate  = 1
       }
       { ($QIDsAdobeReader -contains $_) -or ($VulnDesc -like "*Adobe Reader*" -and ($QIDsAdobeReader -ne 1)) } {
         if ((!($Automated)) -or ($Automated -and ($AutoUpdateAdobeReader))) {  
@@ -3476,20 +3516,20 @@ foreach ($CurrentQID in $QIDs) {
               Write-Host "[!] Adobe products not found under 'Adobe Reader*' : `n    $Products !!`n" -ForegroundColor Red
             }  
           }
-          if (Get-YesNo "$_ Install newest Adobe Reader DC ? ") {
+          if (Get-YesNo "$_ Install newest Adobe Reader DC ? " -Results $Results -QID $ThisQID) {
             Get-NewestAdobeReader
             #cmd /c "$($tmp)\readerdc.exe"
             $Outfile = "$($tmp)\readerdc.exe"
             # silent install
             Start-Process -FilePath $Outfile -ArgumentList "/sAll /rs /rps /msi /norestart /quiet EULA_ACCEPT=YES" -WorkingDirectory $env:TEMP -Wait -LoadUserProfile
-            $QIDsAdobeReader = 1
-          } else { $QIDsAdobeReader = 1 }
+          }
+          $QIDsAdobeReader = 1
         } else {
           Write-Host "[!] Skipping Adobe Reader vulns for automated, not sure if I should remove old and install newest Reader DC etc."
         }
       }
       { $QIDsMicrosoftSilverlight -contains $_ -or ($VulnDesc -like "*Silverlight*" -and ($QIDsMicrosoftSilverlight -ne 1))} {
-        if (Get-YesNo "$_ Remove Microsoft Silverlight ? ") {
+        if (Get-YesNo "$_ Remove Microsoft Silverlight ? " -Results $Results -QID $ThisQID) {
           Write-Host "[.] Checking for product: '{89F4137D-6C26-4A84-BDB8-2E5A4BB71E00}' (Microsoft Silverlight) .." -ForegroundColor Yellow
           $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{89F4137D-6C26-4A84-BDB8-2E5A4BB71E00}'})
           if ($Products) {
@@ -3502,7 +3542,7 @@ foreach ($CurrentQID in $QIDs) {
         }
       }
       { $QIDsSQLServerCompact4 -contains $_ } {
-        if (Get-YesNo "$_ Remove MS SQL Server Compact 4 ? ") {
+        if (Get-YesNo "$_ Remove MS SQL Server Compact 4 ? "  -Results $Results -QID $ThisQID) {
           Write-Host "[.] Checking for product: '{78909610-D229-459C-A936-25D92283D3FD}' (SQL Server Compact 4) .." -ForegroundColor Yellow
           $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{78909610-D229-459C-A936-25D92283D3FD}'})
           if ($Products) {
@@ -3515,7 +3555,7 @@ foreach ($CurrentQID in $QIDs) {
         }
       }
       { $QIDsMicrosoftAccessDBEngine -contains $_ } {
-        if (Get-YesNo "$_ Remove MicrosoftAccessDBEngine ? ") {
+        if (Get-YesNo "$_ Remove MicrosoftAccessDBEngine ? " -Results $Results -QID $ThisQID) {
           Write-Host "[.] Checking for product: '{9012.. or {90140000-00D1-0409-0000-0000000FF1CE}' (MicrosoftAccessDBEngine) .." -ForegroundColor Yellow
           $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{90120000-00D1-0409-0000-0000000FF1CE}' -or `
                                                             $_.IdentifyingNumber -like '{90140000-00D1-0409-1000-0000000FF1CE}'})
@@ -3578,7 +3618,7 @@ foreach ($CurrentQID in $QIDs) {
         }
       }
       { $QIDsMSTeams -contains $_ } {
-        if (Get-YesNo "$_ Install latest MS Teams ? ") {
+        if (Get-YesNo "$_ Install latest MS Teams ? " -Results $Results -QID $ThisQID) {
           $TeamsURL=(IWR "https://teams.microsoft.com/desktopclient/installer/windows/x64").Content
           IWR $TeamsURL -OutFile "$($tmp)/teams.exe"
           . "$($tmp)/teams.exe"
@@ -3605,9 +3645,6 @@ foreach ($CurrentQID in $QIDs) {
         }
         $QIDsMSTeams = 1
       }
-
-
-
       { $QIDsMicrosoftNETCoreV5 -contains $_ } {
         if (Get-YesNo "$_ Remove .NET Core 5 (EOL) " -Results $Results -QID $ThisQID) { 
           <# Remove one or all of these??
@@ -3635,26 +3672,6 @@ foreach ($CurrentQID in $QIDs) {
             Write-Host "[!] Guids not found: $Products !!`n" -ForegroundColor Red
             $QIDsMicrosoftNETCoreV5 = 1
           }             
-        }
-      }
-      91304 {  # Microsoft Security Update for SQL Server (MS16-136)
-        $inst = (get-itemproperty 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server' -ErrorAction SilentlyContinue).InstalledInstances
-        foreach ($i in $inst)
-        {
-          $p = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL').$i
-          $SQLVersion = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\$p\Setup").Version
-          $SQLEdition = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\$p\Setup").Edition
-        }  # Version lists: https://sqlserverbuilds.blogspot.com/
-
-        if (Get-YesNo "$_ Install SQL Server $SQLVersion $SQLEdition update? " -Results $Results -QID $ThisQID) { 
-          if ("$SQLVersion $SQLEdition" -eq "12.2.5000.0 Express Edition") { # SQL Server 2014 Express
-            Invoke-WebRequest -UserAgent $AgentString -Uri "https://www.microsoft.com/en-us/download/confirmation.aspx?id=54190&6B49FDFB-8E5B-4B07-BC31-15695C5A2143=1" -OutFile "$($tmp)\sqlupdate.exe"
-            cmd /c "$($tmp)\sqlupdate.exe /q"
-          }
-          if ("$SQLVersion $SQLEdition" -eq "12.2.5000.0 Standard Edition") { # SQL Server 2014
-            Invoke-WebRequest -UserAgent $AgentString -Uri "https://www.microsoft.com/en-us/download/confirmation.aspx?id=57474&6B49FDFB-8E5B-4B07-BC31-15695C5A2143=1" -OutFile "$($tmp)\sqlupdate.exe"
-            cmd /c "$($tmp)\sqlupdate.exe /q"
-          }
         }
       }
       { ($QIDsNVIDIA -contains $_) -or ($VulnDesc -like "*NVIDIA*" -and ($QIDsNVidia -ne 1)) } {
@@ -3690,118 +3707,6 @@ foreach ($CurrentQID in $QIDs) {
               }
             }
         } else { $QIDsNVIDIA = 1 }
-      }
-      376609 {
-        if (Get-YesNo "$_ Delete nvcpl.dll for NVIDIA GPU Display Driver Multiple Vulnerabilities (May 2022) ? " -Results $Results -QID $ThisQID) { 
-          Remove-File "C:\Windows\System32\nvcpl.dll" -Results $Results
-        }
-      }    
-      370468 {
-        if (Get-YesNo "$_ Remove Cisco WebEx ? ") {
-          Write-Host "[.] Checking for product: 'Cisco WebEx*' " -ForegroundColor Yellow
-          $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Cisco WebEx*'})
-          if ($Products) {
-              Remove-Software -Products $Products  -Results $Results
-          } else {
-            Write-Host "[!] Product not found: 'Cisco WebEx*' !!`n" -ForegroundColor Red
-          }    
-        }     
-      }
-      19472 {
-        if (Get-YesNo "$_ Install reg key for Microsoft SQL Server sqldmo.dll ActiveX Buffer Overflow Vulnerability - Zero Day (CVE-2007-4814)? " -Results $Results -QID $ThisQID) { 
-          # Set: HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Internet Explorer\ActiveX Compatibility\{10020200-E260-11CF-AE68-00AA004A34D5}  Compatibility Flags 0x400
-          New-Item -Path "HKLM:\SOFTWARE\Microsoft\Internet Explorer\ActiveX Compatibility" -Name "{10020200-E260-11CF-AE68-00AA004A34D5}"
-          New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Internet Explorer\ActiveX Compatibility\{10020200-E260-11CF-AE68-00AA004A34D5}" -Name "Compatibility Flags" -Value 0x400
-        }
-      }
-	
-      100269 {
-        if (Get-YesNo "$_ Install reg keys for Microsoft Internet Explorer Cumulative Security Update (MS15-124)? " -Results $Results -QID $ThisQID) { 
-          New-Item -Path "HKLM:\SOFTWARE\Microsoft\Internet Explorer\Main\FeatureControl" -Name "FEATURE_ALLOW_USER32_EXCEPTION_HANDLER_HARDENING"
-          New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_ALLOW_USER32_EXCEPTION_HANDLER_HARDENING" -Name "iexplore.exe" -Value 1
-          New-Item -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Internet Explorer\Main\FeatureControl" -Name "FEATURE_ALLOW_USER32_EXCEPTION_HANDLER_HARDENING"
-          New-ItemProperty -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_ALLOW_USER32_EXCEPTION_HANDLER_HARDENING" -Name "iexplore.exe" -Value 1
-        } 
-      }
-      90954 {
-        if (Get-YesNo "$_ Install reg key for 2012 Windows Update For Credentials Protection and Management (Microsoft Security Advisory 2871997) (WDigest plaintext remediation)? " -Results $Results -QID $ThisQID) { 
-          New-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\SecurityProviders\WDigest" -Name "UseLogonCredential" -Value 0
-        }
-      }
-      92053 {
-        if (Get-YesNo "$_ Delete Microsoft Windows Defender Elevation of Privilege Vulnerability for August 2023? " -Results $Results -QID $ThisQID) { 
-          Write-Host "Active antivirus: $((Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntivirusProduct).DisplayName -join(" & "))"
-          Remove-File "C:\WINDOWS\System32\MpSigStub.exe" -Results $Results
-        }
-      }      
-      91621 {
-        if (Get-YesNo "$_ Delete Microsoft Defender Elevation of Privilege Vulnerability April 2020? " -Results $Results -QID $ThisQID) { 
-          # This will ask twice due to Remove-File, but I want to offer results first. Could technically add -Results to Remove-File..
-          Write-Host "Active antivirus: $((Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntivirusProduct).DisplayName -join(" & "))"
-          Remove-File "C:\WINDOWS\System32\MpSigStub.exe" -Results $Results
-        }
-      }
-      91649 {
-        if (Get-YesNo "$_ Delete Microsoft Defender Elevation of Privilege Vulnerability June 2020? " -Results $Results -QID $ThisQID) { 
-          Write-Host "Active antivirus: $((Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntivirusProduct).DisplayName -join(" & "))"
-          Remove-File "$($env:ProgramFiles)\Windows Defender\MpCmdRun.exe" -Results $Results
-        }
-      }
-      91972 {
-        if (Get-YesNo "$_ Delete Microsoft Windows Malicious Software Removal Tool Security Update for January 2023? " -Results $Results -QID $ThisQID) { 
-          Remove-File "$($env:windir)\system32\MRT.exe" -Results $Results
-        }
-      }
-      92183 { 
-        if (Get-YesNo "$_ Microsoft Visual C++ [14] Redistributable Installer Elevation of Privilege Vulnerability ") {
-          Update-VCPP14 -arch "both"  # Update for x86 and x64
-        }
-      }
-      105803 {
-        if (Get-YesNo "$_ Remove EOL/Obsolete Software: Adobe Shockwave Player 12 ? " -Results $Results -QID $ThisQID) { 
-          $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Adobe Shockwave*'})
-          if ($Products) {
-              Remove-Software -Products $Products  -Results $Results
-          } else {
-            Write-Host "[!] Product not found: 'Adobe Shockwave*' !!`n" -ForegroundColor Red
-          }    
-        }
-      }
-      106105 {
-        if (Get-YesNo "$_ Remove EOL/Obsolete Software: Microsoft .Net Core Version 3.1 Detected? " -Results $Results -QID $ThisQID) { 
-          Remove-Folder "$($env:programfiles)\dotnet\shared\Microsoft.NETCore.App\3.1.32" -Results $Results
-        }
-      }
-      378332 {
-        if (Get-YesNo "$_ Fix WinVerifyTrust Signature Validation Vulnerability? " -Results $Results -QID $ThisQID) { 
-          Write-Output "[.] Creating registry item: HKLM:\Software\Microsoft\Cryptography\Wintrust\Config\EnableCertPaddingCheck=1"
-          New-Item -Path "HKLM:\Software\Microsoft\Cryptography\Wintrust" -Force | Out-Null
-          New-Item -Path "HKLM:\Software\Microsoft\Cryptography\Wintrust\Config" -Force | Out-Null
-          New-ItemProperty -Path "HKLM:\Software\Microsoft\Cryptography\Wintrust\Config" -Name "EnableCertPaddingCheck" -Value "1" -PropertyType "String" -Force | Out-Null
-          
-          Write-Output "[.] Creating registry item: HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config\EnableCertPaddingCheck=1"
-          New-Item -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust" -Force | Out-Null
-          New-Item -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config" -Force | Out-Null #  \Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config EnableCertPaddingCheck
-          New-ItemProperty -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config" -Name "EnableCertPaddingCheck" -Value "1" -PropertyType "String" -Force | Out-Null    
-          Write-Output "[!] Done!"
-        }
-
-      }
-      378936 {
-        if (Get-YesNo "$_ Fix Microsoft Windows Curl Multiple Security Vulnerabilities? " -Results $Results -QID $ThisQID) { 
-          Write-Host "[.] Showing Curl.exe version comparison.."
-          $curlfile = "c:\windows\system32\curl.exe"
-          Show-FileVersionComparison -Name $curlfile -Results $Results
-          $KB5032189_installed = Get-WuaHistory | Where-Object { $_.Title -like "*5032189*" } 
-          if ($KB5032189_installed) {
-            Write-Host "[+] KB5032189 found already installed. This is fixed."
-          } else {
-            Write-Host "[-] KB5032189 not found installed. Showing all Windows update history:"
-            Get-WuaHistory | FT
-            Write-Host "[.] Opening MSRC page: https://msrc.microsoft.com/update-guide/vulnerability/CVE-2023-38545#securityUpdates"
-            explorer "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2023-38545#securityUpdates"
-          }
-        }
       }
       { $MicrosoftODBCOLEDB -contains $_ } {
         if (Get-YesNo "$_ Fix Microsoft SQL Server, ODBC and OLE DB Driver for SQL Server Multiple Vulnerabilities ? " -Results $Results -QID $ThisQID) { 
@@ -3900,7 +3805,163 @@ foreach ($CurrentQID in $QIDs) {
           }
         }
         $MicrosoftODBCOLEDB = 1
+      }   
+
+      ###################################################### END OF UPDATERS ################################################
+
+      { 106069 -eq $_ } {
+        if (Get-YesNo "$_ Remove EOL/Obsolete Software: Microsoft Access Database Engine 2010 Service Pack 2 ? " -Results $Results -QID $ThisQID) { 
+          $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Microsoft Access Database Engine 2010*'})
+          if ($Products) {
+            Remove-Software -Products $Products -Results $Results
+          } else {
+            Write-Host "[!] Access Database Engine 2010 not found under 'Microsoft Access Database Engine 2010*' : `n    $Products !!`n" -ForegroundColor Red
+          } 
+          $pfx86 = [Environment]::GetEnvironmentVariable("ProgramFiles(x86)") # Powershell is being super clunky about the parenthesis for some reason?? had to resort to this..
+          $TestFile = "$($pfx86)\Common Files\Microsoft Shared\Office14\acecore.dll"
+          if (Test-Path -Path "$TestFile") {
+            Write-Host "[!] File still found: ""$TestFile"" - Removing!"  # I'm a cheater, I know, I'm terrible. Not a good remediation, but its unlikely to be used as a PE, no exploit, just EOL, etc.
+            Remove-Item $TestFile -Force
+          }
+          if (Test-Path -Path "$TestFile") {
+            Write-Host "[!] File still found: ""$TestFile"" - NOT FIXED!" -ForegroundColor Red
+            Remove-Item $TestFile -Force
+          }
+        }
+      }
+      91304 {  # Microsoft Security Update for SQL Server (MS16-136)
+        $inst = (get-itemproperty 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server' -ErrorAction SilentlyContinue).InstalledInstances
+        foreach ($i in $inst)
+        {
+          $p = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\Instance Names\SQL').$i
+          $SQLVersion = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\$p\Setup").Version
+          $SQLEdition = (Get-ItemProperty "HKLM:\SOFTWARE\Microsoft\Microsoft SQL Server\$p\Setup").Edition
+        }  # Version lists: https://sqlserverbuilds.blogspot.com/
+
+        if (Get-YesNo "$_ Install SQL Server $SQLVersion $SQLEdition update? " -Results $Results -QID $ThisQID) { 
+          if ("$SQLVersion $SQLEdition" -eq "12.2.5000.0 Express Edition") { # SQL Server 2014 Express
+            Invoke-WebRequest -UserAgent $AgentString -Uri "https://www.microsoft.com/en-us/download/confirmation.aspx?id=54190&6B49FDFB-8E5B-4B07-BC31-15695C5A2143=1" -OutFile "$($tmp)\sqlupdate.exe"
+            cmd /c "$($tmp)\sqlupdate.exe /q"
+          }
+          if ("$SQLVersion $SQLEdition" -eq "12.2.5000.0 Standard Edition") { # SQL Server 2014
+            Invoke-WebRequest -UserAgent $AgentString -Uri "https://www.microsoft.com/en-us/download/confirmation.aspx?id=57474&6B49FDFB-8E5B-4B07-BC31-15695C5A2143=1" -OutFile "$($tmp)\sqlupdate.exe"
+            cmd /c "$($tmp)\sqlupdate.exe /q"
+          }
+        }
+      }
+      376609 {
+        if (Get-YesNo "$_ Delete nvcpl.dll for NVIDIA GPU Display Driver Multiple Vulnerabilities (May 2022) ? " -Results $Results -QID $ThisQID) { 
+          Remove-File "C:\Windows\System32\nvcpl.dll" -Results $Results
+        }
+      }    
+      370468 {
+        if (Get-YesNo "$_ Remove Cisco WebEx ? "  -Results $Results -QID $ThisQID) {
+          Write-Host "[.] Checking for product: 'Cisco WebEx*' " -ForegroundColor Yellow
+          $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Cisco WebEx*'})
+          if ($Products) {
+              Remove-Software -Products $Products  -Results $Results
+          } else {
+            Write-Host "[!] Product not found: 'Cisco WebEx*' !!`n" -ForegroundColor Red
+          }    
+        }     
+      }
+      19472 {
+        if (Get-YesNo "$_ Install reg key for Microsoft SQL Server sqldmo.dll ActiveX Buffer Overflow Vulnerability - Zero Day (CVE-2007-4814)? " -Results $Results -QID $ThisQID) { 
+          # Set: HKEY_LOCAL_MACHINE\SOFTWARE\Microsoft\Internet Explorer\ActiveX Compatibility\{10020200-E260-11CF-AE68-00AA004A34D5}  Compatibility Flags 0x400
+          New-Item -Path "HKLM:\SOFTWARE\Microsoft\Internet Explorer\ActiveX Compatibility" -Name "{10020200-E260-11CF-AE68-00AA004A34D5}"
+          New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Internet Explorer\ActiveX Compatibility\{10020200-E260-11CF-AE68-00AA004A34D5}" -Name "Compatibility Flags" -Value 0x400
+        }
+      }
+	
+      100269 {
+        if (Get-YesNo "$_ Install reg keys for Microsoft Internet Explorer Cumulative Security Update (MS15-124)? " -Results $Results -QID $ThisQID) { 
+          New-Item -Path "HKLM:\SOFTWARE\Microsoft\Internet Explorer\Main\FeatureControl" -Name "FEATURE_ALLOW_USER32_EXCEPTION_HANDLER_HARDENING"
+          New-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_ALLOW_USER32_EXCEPTION_HANDLER_HARDENING" -Name "iexplore.exe" -Value 1
+          New-Item -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Internet Explorer\Main\FeatureControl" -Name "FEATURE_ALLOW_USER32_EXCEPTION_HANDLER_HARDENING"
+          New-ItemProperty -Path "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_ALLOW_USER32_EXCEPTION_HANDLER_HARDENING" -Name "iexplore.exe" -Value 1
+        } 
+      }
+      90954 {
+        if (Get-YesNo "$_ Install reg key for 2012 Windows Update For Credentials Protection and Management (Microsoft Security Advisory 2871997) (WDigest plaintext remediation)? " -Results $Results -QID $ThisQID) { 
+          New-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\SecurityProviders\WDigest" -Name "UseLogonCredential" -Value 0
+        }
+      }
+      92053 {
+        if (Get-YesNo "$_ Delete Microsoft Windows Defender Elevation of Privilege Vulnerability for August 2023? " -Results $Results -QID $ThisQID) { 
+          Write-Host "Active antivirus: $((Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntivirusProduct).DisplayName -join(" & "))"
+          Remove-File "C:\WINDOWS\System32\MpSigStub.exe" -Results $Results
+        }
       }      
+      91621 {
+        if (Get-YesNo "$_ Delete Microsoft Defender Elevation of Privilege Vulnerability April 2020? " -Results $Results -QID $ThisQID) { 
+          # This will ask twice due to Remove-File, but I want to offer results first. Could technically add -Results to Remove-File..
+          Write-Host "Active antivirus: $((Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntivirusProduct).DisplayName -join(" & "))"
+          Remove-File "C:\WINDOWS\System32\MpSigStub.exe" -Results $Results
+        }
+      }
+      91649 {
+        if (Get-YesNo "$_ Delete Microsoft Defender Elevation of Privilege Vulnerability June 2020? " -Results $Results -QID $ThisQID) { 
+          Write-Host "Active antivirus: $((Get-CimInstance -Namespace root/SecurityCenter2 -ClassName AntivirusProduct).DisplayName -join(" & "))"
+          Remove-File "$($env:ProgramFiles)\Windows Defender\MpCmdRun.exe" -Results $Results
+        }
+      }
+      91972 {
+        if (Get-YesNo "$_ Delete Microsoft Windows Malicious Software Removal Tool Security Update for January 2023? " -Results $Results -QID $ThisQID) { 
+          Remove-File "$($env:windir)\system32\MRT.exe" -Results $Results
+        }
+      }
+      92183 { 
+        if (Get-YesNo "$_ Microsoft Visual C++ [14] Redistributable Installer Elevation of Privilege Vulnerability "  -Results $Results -QID $ThisQID) {
+          Update-VCPP14 -arch "both"  # Update for x86 and x64
+        }
+      }
+      105803 {
+        if (Get-YesNo "$_ Remove EOL/Obsolete Software: Adobe Shockwave Player 12 ? " -Results $Results -QID $ThisQID) { 
+          $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'Adobe Shockwave*'})
+          if ($Products) {
+              Remove-Software -Products $Products  -Results $Results
+          } else {
+            Write-Host "[!] Product not found: 'Adobe Shockwave*' !!`n" -ForegroundColor Red
+          }    
+        }
+      }
+      106105 {
+        if (Get-YesNo "$_ Remove EOL/Obsolete Software: Microsoft .Net Core Version 3.1 Detected? " -Results $Results -QID $ThisQID) { 
+          Remove-Folder "$($env:programfiles)\dotnet\shared\Microsoft.NETCore.App\3.1.32" -Results $Results
+        }
+      }
+      378332 {
+        if (Get-YesNo "$_ Fix WinVerifyTrust Signature Validation Vulnerability? " -Results $Results -QID $ThisQID) { 
+          Write-Output "[.] Creating registry item: HKLM:\Software\Microsoft\Cryptography\Wintrust\Config\EnableCertPaddingCheck=1"
+          New-Item -Path "HKLM:\Software\Microsoft\Cryptography\Wintrust" -Force | Out-Null
+          New-Item -Path "HKLM:\Software\Microsoft\Cryptography\Wintrust\Config" -Force | Out-Null
+          New-ItemProperty -Path "HKLM:\Software\Microsoft\Cryptography\Wintrust\Config" -Name "EnableCertPaddingCheck" -Value "1" -PropertyType "String" -Force | Out-Null
+          
+          Write-Output "[.] Creating registry item: HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config\EnableCertPaddingCheck=1"
+          New-Item -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust" -Force | Out-Null
+          New-Item -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config" -Force | Out-Null #  \Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config EnableCertPaddingCheck
+          New-ItemProperty -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config" -Name "EnableCertPaddingCheck" -Value "1" -PropertyType "String" -Force | Out-Null    
+          Write-Output "[!] Done!"
+        }
+
+      }
+      378936 {
+        if (Get-YesNo "$_ Fix Microsoft Windows Curl Multiple Security Vulnerabilities? " -Results $Results -QID $ThisQID) { 
+          Write-Host "[.] Showing Curl.exe version comparison.."
+          $curlfile = "c:\windows\system32\curl.exe"
+          Show-FileVersionComparison -Name $curlfile -Results $Results
+          $KB5032189_installed = Get-WuaHistory | Where-Object { $_.Title -like "*5032189*" } 
+          if ($KB5032189_installed) {
+            Write-Host "[+] KB5032189 found already installed. This is fixed."
+          } else {
+            Write-Host "[-] KB5032189 not found installed. Showing all Windows update history:"
+            Get-WuaHistory | FT
+            Write-Host "[.] Opening MSRC page: https://msrc.microsoft.com/update-guide/vulnerability/CVE-2023-38545#securityUpdates"
+            explorer "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2023-38545#securityUpdates"
+          }
+        }
+      }
+  
       379223 { # Windows SMB Version 1 (SMBv1) Detected -- https://learn.microsoft.com/en-us/windows-server/storage/file-server/troubleshoot/detect-enable-and-disable-smbv1-v2-v3?tabs=server
         if (Get-YesNo "$_ Windows SMB Version 1 (SMBv1) Detected - Disable " -Results $Results -QID $ThisQID) { 
           Write-Host "[.] Get-SMBServerConfiguration status:" -ForegroundColor Yellow
@@ -3992,13 +4053,15 @@ foreach ($CurrentQID in $QIDs) {
           Remove-File "$(${env:ProgramFiles(x86)})\Common Files\Microsoft Shared\VC\msdia100.dll" -Results $Results
         }       
       }	
-      110432 {
-        $ResultsEXE = "C:\Program Files (x86)\Microsoft Office\root\Office16\GRAPH.EXE"
-        $ResultsEXEVersion = Get-FileVersion $ResultsEXE
-        if ($ResultsEXEVersion -le 16.0.16227.20258) {
-          Write-Host "[!] Vulnerable version $ResultsEXE found : $ResultsEXEVersion <= 16.0.16227.20258"
+<#      110432 {  # This was not finished..
+        if (Get-YesNo "$_ Microsoft Office Security Update for April 2023 ?" -Results $Results -QID $ThisQID) {
+          $ResultsEXE = "C:\Program Files (x86)\Microsoft Office\root\Office16\GRAPH.EXE"
+          $ResultsEXEVersion = Get-FileVersion $ResultsEXE
+          if ($ResultsEXEVersion -le 16.0.16227.20258) {
+            Write-Host "[!] Vulnerable version $ResultsEXE found : $ResultsEXEVersion <= 16.0.16227.20258"
+          }
         }
-      }
+      }  #>
       $QIDsOffice2007 {
         <#
         HKLM\SOFTWARE\Wow6432Node\Microsoft\Office\12.0\Common\ProductVersion LastProduct = 12.0.6612.1000  KB4092465 is not installed   %ProgramFiles(x86)%\Common Files\Microsoft Shared\Office12\mso.dll  Version is  12.0.6785.5000  KB4461607 is not installed   C:\Program Files (x86)\Microsoft Office\Office12\\excelcnv.exe  Version is  12.0.6787.5000#
@@ -4626,7 +4689,7 @@ foreach ($CurrentQID in $QIDs) {
           Write-Host "[.] Downloading installer to $($tmp)\msxml.exe .."
           Invoke-WebRequest -UserAgent $AgentString -Uri "https://download.microsoft.com/download/A/7/6/A7611FFC-4F68-4FB1-A931-95882EC013FC/msxml4-KB2758694-enu.exe" -OutFile "$($tmp)\msxml.exe"
           Write-Host "[.] Running installer: $($tmp)\msxml.exe .."
-          cmd /c "$($tmp)\msxml.exe /quiet /qn /norestart /log $($tmp)\msxml.log"
+          Start-Process -Wait "$($tmp)\msxml.exe" -ArgumentList "/quiet /qn /norestart /log $($tmp)\msxml.log"
         }
         $QIDsMSXMLParser4 = 1
       }
@@ -4640,6 +4703,7 @@ foreach ($CurrentQID in $QIDs) {
         }
         $QIDs_dotNET_Core6 = 1
       }
+
 
     ############################################
       # Default - QID not found!  3-28-24 - Lets check for specific Results here. I don't know what the QID numbers will be, but for now, if there are specific KB's in the results, it is likely missing these patches
