@@ -206,21 +206,23 @@ function Create-FixDB {
 QID,Datefixed
 "@ | Set-Content -Path $csvFile -Force
   }
+  return $true
 }
 
 function Set-Fix {
   param (
       [Parameter(Mandatory)]
-      [string]$QID,
+      [string]$QID = 0,
       [string]$dbPath = "C:\Program Files\MQRA\db\QIDsFixed.csv"
   )
-
+  if ($QID -eq 0) { return $null }
   if (-not (Test-Path $dbPath)) {
       Create-FixDB
   }
   $dateFixed = (Get-Date).ToString("yyyy-MM-dd")
   $entry = "$QID,$dateFixed"
   Add-Content -Path $dbPath -Value $entry
+  return $true
 }
 
 function Get-Fix {
