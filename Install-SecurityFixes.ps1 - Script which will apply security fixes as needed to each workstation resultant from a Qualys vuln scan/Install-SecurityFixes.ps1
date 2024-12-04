@@ -379,7 +379,7 @@ function Get-YesNo {
     }
   } else {
     $FixedDate = Get-Fix -QID $QID
-    Write-Host "[i] SKIPPING: Already fixed on $FixedDate" -ForegroundColor Red
+    Write-Host "[+] Skipping QID $($QID): Already fixed on $FixedDate" -ForegroundColor Green
   }
 }
 
