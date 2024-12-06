@@ -64,15 +64,15 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.22"
-# New in this version:  Created FixDB which is a local CSV file for now, some other simple fixes
+$Version = "0.50.30"
+# New in this version:  Started adding API calls back
 
-$VersionInfo = "v$($Version) - Last modified: 12/03/2024"
+$VersionInfo = "v$($Version) - Last modified: 12/05/2024"
 
 
 # CURRENT BUGS TO FIX:
 #    - VLC update broken - Winget? also ninite?
-#    - Notepad++ update broken
+#    - Notepad++ - check 
 
 #### VERSION ###################################################
 
@@ -87,7 +87,7 @@ if ($Help) {
 
 # ----------- Script specific vars:  ---------------
 $pwd = pwd
-$apiBaseUrl = "https://mqra.mme-sec.us/api/v1"
+$apiBaseUrl = "https://api.mme-sec.us/api/v1"
 $AgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.67 Safari/537.36"
 $OLE19x64Url = "https://go.microsoft.com/fwlink/?linkid=2278038"
 $DCUUrl = "https://dl.dell.com/FOLDER11914075M/1/Dell-Command-Update-Application_6VFWW_WIN_5.4.0_A00.EXE"
@@ -1225,16 +1225,6 @@ function MD5hash {
       [string]$input
     )
     return [System.BitConverter]::ToString((New-Object Security.Cryptography.MD5CryptoServiceProvider).ComputeHash([Text.Encoding]::UTF8.GetBytes($input))).Replace("-", "").ToLower()
-}
-function Get-UniqueID { 
-  param 
-    (
-      [string]$csvPath,
-      [string]$NetBIOS = (hostname)
-    )
-  $csvData = Import-Csv -Path $csvPath | Where { $_.NetBIOS -eq "$NetBIOS" } | Select -First 1
-  $identifierString = "$($csvData.NetBIOS)|$($csvData.'Parent Account Name')|$($csvData.'QG Host ID')"
-  return MD5hash($identifierString)
 }
 
 function Copy-ConfigFile {  
@@ -2428,10 +2418,762 @@ function Check-ScheduledTask {
   }
 }
 
+
 ###################################################################### API Related Calls ##################
 
+########## API UTILITY FUNCTIONS
+
+function Log {
+  param (
+    [string]$Data = "`r`n",
+    [string]$ForegroundColor,
+    [string]$Logfile = $script:ApiLogfile,
+    [switch]$Both = $false
+  )
+  $eol = [Environment]::NewLine
+  if ($LogFile -eq "") { $LogFile = "$($log)\api.log" }  # not passing this from script scope at times..
+  try {
+    "[API] $Data" | Out-File $LogFile -Append -ErrorAction SilentlyContinue
+  } catch {   # don't care if file is missing, can't write is an issue though
+    $_.Exception.Message
+    Write-Host "[couldn't log][API] $Data"
+  }
+  if ($Both) {
+    $Data             
+  }
+
+}
+
+function MD5hash {
+  param
+    ( 
+      [string]$in
+    )
+    return [System.BitConverter]::ToString((New-Object Security.Cryptography.MD5CryptoServiceProvider).ComputeHash([Text.Encoding]::UTF8.GetBytes($in))).Replace("-", "").ToLower()
+}
+ 
+function Get-ConfigFileLine {
+  param ( 
+    [string]$Search = "*",
+    [string]$ConfigFile = "_config.ps1"
+  )
+  if (!(Test-Path "$ConfigFile")) { "" | Set-Content $ConfigFile }
+  $content = Get-Content $ConfigFile -ErrorAction SilentlyContinue
+
+  foreach ($line in $content) {
+    if ($line -like "$($Search)*") {
+      Log "Line: $line"
+      Log "Returning Config line: $($line.split("$($Search)")[1].trim().replace('"',''))"
+      return $line.split("$($Search)")[1].trim().replace('"','')
+    } 
+  }
+  return $false
+}
+
+function Set-ConfigFileLine {
+  param ( 
+    [string]$OldLine,  # "" here will add $NewLine string to end of file
+    [string]$NewLine,
+    [string]$ConfigFile = "_config.ps1"
+  )
+  if (!(Test-Path "$ConfigFile")) { "" | Set-Content $ConfigFile }
+  $content = Get-Content $ConfigFile
+  $content | Set-Content "$($configFile).bak" # make backup
+  if (-not $OldLine) {
+    Add-Content -Path $ConfigFile -Value $NewLine
+    return $true
+  }
+
+  "" | Set-Content "$($configFile)" # empty config file
+  foreach ($line in $content) {
+    if ($line -like "*$($OldLine)*") {
+      Add-Content -Path $ConfigFile -Value $NewLine
+    } else {
+      Add-Content -Path $ConfigFile -Value $line
+    }
+  }
+}
+
+function Put-UniqueId {
+  param (
+    [string]$UniqueId,
+    [string]$configfile = "_config.ps1"
+  )
+  Log "[+] [Put-UniqueId] : $UniqueId" 
+  $UniqueIdFound = Get-ConfigFileLine '$UniqueId = '
+  $UniqueIdLine = '$UniqueId = '+$UniqueId
+  if (!($UniqueIdFound)) {
+    Set-ConfigFileLine -OldLine '' -NewLine $UniqueIdLine
+    Log "[+] Saved UniqueId to $configfile" -ForegroundColor Green
+  } else {
+    Set-ConfigFileLine -OldLine '$UniqueId =' -NewLine $UniqueIdLine
+    Log "[+] Overwrite UniqueId in $configfile" -ForegroundColor Yellow
+  }
+}
+
+function Get-UniqueId {
+  param (
+    [string]$FilePath = '_config.ps1'
+  )
+  try {
+    (Get-Content $filepath -ErrorAction SilentlyContinue) | ForEach-Object {
+      if ($_ -match '^\$UniqueId\s*=') {
+        $UniqueId = ($_ -split "UniqueId =")[1].trim().replace('"','')
+      }
+    } 
+  } catch {
+    Log "=== [Get-UniqueId] couldn't read from config.. $_"
+    return $false
+  }
+  if ($UniqueId.length -eq 16) { return $UniqueId } else { return $false }
+}
+
+function New-UniqueId {
+  $UniqueId = -join ((65..90) + (97..122) | Get-Random -Count 16 | ForEach-Object {[char]$_})
+  return $UniqueId
+}
+
+function Show-FixData { 
+  param (
+    [psobject]$FixData
+  )
+
+  foreach ($key in $FixData.Keys) {
+    Log "[FixData]  $key : $($FixData[$key])"
+  }
+}
+
+function Verify-Data {
+  param (
+        $requiredKeys = @('qualys_ids', 'description', 'note'),
+        [Parameter(Mandatory=$true)]
+        [psobject]$Data
+  )
+
+  if ($Data) {
+    foreach ($key in $requiredKeys) {
+        if (-not $Data.ContainsKey($key)) {
+            Log "[Verify-Data] -Data doesn't contain $key"
+            return $false
+        }
+    }
+    return $true
+  }
+}
 
 
+############ API FUNCTIONS
+
+function API-GetClientGuid {
+  param (
+        [string]$AccountName,
+        [string]$APIRoute = "/client/lookup",
+        [string]$Method = "POST",
+        [string]$UserAgent = $script:UserAgent,
+        [string]$APIKey,
+        [string]$UniqueID
+    )
+
+    Log "[API-GetClientGuid] ---------- $uri $UserAgent $Method $(($Headers).Authorization)"
+    $uri = "$($apiBaseUrl)$($APIRoute)"
+    $headers = @{
+        'Authorization' = "Bearer $APIKey"
+    }
+    $body = @{
+        uniqueid = $UniqueID
+        apikey = $APIKey
+        accountname = $AccountName
+    } | ConvertTo-Json
+    Log "---- body: uniqueid: $($body.uniqueid) apikey: $($body.apikey) accountname: $($body.accountname)"
+    try {
+        Log "[API-GetClientGuid] Calling IRM : -Uri '$uri' -UserAgent '$UserAgent' -Method '$Method' `
+                      -Headers Authorization $(($Headers).Authorization) -Body $($body|select *|fl)" -ForegroundColor Yellow
+        $Resp = Invoke-RestMethod -Uri $uri -UserAgent $UserAgent -Method $Method -Headers $headers -Body $body
+        Log "[API-GetClientGuid] Response: $($Resp)"
+        return ($Resp)
+    } catch {
+        Log "[API-GetClientGuid] Error: StatusCode: $_.Exception.Response.StatusCode.value__"
+        $resp
+        return '{"error":"' + $_.Exception.Response.ReasonPhrase + '"}'
+    }
+    return '{"error":"unknown"}'
+}
+
+function API-FileDownload {
+    param (
+        [string]$APIRoute = "/api/v1/import/fullinternal",
+        [string]$Method = "POST",
+        [string]$UserAgent = "$MQRAAgent",
+        [string]$APIKey,
+        [string]$ClientGuid,
+        [string]$Filename,
+        [string]$UniqueID
+    )
+
+    $uri = "$($script:apiBaseUrl)$($APIRoute)"  # Ensure $apiBaseUrl is defined elsewhere
+    Log "[API-FileUpload] uri: $uri"
+    $headers = @{
+        'Authorization' = "Bearer $APIKey"
+    }
+
+    try {
+        $body = @{
+            uniqueid = $UniqueID
+            apikey = $APIKey
+            client_guid = $ClientGuid
+            filename = $Filename
+        } | ConvertTo-Json -Depth 100
+
+        Log "[API-FileDownload] Calling IRM with file upload: IRM -Uri $uri -Method $Method -Headers $($headers|select *|fl) -Body {not shown}"
+        Log "[API-FileDownload] Body: "
+        Log ($body | select *)
+        $Response = Invoke-RestMethod -Uri $uri -Method "POST" -Headers $headers -Body $body
+
+        #Log "[API-FileDownload] Response: $($Resp | select *|fl)"
+        if ($Response."csv_content") {
+          $Response.csv_content | Set-Content "$FileName"
+          Log "[API-FileDownload] File downloaded successfully" 
+          return $true
+        } else {
+           Log "[API-FileDownload] Response does not contain 'csv_content': $($Response | ConvertFrom-Json)"
+          return $false
+        }
+        return ($Response)
+    } catch {
+        Log "[API-FileDownload] Error: StatusCode: $_.Exception.Response.StatusCode.value__"
+        return '{"error":"' + $_.Exception.Response.ReasonPhrase + '"}'
+    }
+    return '{"error":"unknown"}'
+}
+
+function API-FileUpload {
+    param (
+        [string]$APIRoute = "/api/v1/import/fullinternal",
+        [string]$Method = "POST",
+        [string]$UserAgent = "APItest.ps1",
+        [string]$APIKey,
+        [string]$ClientGuid,
+        [string]$Filename,
+        [string]$UniqueID
+    )
+
+    $uri = "$($script:apiBaseUrl)$($APIRoute)"  # Ensure $apiBaseUrl is defined elsewhere
+    Log "[API-FileUpload] uri: $uri"
+    $headers = @{
+        'Authorization' = "Bearer $APIKey"
+    }
+
+    try {
+        $body = @{
+            uniqueid = $UniqueID
+            apikey = $APIKey
+            client_guid = $ClientGuid
+            filename = (Split-Path $Filename -Leaf)
+            file = (Get-Content -Path $Filename)
+        } | ConvertTo-Json -Depth 100
+
+        Log "[API-FileUpload] Calling IRM with file upload: IRM -Uri $uri -Method $Method -Headers $($headers|select *|fl) -Body {not shown}"
+        Log "[API-FileUpload] Body: "
+        Log "$($body | select *)"
+        $Response = Invoke-RestMethod -Uri $uri -Method $Method -Headers $headers -Body $body
+
+        Log "[API-FileUpload] Response: $($Resp | select *|fl)"
+        $key = "Message"
+        if (-not $Response.ContainsKey($key)) {
+            Log "[API-FileUpload] Response doesn't contain $key"
+            return $false
+        }
+        if ($Response."Message") {
+          if ($Response["Message"] -like "*imported successfully*") {
+            Log "[API-FileUpload] Response shows file imported successfully!" 
+            return $true
+          } else {
+            Log "[API-FileUpload] Response doesn't show a successful file import." 
+            return $false
+          }
+        } else {
+           Log "[API-FileUpload] Response does not contain 'Message': $($Response | ConvertFrom-Json)"
+          return $false
+        }
+        return ($Response)
+    } catch {
+        Log "[API-FileUpload] Error: StatusCode: $_.Exception.Response.StatusCode.value__"
+        return '{"error":"' + $_.Exception.Response.ReasonPhrase + '"}'
+    }
+
+    return '{"error":"unknown"}'
+}
+
+
+Function API-Call {
+  param (
+    [string]$APIRoute, 
+    [string]$UniqueID = "", 
+    [string]$APIKey = "", 
+    [string]$AccountName = "",
+    [string]$AssetInventory = "",
+    [string]$NetBios = "",
+    [string]$Domain = "",
+    [string]$Lanipv4 = "",
+    [string]$Lanipv6 = "",
+    [string]$Wanipv4 = "",
+    [string]$Filename = "",
+    [string]$ScanSummary = "",
+    [string]$ClientScan = "",
+    [string]$ClientGuid = "",
+    [string]$QID = "",
+    [string]$Method = "POST",
+    [string]$Useragent = "$Script:UserAgent",
+    [string]$Logs,
+    [psobject]$FixData = "?"
+  )
+  $domain = $env:userdnsdomain
+
+  $url = "$($apiBaseUrl)$($APIRoute)"   # $APIRoute should have initial /
+ 
+  $headers = @{
+      'Content-Type' = 'application/json'
+      'Authorization' = "Bearer $APIkey"
+  }
+  if ($APIRoute -eq "/remed") { # /Remed
+    Log "[API-Call] Fixdata: $(Show-FixData $FixData)"
+    if (Verify-Data -Data $FixData) {
+      $qualys_ids = ($FixData["qualys_ids"] -replace "\n","" -replace "\\","")  | ConvertTo-Json
+      $description = $FixData["description"]
+      $note = $FixData["note"]
+    } else {
+      Log "[!] Error: $FixData is missing one or more required fields."
+    }
+    $body = @{                            # /Remed
+        apikey = $APIKey
+        uniqueid = $uniqueID
+        filename = $FileName
+        qualys_ids = $qualys_ids
+        description = $description
+        note = $note
+    } | ConvertTo-Json
+  } else {
+    if ($APIRoute -eq "/hello") {         # /Hello
+      if (!($APIKey)) { $APIKey = $HelloMsg }
+      $body = @{
+        uniqueid = $uniqueID
+        netbios = $NetBios
+        domain = $Domain
+        wanipv4 = $wanipv4
+        lanipv4 = $lanipv4
+        lanipv6 = $lanipv6
+#        assetinventory = $AssetInventory
+#        accountname = $AccountName
+        apikey = $APIKey
+      }   | ConvertTo-Json
+    } else { 
+      if ($APIRoute -eq "/sendlogs") {    # /Sendlogs
+        $body = @{  
+          uniqueid = $uniqueID
+          apikey = $APIKey
+          clientscan = $ClientScan
+          name = "QID $QID"
+          logs = $Logs
+        } | ConvertTo-Json
+      } else {
+        if ($APIRoute -eq "/clientscan/csv") { # /Clientscan/CSV
+          $client = 
+          $body = @{  
+            uniqueid = $uniqueID
+            apikey = $APIKey
+            filename = $Filename
+          } | ConvertTo-Json
+        } else {
+          if ($APIRoute -eq "/clientscan/latest") { # /ClientScan/Latest
+            $body = @{ 
+              uniqueid = $uniqueID
+              apikey = $APIKey
+            } | ConvertTo-Json
+          } else {
+            if ($APIRoute -eq "/checkin" -or $APIRoute -eq '/checkout') { # /Checkin or /Checkout
+              $body = @{ 
+                uniqueid = $uniqueID
+                apikey = $APIKey
+              } | ConvertTo-Json
+            } else {
+              if ($APIRoute -eq "/test") {
+                $body = @{ 
+                  test = "test"
+                } | ConvertTo-Json
+              }
+             }
+          }
+        }
+      }
+    }
+  }
+  try {
+    Log "[API-Call] Calling IRM : -Uri '$url' -UserAgent '$UserAgent' -Method '$Method' -Headers '$($headers | out-string) $($headers.Value)' -Body '$body'"
+    $Resp = Invoke-RestMethod -Uri $url -UserAgent $UserAgent -Method $Method -Headers $headers -Body $body -Contenttype 'application/json'
+    Log "[API-Call] response: $($Resp)"
+    return ($Resp)
+  } catch {
+    Log "[API-Call] Error: StatusCode: $($_.Exception.Response.StatusCode.value__)"
+#    Log "[API-Call] Error: StatusDescription: $_.Exception.Response.ReasonPhrase"
+#    Log "[API-Call]  Error: raw text: $($Response)"
+    return '{"error": '+$_.Exception.Response.ReasonPhrase+'"}'
+  }
+ 
+  return '{"error":"unknown"}'
+}
+ 
+ 
+function API-Remed {
+  param (
+    [string]$APIKey,
+    [psobject]$FixData,
+    [string]$APIRoute,
+    [string]$UniqueID = "",
+    [string]$AccountName = "",
+    [string]$AssetInventory = "",
+    [string]$ScanSummary = "",
+    [string]$NetBios = $script:hostname,
+    [string]$FileName = ""
+  )
+  if (!($SkipAPI)) {  
+    $APIRoute = "/remed"
+    Log "[API-REMED] API-Call:
+    APIKey: $APIKey
+    FixData: $($FixData)
+    APIRoute: $APIRoute
+    UniqueID: $UniqueID
+    Accountname: $AccountName
+    AssetInventory: $AssetInventory
+    ScanSummary: $ScanSummary
+    NetBios: $NetBios
+    FileName: $FileName"
+    $Response = API-Call -APIRoute $APIRoute -UniqueId $UniqueID -APIKey $APIKey -FixData $FixData -AccountName $AccountName `
+                        -AssetInventory $AssetInventory -NetBios $NetBios -Filename $Filename -ScanSummary $ScanSummary
+    Log "[API-Remed] Response: $response"
+    if ($(($Response)."status") -like "*Remediation recorded*") {
+      return $true
+    } else {
+      return $false
+    }
+    if ($Response."error") {  
+      return $false
+    } else {
+      return $false
+    }
+  } else {
+     # API Call skipped...
+  }
+}
+ 
+function API-Check {
+  param (
+    [string]$UniqueID,
+    [string]$APIKey,
+    [string]$Direction
+  )
+  if (!($SkipAPI)) {
+    $APIRoute = "/check$($Direction)"
+    $Response = API-Call -APIRoute $APIRoute -UniqueId $UniqueID -APIKey $APIKey
+    if ($Response -like "*timestamp recorded*") {
+      if ($Response -like "*timestamp recorded*") {
+        Log "[API-Check] Check$($Direction) Succeeded"
+        return $true
+      } else {
+        Log "[API-Check] Check$($Direction) Failed - no timestamp recorded"
+        return $false
+      }
+    } else {
+        Log "[API-Check] Check$($Direction) Failed - couldn't find 'timestamp recorded' in response."
+        return $false
+    }
+  } else {
+    Log "[-] Skipping API calls.. SkipAPI=true"
+  }
+}
+ 
+function API-Hello {
+  param ( 
+    [string]$UniqueID,
+    [string]$AccountName,
+    [string]$AssetInventory,
+    [string]$domain,
+    [string]$hostname = (hostname).ToUpper(),
+    [string]$lanipv4 = ((Get-NetIPAddress | Where-Object { $_.AddressFamily -eq 'IPv4' -and $_.InterfaceAlias -notlike '*Loopback*' }).IPAddress),
+    [string]$lanipv6 = ((Get-NetIPAddress | Where-Object { $_.AddressFamily -eq 'IPv6' -and $_.InterfaceAlias -notlike '*Loopback*' }).IPAddress),
+    [string]$wanipv4 = (Invoke-WebRequest "ifconfig.me").Content,
+    [string]$HelloMsg = "65f7218ee72d8aeab272130a042de1e3"
+  )
+  $domain = $env:userdnsdomain
+  $NetBios = $hostname
+  if (!($SkipAPI)) {  
+    $APIRoute = "/hello"
+    $Resp = API-Call -APIRoute $APIRoute -APIKey $HelloMsg -NetBios $NetBIOS -domain $domain -lanipv4 $lanipv4 -lanipv6 $lanipv6 -wanipv4 $wanipv4 -uniqueid $UniqueId
+
+    Log "------ Resp.StatusCode: $($Resp.statuscode)"
+    if ($Resp -like "*api_key*") {
+      $APIKey = $Resp."api_key"
+      if ($APIKey.Length -ge 64) {   # Better check here
+        Log "[API-Hello] Hello Succeeded. API Key = $APIKey "  -ForegroundColor Green
+        return $ApiKey
+      } else {
+        Log "[API-Hello] Hello FAILED!" -ForegroundColor Red
+        return $false
+      }
+    }  
+  }
+}
+ 
+####################### API KEY FUNCTIONS #################################################
+
+function API-StoreKey {
+  param (
+    [string]$APIKey,
+    [string]$configfile = "_config.ps1"
+  )
+  $APIKeyFound = Get-ConfigFileLine '$APIKey = '
+  $APIKeyLine = '$APIKey = '+$APIKey
+  if (!($APIKeyFound)) {
+    Set-ConfigFileLine -OldLine '' -NewLine $APIKeyLine
+    Log "[+] Saved new API Key to $configfile" -ForegroundColor Green
+    return $true
+  } else {
+    Set-ConfigFileLine -OldLine '$APIKey =' -NewLine $APIKeyLine
+    Log "[+] Overwrite API Key in $configfile" -ForegroundColor Green
+    return $true
+  }
+  return $false
+}
+
+function API-SendLogs {
+  param (
+    [string]$UniqueID,
+    [string]$APIKey,
+    [string]$ClientScan,
+    [string]$LogFile,
+    [string]$QID
+  )
+  if (!($SkipAPI)) {
+    $APIRoute = "/sendlogs"
+    $Logs = Get-Content $LogFile
+    $Response = API-Call -APIRoute $APIRoute -UniqueId $UniqueID -APIKey $APIKey -ClientScan $ClientScan -Logs $Logs -QID $QID
+    if ($Response."messages") {
+      Log "messages"
+      if ($Response."messages" -like "*Logs received*") {
+        Log "logs received"
+        return $true
+      } else {
+       return $false
+      }
+    }
+  } else {
+    Write-Host "[-] Skipping API calls.. SkipAPI=true"
+  }
+}
+
+function API-GetLatestClientScan {
+  param (
+    [string]$UniqueID,
+    [string]$APIKey
+  )
+  if (!($SkipAPI)) {
+    $APIRoute = "/clientscan/latest"
+    $Response = API-Call -APIRoute $APIRoute -Method "POST" -UniqueId $UniqueID -APIKey $APIKey
+    if ($Response."filename") {
+      if ($Response."filename" -like "*.csv*") {
+        return $Response."filename"
+      } else {
+       return $false
+      }
+    }
+  } else {
+    Write-Host "[-] Skipping API calls.. SkipAPI=true"
+  }
+}
+
+
+############################## API SCAN UPLOADS and DOWNLOADS ##################################################
+
+function API-DownloadScan {
+  param (
+    [string]$UniqueID,
+    [string]$APIKey,
+    [string]$Filename,
+    [string]$WriteTo
+  )
+  if (!($SkipAPI)) {
+    $APIRoute = "/clientscan/csv"
+    $Response = API-Call -APIRoute $APIRoute -Method "POST" -UniqueId $UniqueID -APIKey $APIKey -Filename $Filename
+    if ($Response."csv_content") {
+      $Response."csv_content" | Set-Content "$($WriteTo)\$($Filename)"
+      Log "[+] Recieved CSV, saved to '$($WriteTo)\$($Filename)'"
+      return "$($WriteTo)\$($Filename)"
+    } else {
+     return $false
+    }
+  } else {
+    Write-Host "[-] Skipping API calls.. SkipAPI=true"
+  }
+}
+
+function API-UploadScan {
+  param (
+    [string]$Filename, 
+    [string]$UniqueID, 
+    [string]$ClientGuid, 
+    [string]$APIKey,
+    [string]$Type
+  )
+
+  $APIRoute = "/import/full$($type)"
+  if (!($SkipAPI)) {
+    Log "[API-UploadScan] launching API-FileUpload APIRoute: $APIRoute UniqueID: $UniqueId APIKey: $APIKey Filename: $Filename ClientGuid: $ClientGuid"
+    $Response = API-FileUpload -APIRoute $APIRoute -UniqueID $UniqueID -APIKey $APIKey -Filename $Filename -ClientGuid $ClientGuid
+    if ($Response) { return $true } else { return $false }
+  } else {
+    Log "[-] Skipping API calls.. SkipAPI=true"
+  }
+}
+
+function API-CheckScan {
+  param (
+        $APIRoute = "/clientscan/latest",
+        $UniqueId,
+        $APIKey,
+        $AccountName,
+        $NetBios
+  )
+  if (!($SkipAPI)) {
+    Log "[API-CheckScan] launching API-Call APIRoute: $APIRoute UniqueID: $UniqueId APIKey: $APIKey"
+    $Response = API-Call -APIRoute $APIRoute -UniqueID $UniqueID -APIKey $APIKey
+    Log "[API-CheckScan] API-Call response: $Response"
+    if ($Response.filename) { return $Response.filename } else { return $false }
+  } else {
+    Log "[-] Skipping API calls.. SkipAPI=true"
+  }
+}	
+
+function API-Test {
+  param (
+    [switch]$ping
+  )
+
+  $APIRoute = "/test"
+  if (!($SkipAPI)) {
+    Log "[API-Test] launching API-Call APIRoute: $APIRoute "
+    if ($ping) {
+      $ping=(ping -n 1 -w 3 mqra.mme-sec.us | findstr /i reply).split(' ')[4].split('=')[1].split('ms')[0]  # Test-Netconnection sucks
+      $Response = API-Call -APIRoute $APIRoute 
+      if ($Response) { return $ping } else { return $false }
+    } else {
+      $Response = API-Call -APIRoute $APIRoute 
+      if ($Response) { return $true } else { return $false }
+    }
+  } else {
+    Log "[-] Skipping API calls.. SkipAPI=true"
+  }
+}
+
+
+
+####################################################### MAIN API ROUTINES #######################################################
+
+
+$datetime = Get-Date -Format "yyyy-MM-dd HH:mm:ss" 
+Log;Log;Log;Log "################################################################################################# API START $datetime" -Both
+$UniqueId = Get-UniqueId
+if (!($UniqueId)) {
+  $UniqueId = New-UniqueId
+  Put-UniqueId $UniqueId
+  Log "[+] Created and stored UniqueId: $UniqueId" -Both
+} else {
+  Log "[+] Found UniqueId: $UniqueId" -Both
+}
+
+if ($APIKey = Get-ConfigFileLine -Search '$APIKey = ') {
+  Log "[+] Got API key" -ForegroundColor Green -Both
+} else {
+  Log "[-] Couldn't get API key from $configfile !!" -ForegroundColor Red -Both
+  $APIKey = $null
+}
+
+if (!($ping = API-Test)) {
+  Log "[-] ERROR: API not functional."  -ForegroundColor Red -Both
+} else {
+  $colors = @("Red","Orange","Yellow","Light Green","Green")
+  $pings = @(125,100,75,50,25)
+  foreach ($ping in $pings) {
+    if ($ping -gt 100) {
+        $color = $colors[0]
+    } elseif ($ping -gt 75) {
+        $color = $colors[1]
+    } elseif ($ping -gt 50) {
+        $color = $colors[2]
+    } elseif ($ping -gt 25) {
+        $color = $colors[3]
+    } else {
+        $color = $colors[4]
+    }
+  }
+  #$color = $colors[$ping]
+  Log "[+] API up and running, MQRA server: $($ping)ms"  -ForegroundColor $color -Both
+}
+
+Log;Log "-------------- API-CheckIn ---------------------------" -Both
+if (!(API-Check -Direction "in" -UniqueID $UniqueID -APIKey $APIKey)) {   # "in" must stay lowercase!
+  Log "[API] Failed Checkin. Trying Hello.." -Both
+
+  Log;Log "-------------- API-Hello tests ---------------------------" -Both
+  $Result = API-Hello -APIKey $APIKey -UniqueID $UniqueID -NetBios $NetBios -hostname $hostname
+  Log "--- API-Hello Result: $Result" -Both
+  if ($Result.length -eq 64) {
+    $APIKey = $Result
+  } else {
+    Log "--- Bad Response: $Result" -Both  # not sure?
+  }
+  if ($APIKey) {
+    Log "[+] Hello success! API_Key = $APIKey" -Both
+    if (API-ReplaceStoreKey -APIKey $APIKey -FilePath "C:\Program Files\MQRA\_config.ps1") {
+      Log "[+] Success, updated C:\Program Files\MQRA\_config.ps1 file with API key." -ForegroundColor Green
+    } else {
+      Log '[-] Error replacing $APIKey line in _config.ps1 file! Check permissions or file exists, etc' -ForegroundColor Red -Both
+    }
+    if ($APIKey = Get-ConfigFileLine -Search '$APIKey = ') {
+      Log "[+] Success, got API key from _config.ps1" -ForegroundColor Yellow
+    }
+
+    Log;Log "-------------- API-CheckIn tests ---------------------------"
+    if (API-Check -Direction "in" -UniqueID $UniqueID -APIKey $APIKey) {   # "in" must stay lowercase!
+      Log "[+] Checkin Success." -Both
+    } else {
+      Log "[-] Checkin Failure!" -Both
+    } 
+  } else {
+    Log "[-] Hello Failure! ... "
+    #Log "[-] Hello Failure! ... Skipping API for now." -Both
+    #$SkipAPI = $true
+  }
+} else {
+  Log "[+] Checkin: Success!" -ForegroundColor Green -Both
+}
+
+$Filename = API-GetLatestClientScan -UniqueID $UniqueId -APIKey $APIKey
+if ($Filename) {
+  Log "[+] Received Filename: '$Filename'" -ForegroundColor Green
+} else {
+  Log "[-] API-GetLatestClientScan - Couldn't get filename!!" -ForegroundColor Red
+}
+$FileDown = API-DownloadScan -WriteTo $CSVPath -Filename $Filename -UniqueID $UniqueId -APIKey $APIKey
+if ($FileDown) {
+  Log "[+] Downloaded Filename: '$FileDown'" -ForegroundColor Green
+} else {
+  Log "[-] API-DownloadScan Couldn't get filename!!" -ForegroundColor Red
+}
+
+$CSVFilename = $FileDown
+$CSVFile = $FileDown
+
+$datetime = Get-Date -Format "yyyy-MM-dd HH:mm:ss" 
+Log "################################################################################################# API END $datetime"
 
 #######################################################
 
@@ -4820,12 +5562,12 @@ Write-Host "[+] Log written to: $script:LogFile , copying to $LogPath `n"
 Create-IfNotExists $LogPath
 try {
   Copy-Item $script:LogFile $LogPath -Force
-  Write-Host "[+] Log copied to: $LogPath `n"
+#  Write-Host "[+] Log copied to: $LogPath `n"
 } catch {
   Write-Error "[!] Log copy failed! $_" | Tee-Object -Append -Path $script:LogFile 
 }
-#API-SendLogs -LogFile $script:LogFile
-#API-Checkout
+API-SendLogs -LogFile $script:LogFile
+API-Checkout
 
 Write-Event -type "information" -eventid 101 -msg "Script ended"
 Exit

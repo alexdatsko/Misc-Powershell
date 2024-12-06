@@ -10,6 +10,7 @@ $info = "
 #
 # v0.1 - 11-14-2024 - initial
 # v0.2 - 11-14-2024 - added 2 other fixes
+# v0.3 - 12-05-2024 - random save? not sure if this is 100%
 "
 
 $dateshort= Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -99,7 +100,7 @@ function Add-HSTSHeaderFix {
 }
 
 function Add-ServerHeaderRemoval {
-  Write-Output "`n[!] Starting Add-ServerHeaderRemoval - this will remove 'Server: Microsoft-IIS/10.0' from the server headers"
+  Write-OuFtput "`n[!] Starting Add-ServerHeaderRemoval - this will remove 'Server: Microsoft-IIS/10.0' from the server headers"
   Write-Output "[.] Adding regkey: cmd.exe /c 'reg add HKLM\SYSTEM\CurrentControlSet\Services\HTTP\Parameters /v DisableServerHeader /t REG_DWORD /d 2'"
   cmd.exe /c 'reg add HKLM\SYSTEM\CurrentControlSet\Services\HTTP\Parameters /v DisableServerHeader /t REG_DWORD /d 2'
   Start-Sleep 3
