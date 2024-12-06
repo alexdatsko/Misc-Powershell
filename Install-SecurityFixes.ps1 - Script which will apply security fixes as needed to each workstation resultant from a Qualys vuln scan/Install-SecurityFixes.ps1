@@ -9,8 +9,8 @@ param (
   [int] $SkipQID,                  # Allow user to pick one QID to skip
   [switch] $Help,                  # Allow -Help to display help for parameters
   [switch] $Update,                # Allow -Update to only update the script then exit
-  [switch] $SkipAPI = $true,       # Set this to $true to not try to make any calls to the API
-  [switch] $Risky = $true,         # Allows for risky behavior like kililng the ninite.exe installer when updating an Application (if Winget is not installed), this should be false for slow machines!
+  [switch] $SkipAPI,               # Set this to $true to not try to make any calls to the API
+  [switch] $Risky,                 # Allows for risky behavior like kililng the ninite.exe installer when updating an Application (if Winget is not installed), this should be false for slow machines!
   [switch] $PowerOpts = $false,    # This switch will set all Power options on Windows to never fall asleep or hibernate.
   [switch] $AddScheduledTask = $false,       # This switch will install a scheduled task to run the script first thursday of each month and reboot after
   [switch] $AutoUpdateAdobeReader = $false,  # Auto update adobe reader, INCLUDING REMOVAL OF OLD PRODUCT WHICH COULD BE LICENSED!!! if this flag is set
@@ -64,10 +64,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.30"
-# New in this version:  Started adding API calls back
+$Version = "0.50.32"
+# New in this version:  More work on API calls and logging
 
-$VersionInfo = "v$($Version) - Last modified: 12/05/2024"
+$VersionInfo = "v$($Version) - Last modified: 12/06/2024"
 
 
 # CURRENT BUGS TO FIX:
@@ -86,7 +86,7 @@ if ($Help) {
 }
 
 # ----------- Script specific vars:  ---------------
-$pwd = pwd
+$pwd = Get-Location
 $apiBaseUrl = "https://api.mme-sec.us/api/v1"
 $AgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.67 Safari/537.36"
 $OLE19x64Url = "https://go.microsoft.com/fwlink/?linkid=2278038"
@@ -95,15 +95,23 @@ $ghostscripturl = "https://github.com/ArtifexSoftware/ghostpdl-downloads/release
 $AdobeReaderUpdateUrl = "https://rdc.adobe.io/reader/products?lang=mui&site=enterprise&os=Windows%2011&country=US&nativeOs=Windows%2010&api_key=dc-get-adobereader-cdn"
 $NetCore6NewestUpdate = "https://download.visualstudio.microsoft.com/download/pr/396abf58-60df-4892-b086-9ed9c7a914ba/eb344c08fa7fc303f46d6905a0cb4ea3/dotnet-sdk-6.0.428-win-x64.exe"
 
-$MQRAUserAgent = "MQRA v0.50 PS"
-$MQRAdir = "C:\Program Files\MQRA"
+$MQRAUserAgent = "MQRA v0.50 PS"        # Useragent for API communications
+$MQRAdir = "C:\Program Files\MQRA"      # This should never change
+$Log = "$($MQRADir)\logs"               # Save Logs to MQRA folder
 $ConfigFile = "$($pwd)\_config.ps1"     # Configuration file 
 $OldConfigFile = "$oldpwd\_config.ps1"  # Configuration file  (old location)
-$QIDsListFile = "$(pwd)\QIDLists.ps1"   # QID List file 
+$QIDsListFile = "$(Get-Location)\QIDLists.ps1"   # QID List file 
 $SQLiteDB = "$($MQRADir)\client.db"     # SQLite DB (eventually..)
 
 $DCUFilename = ($DCUUrl -split "/")[-1]
 $DCUVersion = (($DCUUrl -split "_WIN_")[1] -split "_A0")[0]
+$OSVersion = ([environment]::OSVersion.Version).Major
+$SoftwareInstalling=[System.Collections.ArrayList]@()
+$QIDsAdded = @()
+$QIDSpecific = @()
+$RebootRequired = $false                     # This value is used to clarify if a reboot is needed at the end of a run
+
+# These values are overwritten in the config, but loaded here in case the config is missing:
 $CheckOptionalUpdates = $true                # Set this to false to ignore Optional Updates registry value
 $AlreadySetOptionalUpdates = $false          # This is to make sure we do not keep trying to set the Optional Updates registry value.
 $oldPwd = $pwd                               # Grab location script was run from
@@ -112,13 +120,6 @@ $UpdateNiniteWait = 90                       # How long to wait for the Ninite u
 $UpdateDellCommandWait = 60                  # How long to wait for Dell Command Update to re-install/update
 $SoftwareInstallWait = 60                    # How long to wait for generic software to finish installing
 $LogToEventLog = $true                       # Set this to $false to not log to event viewer Application log, source "MQRA", also picked up in _config.ps1
-$OSVersion = ([environment]::OSVersion.Version).Major
-$SoftwareInstalling=[System.Collections.ArrayList]@()
-$QIDsAdded = @()
-$QIDSpecific = @()
-$ST_StartTime = "0" #default Scheduled task settings - Start time - 23:00:00 default
-$ST_DayOfWeek = "0" #default Scheduled task settings - Day of week - Sun=0, Mon=1, ..
-$ST_IgnoreComputers = @() # default comptuers that should NOT have a Scheduled task  (no servers will, they will be manual remediation)
 
 # Applications we currently support updating through WinGet:
 $WingetApplicationList = @("Chrome","MSEdge","Firefox","Brave","Teamviewer 15","Irfanview","Notepad++","Zoom client","Dropbox","7-zip","Visual Studio Code","iTunes","iCloud")   
@@ -191,6 +192,21 @@ if (Get-Command winget -ErrorAction SilentlyContinue) {
   Write-Output "[-] Winget is not installed."
 }
 
+function Create-IfNotExists {
+  param (
+    [string]$directory
+  )
+  if (!(Test-Path $directory)) {
+    $null = New-Item -ItemType directory -Path $directory -Force | Out-Null
+  }
+}
+
+Create-IfNotExists "$MQRAdir"
+Create-IfNotExists "$($MQRAdir)\logs"
+Create-IfNotExists "$($MQRAdir)\temp"
+Create-IfNotExists "$($MQRAdir)\db"
+Create-IfNotExists "$($MQRAdir)\backup"
+
 ####################################################### GENERAL FUNCTIONS #######################################################
 
 function Create-FixDB {
@@ -212,7 +228,7 @@ QID,Datefixed
 function Set-Fix {
   param (
       [Parameter(Mandatory)]
-      [string]$QID = 0,
+      [string]$QID,
       [string]$dbPath = "C:\Program Files\MQRA\db\QIDsFixed.csv"
   )
   if ($QID -eq 0) { return $null }
@@ -228,7 +244,7 @@ function Set-Fix {
 function Get-Fix {
   param (
       [Parameter(Mandatory)]
-      [string]$QID = 0,
+      [string]$QID,
       [string]$dbPath = "C:\Program Files\MQRA\db\QIDsFixed.csv"
   )
   if ($QID -eq 0) { return $null } # some Get-YesNo have no QID, because its the question is not related to a QID fix
@@ -382,15 +398,6 @@ function Get-YesNo {
   } else {
     $FixedDate = Get-Fix -QID $QID
     Write-Host "[+] Skipping QID $($QID): Already fixed on $FixedDate" -ForegroundColor Green
-  }
-}
-
-function Create-IfNotExists {
-  param (
-    [string]$directory
-  )
-  if (!(Test-Path $directory)) {
-    $null = New-Item -ItemType directory -Path $directory -Force | Out-Null
   }
 }
 
@@ -745,7 +752,7 @@ Function Install-DellBiosProvider {
           try { Install-Module DellBIOSProvider -Force } catch { 
             Write-Host "[!] Couldn't install DellBIOSProvder! "
             $vcredistUrl = "https://www.microsoft.com/en-us/download/confirmation.aspx?id=30679&6B49FDFB-8E5B-4B07-BC31-15695C5A2143=1"
-            Write-Host "[.] Trying to install VC 2012 U4 package, but it may require a reboot after. Downloading from: $vcredistUrl"
+            Write-Host "[.] Trying to install VC 2012 U4 package, but it may require a reboot after. Downloading from: $vcredistUrl"            
             try { 
               Invoke-WebRequest -UserAgent $AgentString -Uri $vcredistUrl -outfile "$env:temp\SecAud\vc2012redist_x64.exe" 
             } catch { 
@@ -754,7 +761,8 @@ Function Install-DellBiosProvider {
             if (Test-Path "$env:temp\SecAud\vc2012redist_x64.exe") {
               Write-Host "[.] Trying to install VC 2012 U4 package, but it may require a reboot after."
               try { 
-                . "$env:temp\SecAud\vc2012redist_x64.exe" "/install /passive /quiet /norestart" 
+                Start-Process -Wait "$env:temp\SecAud\vc2012redist_x64.exe" -ArgumentList "/install /passive /quiet /norestart" 
+                $RebootRequired = $true
                 Write-Host "[+] Looks to have succeeded. The workstation will need a reboot for this to apply properly and the DellBIOSProvider module to work properly." -ForegroundColor Green
               } catch {
                 Write-Host "[!] Couldn't install VC 2012 U4 package!" -ForegroundColor Red
@@ -907,7 +915,7 @@ function Get-PowerScheme {
 	#Get the GUID of the active power scheme
 	$ActiveSchemeGUID = ($Query.Split(":(").Trim())[1]
 	$Query = powercfg.exe /query $ActiveSchemeGUID
-	$GUIDAlias = ($Query | where { $_.Contains("GUID Alias:") }).Split(":")[1].Trim()
+	$GUIDAlias = ($Query | Where-Object { $_.Contains("GUID Alias:") }).Split(":")[1].Trim()
 	$Scheme = New-Object -TypeName PSObject
 	$Scheme | Add-Member -Type NoteProperty -Name PowerScheme -Value $ActiveSchemeName
 	$Scheme | Add-Member -Type NoteProperty -Name GUIDAlias -Value $GUIDAlias
@@ -1018,6 +1026,9 @@ function Set-PowerSettingsNeverSleep {
   $Errors = Set-PowerSchemeSettings -StandbyTimeoutDC 0
   $Errors = Set-PowerSchemeSettings -HibernateTimeoutAC 0
   $Errors = Set-PowerSchemeSettings -HibernateTimeoutDC 0
+  if ($Errors) {
+    # Catch any errors?
+  }
 }
 
 ######################################### UPDATE RELATED FUNCTIONS ######################
@@ -1030,14 +1041,14 @@ function Update-VCPP14 {
   if ($arch -eq "x64" -or $arch -eq "both" -or $arch -eq "*") {
     Write-Host "[.] Downloading required VC++ 14 Library file: VC_redist.x64.exe .."  -ForegroundColor Yellow
     #Write-Host "[!] BE CAREFUL NOT TO CLICK RESTART... " -ForegroundColor Red
-    wget "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "$($tmp)\vc_redist.x64.exe"
+    Invoke-WebRequest "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile "$($tmp)\vc_redist.x64.exe"
     Write-Host "[.] Running: VC_redist.x64.exe /install /passive /quiet /norestart"    
     Start-Process "$($tmp)\VC_redist.x64.exe" -ArgumentList "/install /passive /quiet /norestart" -Wait  -NoNewWindow
   }
   if ($arch -eq "x86" -or $arch -eq "both" -or $arch -eq "*") {
     Write-Host "[.] Downloading required VC++ 14 Library file: VC_redist.x86.exe .."  -ForegroundColor Yellow
     #Write-Host "[!] BE CAREFUL NOT TO CLICK RESTART... " -ForegroundColor Red
-    wget "https://aka.ms/vs/17/release/vc_redist.x86.exe" -OutFile "$($tmp)\vc_redist.x86.exe"
+    Invoke-WebRequest "https://aka.ms/vs/17/release/vc_redist.x86.exe" -OutFile "$($tmp)\vc_redist.x86.exe"
     Write-Host "[.] Running: VC_redist.x86.exe /install /passive /quiet /norestart"
     Start-Process "$($tmp)\VC_redist.x86.exe" -ArgumentList "/install /passive /quiet /norestart" -Wait -NoNewWindow
   }
@@ -1222,36 +1233,47 @@ function Check-ResultsForKB {
 function MD5hash {
   param
     ( 
-      [string]$input
+      [string]$intext
     )
-    return [System.BitConverter]::ToString((New-Object Security.Cryptography.MD5CryptoServiceProvider).ComputeHash([Text.Encoding]::UTF8.GetBytes($input))).Replace("-", "").ToLower()
+    return [System.BitConverter]::ToString((New-Object Security.Cryptography.MD5CryptoServiceProvider).ComputeHash([Text.Encoding]::UTF8.GetBytes($intext))).Replace("-", "").ToLower()
 }
 
-function Copy-ConfigFile {  
+function Copy-FilesToMQRAFolder {  
   param (
-    [string]$ConfigFile = "_config.ps1",
-    [string]$NewConfigFile = "C:\Program Files\MQRA\_config.ps1"
+    [string]$ConfigFolder = (Get-Location),
+    [string]$NewConfigFolder = "C:\Program Files\MQRA"
   )
 
-  if (!(Test-Path -Path $NewConfigFile)) {
-    if (!(Test-Path -Path (Split-Path $NewConfigFile -Parent))) {
+  if (!(Test-Path -Path "$($NewConfigFolder)\Install-SecurityFixes.ps1")) {
+    if (!(Test-Path -Path (Split-Path $NewConfigFolder -Parent))) {
       try {
-        New-Item -Itemtype Directory -Path (Split-Path $NewConfigFile -Parent)
+        Write-Host "[.] Creating folder: '$NewConfigFolder'" -ForegroundColor Yellow
+        $null = New-Item -Itemtype Directory -Path $NewConfigFolder -ErrorAction SilentlyContinue | Out-Null
       } catch {
-        Write-Host "[!] Couldn't create folder: $(Split-Path $NewConfigFile -Parent)" -ForegroundColor Red
+        Write-Host "[!] Couldn't create folder: $(Split-Path $NewConfigFolder -Parent)" -ForegroundColor Red
       }
     }
-    Write-Host "[+] Copying config file from: $ConfigFile to: $NewConfigFile" -ForegroundColor Yellow
-    try {
-      $ConfigContents = (Get-Content -path $ConfigFile) | Set-Content -path $NewConfigFile
-      Write-Host "[+] Wrote to: $NewConfigFile" -ForegroundColor Green
+  } else {
+    if (Test-Path -Path "$($NewConfigFolder)\_config.ps1") {  # Both script and config are here..
+      Write-Host "[+] [Copy-ConfigFile] $($NewConfigFolder)\_config.ps1 already exists, nothing to do." -ForegroundColor Green
       return $true
+    }
+  }
+  Foreach ($File in @("Install-SecurityFixes.ps1","_config.ps1","QIDLists.ps1","*.csv")) {
+    Write-Host "[+] Copying file from: '$($ConfigFolder)\$($file)' to '$($NewConfigFolder)\$($file)'" -ForegroundColor Yellow
+    try {
+      $null = Copy-Item -Path "$($ConfigFolder)\$($file)" -Destination "$($NewConfigFolder)\" -Force | Out-Null
     } catch {
-      Write-Host "[!] Couldn't set contents: $NewConfigFile" -ForegroundColor Red
+      Write-Host "[+] Error copying file from: '$($ConfigFolder)\$($file)' to '$($NewConfigFolder)\$($file)':  $_ " -ForegroundColor Red
       return $false
     }
-  } else {
-    Write-Host "[+] [Copy-ConfigFile] $NewConfigFile already exists, nothing to do." -ForegroundColor Green
+    Set-Location $NewConfigFolder
+    Write-Host "[.] Creating folders: logs, temp, db, backup" -ForegroundColor Yellow
+    new-item -itemtype Directory -Path "logs" -ErrorAction SilentlyContinue
+    new-item -itemtype Directory -Path "temp"  -ErrorAction SilentlyContinue
+    new-item -itemtype Directory -Path "db"  -ErrorAction SilentlyContinue
+    new-item -itemtype Directory -Path "backup"  -ErrorAction SilentlyContinue
+    return $true
   }
 }
 
@@ -1272,29 +1294,24 @@ function Find-ConfigFileLine {  # CONTEXT Search, a match needs to be found but 
 
 function Set-ConfigFileLine {
   param (
-    [string]$ConfigFile = "_config.ps1",
+    [string]$ConfigFile = $script:ConfigFile,
     [string]$ConfigOldLine,
     [string]$ConfigNewLine
   )
   if ($ConfigOldLine -eq "") {
-    # Just add new line if blank
-    $ConfigContents = (Get-Content -path $ConfigFile)
-    $ConfigContents | ForEach { 
-      $ConfigNewContents += $_ 
-    }
-    $ConfigNewContents += $ConfigNewLine
-    Set-Content -path $ConfigFile -Value $ConfigNewContents
+    Add-Content -path $ConfigFile -Value $ConfigNewContents
   } else {
 
     if (Get-YesNo "Change [$($ConfigOldLine)] in $($ConfigFile) to [$($ConfigNewLine)] ?") {
+      if ($ConfigOldLine -eq '') {
+        Add-Content -path $ConfigFile -Value $ConfigContentsNew
+        return $true
+      }
       Write-Verbose "Changing line in $($ConfigFile): `n  Old: [$($ConfigOldLine)] `n  New: [$($ConfigNewLine)]"
-      $ConfigLine = (Select-String  -Path $ConfigFile -pattern $ConfigOldLine).Line
-      Write-Verbose "  Found match: [$($ConfigOldLine)]"  
-      Write-Verbose "  Replaced with: [$($ConfigNewLine)]"
       $ConfigContents = (Get-Content -path $ConfigFile)
       $ConfigContentsNew=@()
       ForEach ($str in $ConfigContents) {
-        if ($str -like "*$($ConfigLine)*") {
+        if ($str -like "$($ConfigOldLine)*") {
           Write-Verbose "Replaced: `n$str with: `n$ConfigNewLine"
           $ConfigContentsNew += $ConfigNewLine
         } else {
@@ -1313,7 +1330,20 @@ function Remove-ConfigFileLine {  # Wrapper for Change-ConfigFileLine
 
 function Add-ConfigFileLine {  # Wrapper for Change-ConfigFileLine 
   param ([string]$ConfigNewLine)
-  Set-ConfigFileLine -ConfigFile $ConfigFile -ConfigOldLine "" -ConfigNewLine $ConfigNewLine
+  Add-Content -path $ConfigFile -value $ConfigNewLine
+}
+
+function Check-ConfigForBadValues {
+  Write-Verbose "[Check-ConfigForBadValues]"
+  $UniqueIDFound = Find-ConfigFileLine -ConfigFile $script:ConfigFile -ConfigLine "UniqueId ="
+  if ($UniqueIDFound) {
+    Write-Verbose "[Check-ConfigForBadValues] UniqueID line found: $UniqueIDFound"
+    $UniqueID = ($UniqueIDFound -replace('$UniqueID = ',''))
+    Write-Verbose "[Check-ConfigForBadValues] UniqueID  found: $UniqueID"
+    if ($UniqueID -notcontains '"') {
+      Set-ConfigFileLine -ConfigFile $script:ConfigFile -ConfigOldLine '$UniqueId = ' -ConfigNewLine '$UniqueID = "'+$UniqueID+'"'   # Add the UniqueID with double quotes around it back to the config file..
+    }
+  }
 }
 
 function Is-Array {  
@@ -1569,9 +1599,9 @@ function Remove-Software {
   if (Test-IsType $Products "System.String") {
     Write-Verbose "String product name returned from registry vs GWMI.. Trying to remove via registry .."
     $cmd = (($Products -split '.exe')[0]+'.exe' -replace '"','') # yuck. 
-    $args = (($Products -split '.exe')[1] -replace '"','') # Hacky af, idk what we might run into here yet..
+    $arguments = (($Products -split '.exe')[1] -replace '"','') # Hacky af, idk what we might run into here yet..
     Write-Verbose "Removing: Start-Process -FilePath $cmd -ArgumentList ""$args /qn""  -Wait"
-    Start-Process -FilePath $cmd -ArgumentList "$args /qn" -Wait
+    Start-Process -FilePath $cmd -ArgumentList "$arguments /qn" -Wait
     Write-Verbose "Assuming everything went well.. "
     return $true
   }
@@ -1831,7 +1861,7 @@ function Remove-Folder {
 
   if (Test-Path $FolderToDelete) {
     if (Get-YesNo "Found Folder $($FolderToDelete). Try to remove? ") { 
-      $null = ((takeown.exe /a /r /d Y /f $($FolderToDelete)) | Tee -Append -FilePath "$($tmp)/_takeown.log")
+      $null = ((takeown.exe /a /r /d Y /f $($FolderToDelete)) | Tee-Object -Append -FilePath "$($tmp)/_takeown.log")
       Remove-Item $FolderToDelete -Force -Recurse
       # Or, try { and delete with psexec like below function.. Will come back to this if needed.
     } else {
@@ -1982,7 +2012,7 @@ function Show-FileVersionComparison {
       Write-Verbose "EXEFileVersion: $EXEFileVersion"
 
       if (Test-Path -Path "$EXEFile") {
-        $CurrentEXEFileVersion = "$(((gci $EXEFile -File).VersionInfo.FileVersion).Replace(",","."))"
+        $CurrentEXEFileVersion = "$(((Get-ChildItem $EXEFile -File).VersionInfo.FileVersion).Replace(",","."))"
         $color = "Red"
         $operator = if ($CurrentEXEFileVersion -gt $EXEFileVersion) { ">"; $color="Green" } elseif ($CurrentEXEFileVersion -eq $EXEFileVersion) { "=" } else { "<" }
         Write-Host "[.] $Name - Comparing new version: Filename: $EXEFile" -ForegroundColor Yellow
@@ -2001,7 +2031,7 @@ function Backup-BitlockerKeys {
         Write-Host "[!] $($BLV) not Bitlocker encrypted!"
       } else {  # Not FullyDecrypted should mean its bitlockered..
         Write-Host "[!] Found C: Bitlockered, checking for other bitlockered drives."
-        $BLVs = (Get-BitLockerVolume).MountPoint | Where-Object { (Get-BitLockerVolume -MountPoint $_).VolumeStatus -eq 'FullyEncrypted' } | Sort
+        $BLVs = (Get-BitLockerVolume).MountPoint | Where-Object { (Get-BitLockerVolume -MountPoint $_).VolumeStatus -eq 'FullyEncrypted' } | Sort-Object
         foreach ($BLV in $BLVs) { 
           if (Get-BitLockerVolume -MountPoint $BLV -ErrorAction SilentlyContinue) {
             try {
@@ -2010,7 +2040,7 @@ function Backup-BitlockerKeys {
             } catch { 
               Write-Host "[!] ERROR: Could not access BitlockerKeyProtector for $BLV !!"
               $BLVol = Get-BitLockerVolume
-              $BLVol | select MountPoint,CapacityGB,VolumeStatus
+              $BLVol | Select-Object MountPoint,CapacityGB,VolumeStatus
             }
           }
         }
@@ -2206,6 +2236,7 @@ function Remove-SpecificAppXPackage {
           Write-Host "[!] Vulnerable version of Appx Package still found : $AppName - $AppVersion <= $Version"  -ForegroundColor Red
           Write-Vebose "result: $result"
           Write-Host "[!] Please either reboot and test again, or fix manually.." -ForegroundColor Red
+          $RebootRequired = $true
         }
       }
       foreach ($result in $RechecksProvisioned) {
@@ -2215,6 +2246,7 @@ function Remove-SpecificAppXPackage {
           Write-Host "[!] Vulnerable version of Provisioned Appx Package still found : $AppName - $AppVersion <= $Version"  -ForegroundColor Red
           Write-Vebose "result: $result"
           Write-Host "[!] Please either reboot and test again, or fix manually.." -ForegroundColor Red
+          $RebootRequired = $true
         }
       }
     }
@@ -2390,7 +2422,7 @@ function Check-ScheduledTask {
         $existingTriggers = $existingTask.Triggers | Where-Object {($_.DaysOfWeek -eq $ST_DayOfWeek) -and ($_.At -eq $ST_StartTime)}
         Write-Verbose "ExistingAction: $existingAction"
         Write-Verbose "ExistingTriggers: ($($existingTriggers.Count)): DaysOfWeek: $(($existingTriggers).DaysOfWeek) At: $(($existingTriggers).At) Startboundary: $(($existingTriggers).StartBoundary)"
-        Write-Verbose "ActualTriggers: $(($existingTask.Triggers | select *))"
+        Write-Verbose "ActualTriggers: $(($existingTask.Triggers | Select-Object *))"
 
         if (-not $existingEnabled -or -not $existingAction -or $existingTriggers.Count -ne 1) {   # Fix eventually for 2nd run?
             Write-Verbose "No task found, task will be added."
@@ -2455,7 +2487,7 @@ function MD5hash {
 function Get-ConfigFileLine {
   param ( 
     [string]$Search = "*",
-    [string]$ConfigFile = "_config.ps1"
+    [string]$ConfigFile = "$($MQRADir)\_config.ps1"
   )
   if (!(Test-Path "$ConfigFile")) { "" | Set-Content $ConfigFile }
   $content = Get-Content $ConfigFile -ErrorAction SilentlyContinue
@@ -2474,7 +2506,7 @@ function Set-ConfigFileLine {
   param ( 
     [string]$OldLine,  # "" here will add $NewLine string to end of file
     [string]$NewLine,
-    [string]$ConfigFile = "_config.ps1"
+    [string]$ConfigFile = "$($MQRADir)\_config.ps1"
   )
   if (!(Test-Path "$ConfigFile")) { "" | Set-Content $ConfigFile }
   $content = Get-Content $ConfigFile
@@ -2497,11 +2529,11 @@ function Set-ConfigFileLine {
 function Put-UniqueId {
   param (
     [string]$UniqueId,
-    [string]$configfile = "_config.ps1"
+    [string]$configfile = "$($MQRADir)\_config.ps1"
   )
   Log "[+] [Put-UniqueId] : $UniqueId" 
   $UniqueIdFound = Get-ConfigFileLine '$UniqueId = '
-  $UniqueIdLine = '$UniqueId = '+$UniqueId
+  $UniqueIdLine = '$UniqueId = "'+$UniqueId+'"'
   if (!($UniqueIdFound)) {
     Set-ConfigFileLine -OldLine '' -NewLine $UniqueIdLine
     Log "[+] Saved UniqueId to $configfile" -ForegroundColor Green
@@ -2575,7 +2607,7 @@ function API-GetClientGuid {
     )
 
     Log "[API-GetClientGuid] ---------- $uri $UserAgent $Method $(($Headers).Authorization)"
-    $uri = "$($apiBaseUrl)$($APIRoute)"
+    $uri = "$($script:apiBaseUrl)$($APIRoute)"
     $headers = @{
         'Authorization' = "Bearer $APIKey"
     }
@@ -2587,7 +2619,7 @@ function API-GetClientGuid {
     Log "---- body: uniqueid: $($body.uniqueid) apikey: $($body.apikey) accountname: $($body.accountname)"
     try {
         Log "[API-GetClientGuid] Calling IRM : -Uri '$uri' -UserAgent '$UserAgent' -Method '$Method' `
-                      -Headers Authorization $(($Headers).Authorization) -Body $($body|select *|fl)" -ForegroundColor Yellow
+                      -Headers Authorization $(($Headers).Authorization) -Body $($body|Select-Object *|Format-List)" -ForegroundColor Yellow
         $Resp = Invoke-RestMethod -Uri $uri -UserAgent $UserAgent -Method $Method -Headers $headers -Body $body
         Log "[API-GetClientGuid] Response: $($Resp)"
         return ($Resp)
@@ -2624,9 +2656,9 @@ function API-FileDownload {
             filename = $Filename
         } | ConvertTo-Json -Depth 100
 
-        Log "[API-FileDownload] Calling IRM with file upload: IRM -Uri $uri -Method $Method -Headers $($headers|select *|fl) -Body {not shown}"
+        Log "[API-FileDownload] Calling IRM with file upload: IRM -Uri $uri -Method $Method -Headers $($headers|Select-Object *|Format-List) -Body {not shown}"
         Log "[API-FileDownload] Body: "
-        Log ($body | select *)
+        Log ($body | Select-Object *)
         $Response = Invoke-RestMethod -Uri $uri -Method "POST" -Headers $headers -Body $body
 
         #Log "[API-FileDownload] Response: $($Resp | select *|fl)"
@@ -2672,12 +2704,12 @@ function API-FileUpload {
             file = (Get-Content -Path $Filename)
         } | ConvertTo-Json -Depth 100
 
-        Log "[API-FileUpload] Calling IRM with file upload: IRM -Uri $uri -Method $Method -Headers $($headers|select *|fl) -Body {not shown}"
+        Log "[API-FileUpload] Calling IRM with file upload: IRM -Uri $uri -Method $Method -Headers $($headers|Select-Object *|Format-List) -Body {not shown}"
         Log "[API-FileUpload] Body: "
-        Log "$($body | select *)"
+        Log "$($body | Select-Object *)"
         $Response = Invoke-RestMethod -Uri $uri -Method $Method -Headers $headers -Body $body
 
-        Log "[API-FileUpload] Response: $($Resp | select *|fl)"
+        Log "[API-FileUpload] Response: $($Resp | Select-Object *|Format-List)"
         $key = "Message"
         if (-not $Response.ContainsKey($key)) {
             Log "[API-FileUpload] Response doesn't contain $key"
@@ -2729,7 +2761,7 @@ Function API-Call {
   )
   $domain = $env:userdnsdomain
 
-  $url = "$($apiBaseUrl)$($APIRoute)"   # $APIRoute should have initial /
+  $url = "$($script:apiBaseUrl)$($APIRoute)"   # $APIRoute should have initial /
  
   $headers = @{
       'Content-Type' = 'application/json'
@@ -2777,7 +2809,6 @@ Function API-Call {
         } | ConvertTo-Json
       } else {
         if ($APIRoute -eq "/clientscan/csv") { # /Clientscan/CSV
-          $client = 
           $body = @{  
             uniqueid = $uniqueID
             apikey = $APIKey
@@ -2928,17 +2959,17 @@ function API-Hello {
 function API-StoreKey {
   param (
     [string]$APIKey,
-    [string]$configfile = "_config.ps1"
+    [string]$filepath = "($MQRADir)\_config.ps1"
   )
-  $APIKeyFound = Get-ConfigFileLine '$APIKey = '
-  $APIKeyLine = '$APIKey = '+$APIKey
+  $APIKeyFound = Get-ConfigFileLine '$APIKey = ' -Configfile $filepath
+  $APIKeyLine = '$APIKey = "'+$APIKey+'"'
   if (!($APIKeyFound)) {
-    Set-ConfigFileLine -OldLine '' -NewLine $APIKeyLine
-    Log "[+] Saved new API Key to $configfile" -ForegroundColor Green
+    Set-ConfigFileLine -ConfigFile $filepath -OldLine '' -NewLine $APIKeyLine
+    Log "[+] Saved new API Key to $filepath" -ForegroundColor Green
     return $true
   } else {
-    Set-ConfigFileLine -OldLine '$APIKey =' -NewLine $APIKeyLine
-    Log "[+] Overwrite API Key in $configfile" -ForegroundColor Green
+    Set-ConfigFileLine -ConfigFile $filepath -OldLine '$APIKey =' -NewLine $APIKeyLine
+    Log "[+] Overwrite API Key in $filepath" -ForegroundColor Green
     return $true
   }
   return $false
@@ -3075,9 +3106,68 @@ function API-Test {
 
 
 
-####################################################### MAIN API ROUTINES #######################################################
+# All the microsoft office products with their corresponding dword value
+$RemediationValues = @{ "Excel" = "Excel.exe"; "Graph" = "Graph.exe"; "Access" = "MSAccess.exe"; "Publisher" = "MsPub.exe"; "PowerPoint" = "PowerPnt.exe"; "OldPowerPoint" = "PowerPoint.exe" ; "Visio" = "Visio.exe"; "Project" = "WinProj.exe"; "Word" = "WinWord.exe"; "Wordpad" = "Wordpad.exe" }
+
+################################################################################################################## MAIN ############################################################################################################
+################################################################################################################## MAIN ############################################################################################################
+################################################################################################################## MAIN ############################################################################################################
+
+Init-Script -Automated $Automated
+Write-Event -type "information" -eventid 100 -msg "Script starting"
+
+$hostname = $env:COMPUTERNAME
+$datetime = Get-Date -Format "yyyy-MM-dd HH:mm:ss K"
+$datetimedateonly = Get-Date -Format "yyyy-MM-dd"
+$osinstalldate = ([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDate) | get-date -Format MM/dd/yyyy
+$serialnumber = (wmic bios get serialnumber)
+Write-Host "`r`n================================================================" -ForegroundColor DarkCyan
+Write-Host "[i] Install-SecurityFixes.ps1" -ForegroundColor Cyan
+Write-Host "[i]   $($VersionInfo)" -ForegroundColor Cyan
+Write-Host "[i]   Alex Datsko - alex.datsko@mmeconsulting.com" -ForegroundColor Cyan
+Write-Host "[i] Date / Time : $datetime" -ForegroundColor Cyan
+Write-Host "[i] Computername : $hostname " -ForegroundColor Cyan
+Write-Host "[i] SerialNumber : $serialnumber " -ForegroundColor Cyan
+Write-Host "[i] OS Install Date : $osinstalldate " -ForegroundColor Cyan
+if (([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDate) -ge (Get-Date $datetimedateonly).AddDays(0-$IgnoreDaysOld)) {
+  if (!(Get-YesNo "$osinstalldate is within $IgnoreDaysOld days, continue?")) {
+    Write-Host "[!] Exiting" -ForegroundColor White
+    Stop-Transcript
+    exit
+  }
+}
+
+# Lets copy everything to MQRA folder:
+if (!(Test-Path "C:\Program Files\MQRA\_config.ps1")) {
+  if (Copy-FilesToMQRAFolder) {
+    $ConfigFile = "C:\Program Files\MQRA\_config.ps1"
+  }
+  Check-ConfigForBadValues
+} else {
+  $ConfigFile = "C:\Program Files\MQRA\_config.ps1"
+}
+
+$ServerName=""
+Write-Host "[.] Loading config from $ConfigFile .." -ForegroundColor Yellow
+. "$($ConfigFile)"
+Write-Host "[.] Loading QIDList from $QIDsListFile .." -ForegroundColor Yellow
+. "$($QIDsListFile)"
+
+# Check for newer version of script before anything..
+Update-Script  # CHECKS FOR SCRIPT UPDATES, UPDATES AND RERUNS IF NECESSARY
+if (Update-QIDLists) { 
+  Write-Host "[.] Loading new QIDList from $QIDsListFile .." -ForegroundColor Yellow        
+ . "$($QIDsListFile)" 
+ }
+
+# CONFIG AND OTHER FILES  HAVE BEEN COPIED ALREADY BY HERE..
+
+################################################ BEGINNING OF ACTUAL MAIN ###################################################
 
 
+####################################################### MAIN API CODE #######################################################
+
+Write-Host "[.] Starting API routines .." -ForegroundColor Yellow        
 $datetime = Get-Date -Format "yyyy-MM-dd HH:mm:ss" 
 Log;Log;Log;Log "################################################################################################# API START $datetime" -Both
 $UniqueId = Get-UniqueId
@@ -3132,7 +3222,7 @@ if (!(API-Check -Direction "in" -UniqueID $UniqueID -APIKey $APIKey)) {   # "in"
   }
   if ($APIKey) {
     Log "[+] Hello success! API_Key = $APIKey" -Both
-    if (API-ReplaceStoreKey -APIKey $APIKey -FilePath "C:\Program Files\MQRA\_config.ps1") {
+    if (API-StoreKey -APIKey $APIKey -FilePath "C:\Program Files\MQRA\_config.ps1") {
       Log "[+] Success, updated C:\Program Files\MQRA\_config.ps1 file with API key." -ForegroundColor Green
     } else {
       Log '[-] Error replacing $APIKey line in _config.ps1 file! Check permissions or file exists, etc' -ForegroundColor Red -Both
@@ -3165,65 +3255,21 @@ if ($Filename) {
 $FileDown = API-DownloadScan -WriteTo $CSVPath -Filename $Filename -UniqueID $UniqueId -APIKey $APIKey
 if ($FileDown) {
   Log "[+] Downloaded Filename: '$FileDown'" -ForegroundColor Green
+  $CSVFilename = $FileDown
+  $CSVFile = $FileDown
 } else {
   Log "[-] API-DownloadScan Couldn't get filename!!" -ForegroundColor Red
 }
 
-$CSVFilename = $FileDown
-$CSVFile = $FileDown
+
 
 $datetime = Get-Date -Format "yyyy-MM-dd HH:mm:ss" 
 Log "################################################################################################# API END $datetime"
 
 #######################################################
 
-# All the microsoft office products with their corresponding dword value
-$RemediationValues = @{ "Excel" = "Excel.exe"; "Graph" = "Graph.exe"; "Access" = "MSAccess.exe"; "Publisher" = "MsPub.exe"; "PowerPoint" = "PowerPnt.exe"; "OldPowerPoint" = "PowerPoint.exe" ; "Visio" = "Visio.exe"; "Project" = "WinProj.exe"; "Word" = "WinWord.exe"; "Wordpad" = "Wordpad.exe" }
-
-################################################################################################################## MAIN ############################################################################################################
-################################################################################################################## MAIN ############################################################################################################
-################################################################################################################## MAIN ############################################################################################################
-
-Init-Script -Automated $Automated
-Write-Event -type "information" -eventid 100 -msg "Script starting"
-
-$hostname = $env:COMPUTERNAME
-$datetime = Get-Date -Format "yyyy-MM-dd HH:mm:ss K"
-$datetimedateonly = Get-Date -Format "yyyy-MM-dd"
-$osinstalldate = ([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDate) | get-date -Format MM/dd/yyyy
-$serialnumber = (wmic bios get serialnumber)
-Write-Host "`r`n================================================================" -ForegroundColor DarkCyan
-Write-Host "[i] Install-SecurityFixes.ps1" -ForegroundColor Cyan
-Write-Host "[i]   $($VersionInfo)" -ForegroundColor Cyan
-Write-Host "[i]   Alex Datsko - alex.datsko@mmeconsulting.com" -ForegroundColor Cyan
-Write-Host "[i] Date / Time : $datetime" -ForegroundColor Cyan
-Write-Host "[i] Computername : $hostname " -ForegroundColor Cyan
-Write-Host "[i] SerialNumber : $serialnumber " -ForegroundColor Cyan
-Write-Host "[i] OS Install Date : $osinstalldate " -ForegroundColor Cyan
-if (([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDate) -ge (Get-Date $datetimedateonly).AddDays(0-$IgnoreDaysOld)) {
-  if (!(Get-YesNo "$osinstalldate is within $IgnoreDaysOld days, continue?")) {
-    Write-Host "[!] Exiting" -ForegroundColor White
-    Stop-Transcript
-    exit
-  }
-}
-
-# These variables should be referenced globally:
-#if (!(Test-Path $ConfigFile)) {
-#  Copy-ConfigFile
-#}
-$ServerName=""
-Write-Verbose "Loading config from $ConfigFile"
-. "$($ConfigFile)"
-. "$($QIDsListFile)"
-
-# Check for newer version of script before anything..
-Update-Script  # CHECKS FOR SCRIPT UPDATES, UPDATES AND RERUNS IF NECESSARY
-if (Update-QIDLists) {         
- . "$($QIDsListFile)" 
- }
-
 # Lets check the Cofnig 1st, Registry 2nd, default hostnames 3rd for a place with our CSV file shared in \\$serverName\Data\SecAud
+
 #Config should have already loaded $ServerName
 Write-Verbose "Found ServerName $ServerName"
 if (!($ServerName)) {
@@ -3342,7 +3388,7 @@ if ($AddScheduledTask) { Check-ScheduledTask -ServerName $ServerName ; Exit }
 
 if (!(Test-Path -Path $CSVFilename -ErrorAction SilentlyContinue)) {  # Split path from file if it doesn't exist
   if (!(Test-Path "$($oldpwd)\$(Split-Path $CSVFilename -leaf)")) {
-    Write-Host "[!] Error: Couldn't locate $CSVFilename or $($oldpwd)\$(Split-Path $CSVFilename -leaf) in $($oldpwd) !" -ForegroundColor Red
+    Write-Host "[!] Error: Couldn't locate $CSVFilename or $($oldpwd)\$(Split-Path $CSVFilename -leaf) in $($oldpwd) !" -ForegroundColor Red | Tee-Object -Append -FilePath "$($log)/csv.log"
     exit
   } else {
     $CSVFilename = Split-Path $CSVFilename -leaf
@@ -3512,12 +3558,8 @@ if ($Rows.Count -lt 1) {
   Exit
 } else {
   # Report check-in to MQRA cloud
+}
 
-}
-# I can assume we have a good servername, or . if it is localhost..
-if (Get-RegistryEntry -Name "ServerName" -eq "0") {
-  Set-RegistryEntry -Name "ServerName" -Value "$ServerName"
-}
 # FIND QIDS FROM THESE ROWS
 $QIDs = @()
 $QIDsVerbose = @()
@@ -3584,10 +3626,11 @@ foreach ($CurrentQID in $QIDs) {
         if (Get-YesNo "$_ Remove Dell SupportAssist ? " -Results $Results -QID $ThisQID) {
           $Products = Search-Software "*SupportAssist*" 
           if ($Products) {
-            Remove-Software -Products $Products -Results $Results
+            Remove-Software -Products $Products -Results $Results | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-DellSupportAssist.log"
           } else {
-            Write-Host "[!] Dell SupportAssist not found!" -ForegroundColor Red            
+            Write-Host "[!] Dell SupportAssist not found!" -ForegroundColor Red   | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-DellSupportAssist.log"
           }     
+          $RebootRequired = $true
         }
       }
       105228 { 
@@ -3628,6 +3671,7 @@ foreach ($CurrentQID in $QIDs) {
           } else { $out += "[.] Virtualization\MinVmVersionForCpuBasedMitigation already set correctly to '1.0'.." }
           Foreach ($line in $out) { if ($line) { Write-Host $line -ForegroundColor White } }
           $QIDsSpectreMeltdown = 1
+          $RebootRequired = $true
         } else { $QIDsSpectreMeltdown = 1 }
       }
       110414 {
@@ -3635,6 +3679,7 @@ foreach ($CurrentQID in $QIDs) {
           Invoke-WebRequest -UserAgent $AgentString -Uri "https://catalog.s.download.windowsupdate.com/c/msdownload/update/software/secu/2022/07/outlook-x-none_1763a730d8058df2248775ddd907e32694c80f52.cab" -outfile "$($tmp)\outlook-x-none.cab"
           Start-Process -Wait "C:\Windows\System32\expand.exe" -argumentlist "-F:* $($tmp)\outlook-x-none.cab $($tmp)"
           Start-Process -Wait "msiexec.exe" -ArgumentList "/p $($tmp)\outlook-x-none.msp /qn"
+          $RebootRequired = $true
         }
       }
       110413 {
@@ -3652,6 +3697,7 @@ foreach ($CurrentQID in $QIDs) {
           Start-Process -Wait "C:\Windows\System32\expand.exe" -ArgumentList "-F:* $($tmp)\excel-x-none.msp $($tmp)"
           Write-Host "[.] Installing patch: $($tmp)\excel-x-none.msp"
           Start-Process -Wait "msiexec.exe" -ArgumentList "/p $($tmp)\excel-x-none.msp /qn"
+          $RebootRequired = $true
         }
       }
       110412 {
@@ -3662,6 +3708,7 @@ foreach ($CurrentQID in $QIDs) {
           Start-Process -Wait "C:\Windows\System32\expand.exe" -ArgumentList "-F:* $($tmp)\excel-x-none.msp $($tmp)"
           Write-Host "[.] Installing patch: $($tmp)\vbe7-x-none.msp"
           Start-Process -Wait "msiexec.exe" -ArgumentList "/p $($tmp)\vbe7-x-none.msp /qn"
+          $RebootRequired = $true
         }
       }
       110416 { 
@@ -3672,6 +3719,7 @@ foreach ($CurrentQID in $QIDs) {
           #cmd /c "C:\Windows\System32\expand.exe -F:* $($tmp)\excel-x-none.msp $($tmp)"
           Write-Host "[.] Installing patch: $($tmp)\mso2013-kb5002477.exe"
           Start-Process -Wait "msiexec.exe" -ArgumentList "/i $($tmp)\mso2013-kb5002477.exe /qn"
+          $RebootRequired = $true
         }       
       }
       92176 {
@@ -3684,12 +3732,14 @@ foreach ($CurrentQID in $QIDs) {
           Start-Process -Wait "wusa.exe" -ArgumentList "$($tmp)\ndp481.msu /quiet /norestart"
           Write-Host "[.] Installing patch: $($tmp)\ndp48.msu"
           Start-Process -Wait "wusa.exe" -ArgumentList "$($tmp)\ndp48.msu /quiet /norestart"
+          $RebootRequired = $true
         }
       }
       91738 {
         if (Get-YesNo "$_  - fix ipv4 source routing bug/ipv6 global reassemblylimit? " -Results $Results -QID $ThisQID) { 
             netsh int ipv4 set global sourceroutingbehavior=drop
             Netsh int ipv6 set global reassemblylimit=0
+            $RebootRequired = $true
         }
       }
       375589 {  
@@ -3706,6 +3756,7 @@ foreach ($CurrentQID in $QIDs) {
           } else {
             Write-Host "[!] Error: $Filename -- Not found.." -ForegroundColor Red
           }
+          $RebootRequired = $true
         }
       }
       100413 {
@@ -3713,6 +3764,7 @@ foreach ($CurrentQID in $QIDs) {
           New-Item -Path 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_ENABLE_PRINT_INFO_DISCLOSURE_FIX' -Force
           Set-ItemProperty -Path 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Internet Explorer\Main\FeatureControl\FEATURE_ENABLE_PRINT_INFO_DISCLOSURE_FIX' -Name 'iexplore.exe' -Value 1 -Force
         }
+        $RebootRequired = $true
       }
       { 91704 -contains $_ } {
         if (Get-YesNo "$_ Microsoft Windows DNS Resolver Addressing Spoofing Vulnerability (ADV200013) fix ? " -Results $Results -QID $ThisQID) {
@@ -3753,6 +3805,7 @@ foreach ($CurrentQID in $QIDs) {
             if (!($check)) {
               Write-Host "[!] Looks like all settings are resolved."  
             }
+            $RebootRequired = $true
           } else { 
             Write-Host "[!] Looks like this has already been resolved."
           }
@@ -3766,6 +3819,7 @@ foreach ($CurrentQID in $QIDs) {
           $out += (New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'RestrictAnonymousSAM' -Value 1 -PropertyType DWord -Force).PSPath
           $out += (New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa' -Name 'EveryoneIncludesAnonymous' -Value 0 -PropertyType DWord -Force).PSPath
           Foreach ($line in $out) { Write-Host $line }
+          $RebootRequired = $true
         }
       }
       90007 {
@@ -3785,6 +3839,7 @@ foreach ($CurrentQID in $QIDs) {
           $out += (New-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Services\LanManServer\Parameters' -Name 'EnableSecuritySignature' -Value 1 -PropertyType DWord -Force).PSPath
           $out += (New-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Services\LanManServer\Parameters' -Name 'RequireSecuritySignature' -Value 1 -PropertyType DWord -Force).PSPath
           Foreach ($line in $out) { Write-Verbose $line }
+          $RebootRequired = $true
         }
       }
       91805 {
@@ -3802,6 +3857,7 @@ foreach ($CurrentQID in $QIDs) {
             } 
             # Try to delete from registry, if it exists
             Remove-RegistryItem $Path
+            $RebootRequired = $true
         }
       }
       105943 {
@@ -3815,6 +3871,7 @@ foreach ($CurrentQID in $QIDs) {
           } 
           # Try to delete from registry, if it exists
           Remove-RegistryItem $Path
+          $RebootRequired = $true
       }
       }
 
@@ -3825,7 +3882,8 @@ foreach ($CurrentQID in $QIDs) {
       110330 {  
         if (Get-YesNo "$_ - Install Microsoft Office KB4092465? " -Results $Results -QID $ThisQID) {
             Invoke-WebRequest -UserAgent $AgentString -Uri "https://download.microsoft.com/download/3/6/E/36EF356E-85E4-474B-AA62-80389072081C/mso2007-kb4092465-fullfile-x86-glb.exe" -outfile "$($tmp)\kb4092465.exe"
-            cmd.exe /c "$($tmp)\kb4092465.exe /quiet /passive /norestart"
+            Start-Process -Wait "$($tmp)\kb4092465.exe" -ArgumentList "/quiet /passive /norestart"
+            $RebootRequired = $true
         }
       }
       372348 {
@@ -3836,6 +3894,7 @@ foreach ($CurrentQID in $QIDs) {
             # This doesn't seem to be working, lets just download it and run it for now..
             #cmd /c "$($tmp)\setupchipset.exe -log $($tmp)\intelchipsetinf.log"
             # may be 'Error: this platform is not supported' ..
+            $RebootRequired = $true
         }
       }
       372300 {
@@ -3846,6 +3905,7 @@ foreach ($CurrentQID in $QIDs) {
             start-process -Wait "$($tmp)\setuprst.exe" -ArgumentList " -s -accepteula -norestart -log $($tmp)\intelrstinf.log"
             # OR, extract MSI from this exe and run: 
             # msiexec.exe /q ALLUSERS=2 /m MSIDTJBS /i “RST_x64.msi” REBOOT=ReallySuppress
+            $RebootRequired = $true
         }   
       }
       
@@ -4363,8 +4423,8 @@ foreach ($CurrentQID in $QIDs) {
       }
       { $QIDsMSTeams -contains $_ } {
         if (Get-YesNo "$_ Install latest MS Teams ? " -Results $Results -QID $ThisQID) {
-          $TeamsURL=(IWR "https://teams.microsoft.com/desktopclient/installer/windows/x64").Content
-          IWR $TeamsURL -OutFile "$($tmp)/teams.exe"
+          $TeamsURL=(Invoke-WebRequest "https://teams.microsoft.com/desktopclient/installer/windows/x64").Content
+          Invoke-WebRequest $TeamsURL -OutFile "$($tmp)/teams.exe"
           . "$($tmp)/teams.exe"
           Write-Host ""
           Start-Sleep 10
@@ -4520,7 +4580,7 @@ foreach ($CurrentQID in $QIDs) {
               Update-VCPP14 -arch "both" # Update the VCPP 17 x86 and x64 to newest, unfortunately this may still ask to reboot..
 
               Write-Host "[.] Downloading msoleodbcsql.msi from $OLEODBCUrl for $OLEODBC.."
-              wget $OLEODBCUrl -OutFile "$($tmp)\msoleodbcsql.msi"
+              Invoke-WebRequest $OLEODBCUrl -OutFile "$($tmp)\msoleodbcsql.msi"
               $params = '/quiet','/qn','/norestart',"$licenseterms"
               Write-Host "[.] Running: $($tmp)\msoleodbcsql.msi , params:"
               Write-Host @params 
@@ -4671,93 +4731,102 @@ foreach ($CurrentQID in $QIDs) {
       }
       106105 {
         if (Get-YesNo "$_ Remove EOL/Obsolete Software: Microsoft .Net Core Version 3.1 Detected? " -Results $Results -QID $ThisQID) { 
-          Remove-Folder "$($env:programfiles)\dotnet\shared\Microsoft.NETCore.App\3.1.32" -Results $Results
+          Remove-Folder "$($env:programfiles)\dotnet\shared\Microsoft.NETCore.App\3.1.32" -Results $Results   | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-NETCore3_removal.log"
+          $RebootRequired = $true
+          API-SendLogs -QID $ThisQID -LogFile "$($log)\$($ThisQID)-NETCore3_removal.log"
         }
       }
       378332 {
         if (Get-YesNo "$_ Fix WinVerifyTrust Signature Validation Vulnerability? " -Results $Results -QID $ThisQID) { 
-          Write-Output "[.] Creating registry item: HKLM:\Software\Microsoft\Cryptography\Wintrust\Config\EnableCertPaddingCheck=1"
-          New-Item -Path "HKLM:\Software\Microsoft\Cryptography\Wintrust" -Force | Out-Null
-          New-Item -Path "HKLM:\Software\Microsoft\Cryptography\Wintrust\Config" -Force | Out-Null
-          New-ItemProperty -Path "HKLM:\Software\Microsoft\Cryptography\Wintrust\Config" -Name "EnableCertPaddingCheck" -Value "1" -PropertyType "String" -Force | Out-Null
+          Write-Output "[.] Creating registry item: HKLM:\Software\Microsoft\Cryptography\Wintrust\Config\EnableCertPaddingCheck=1"   | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-WinVerifyTrust.log"
+          New-Item -Path "HKLM:\Software\Microsoft\Cryptography\Wintrust" -Force -ErrorAction Continue   | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-WinVerifyTrust.log"
+          New-Item -Path "HKLM:\Software\Microsoft\Cryptography\Wintrust\Config" -Force -ErrorAction Continue   | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-WinVerifyTrust.log"
+          New-ItemProperty -Path "HKLM:\Software\Microsoft\Cryptography\Wintrust\Config" -Name "EnableCertPaddingCheck" -Value "1" -PropertyType "String" -Force -ErrorAction Continue   | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-WinVerifyTrust.log"
           
-          Write-Output "[.] Creating registry item: HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config\EnableCertPaddingCheck=1"
-          New-Item -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust" -Force | Out-Null
-          New-Item -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config" -Force | Out-Null #  \Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config EnableCertPaddingCheck
+          Write-Output "[.] Creating registry item: HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config\EnableCertPaddingCheck=1"   | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-WinVerifyTrust.log"
+          New-Item -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust" -Force -ErrorAction Continue | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-WinVerifyTrust.log"
+          New-Item -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config" -Force -ErrorAction Continue  | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-WinVerifyTrust.log"
           New-ItemProperty -Path "HKLM:\Software\Wow6432Node\Microsoft\Cryptography\Wintrust\Config" -Name "EnableCertPaddingCheck" -Value "1" -PropertyType "String" -Force | Out-Null    
           Write-Output "[!] Done!"
+          $RebootRequired = $true
+          API-SendLogs -QID $ThisQID -LogFile "$($log)\$($ThisQID)-WinVerifyTrust.log"
         }
-
       }
       378936 {
         if (Get-YesNo "$_ Fix Microsoft Windows Curl Multiple Security Vulnerabilities? " -Results $Results -QID $ThisQID) { 
-          Write-Host "[.] Showing Curl.exe version comparison.."
+          Write-Host "[.] Showing Curl.exe version comparison.."  | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-Curl.log"
           $curlfile = "c:\windows\system32\curl.exe"
-          Show-FileVersionComparison -Name $curlfile -Results $Results
+          Show-FileVersionComparison -Name $curlfile -Results $Results  | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-Curl.log"
           $KB5032189_installed = Get-WuaHistory | Where-Object { $_.Title -like "*5032189*" } 
           if ($KB5032189_installed) {
-            Write-Host "[+] KB5032189 found already installed. This is fixed."
+            Write-Host "[+] KB5032189 found already installed. This is fixed."  | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-Curl.log"
           } else {
-            Write-Host "[-] KB5032189 not found installed. Showing all Windows update history:"
-            Get-WuaHistory | FT
-            Write-Host "[.] Opening MSRC page: https://msrc.microsoft.com/update-guide/vulnerability/CVE-2023-38545#securityUpdates"
-            explorer "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2023-38545#securityUpdates"
+            Write-Host "[-] KB5032189 not found installed. Showing all Windows update history:"  | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-Curl.log"
+            Get-WuaHistory | Format-Table
+            Write-Host "[.] Opening MSRC page: https://msrc.microsoft.com/update-guide/vulnerability/CVE-2023-38545#securityUpdates" | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-Curl.log"
+            if (-not $Automated) { explorer "https://msrc.microsoft.com/update-guide/vulnerability/CVE-2023-38545#securityUpdates" }
           }
+          #$RebootRequired = $true
+          API-SendLogs -QID $ThisQID -LogFile "$($log)\$($ThisQID)-Curl.log"
         }
       }
   
       379223 { # Windows SMB Version 1 (SMBv1) Detected -- https://learn.microsoft.com/en-us/windows-server/storage/file-server/troubleshoot/detect-enable-and-disable-smbv1-v2-v3?tabs=server
         if (Get-YesNo "$_ Windows SMB Version 1 (SMBv1) Detected - Disable " -Results $Results -QID $ThisQID) { 
-          Write-Host "[.] Get-SMBServerConfiguration status:" -ForegroundColor Yellow
+          Write-Host "[.] Get-SMBServerConfiguration status:" -ForegroundColor Yellow | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-SMB1Disable.log"
           $SMB1ServerStatus = (Get-SmbServerConfiguration | Format-List EnableSMB1Protocol)
-          ($SMB1ServerStatus | Out-String) -Replace("`n","")
-          Write-Verbose "[.] Checking Registry for MME SMB1Auditing :"
+          (($SMB1ServerStatus | Out-String) -Replace("`n","")) | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-SMB1Disable.log"
+          Write-Host "[.] Checking Registry for MME SMB1Auditing :" | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-SMB1Disable.log"
           if (Get-RegistryEntry -Name "SMB1Auditing" -ne 1) {  # If our registry key is not set, turn on auditing for a month to see if its in use and dont do anything else yet (but give the option to if they want)
-            Write-Host "[+] It appears we have not checked for SMB1 access here. Setting registry setting, enabling auditing for a month." -ForegroundColor Red
+            Write-Host "[+] It appears we have not checked for SMB1 access here. Setting registry setting, enabling auditing for a month." -ForegroundColor Red | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-SMB1Disable.log"
             (Set-SmbServerConfiguration -AuditSmb1Access $True -Force | Out-String) -Replace ("`n","")
-            Set-RegistryEntry -Name "SMB1Auditing" -Value 1
-            Write-Host "[.] However, we will give you a chance to disable it now, if you prefer:" -ForegroundColor Yellow
+            Set-RegistryEntry -Name "SMB1Auditing" -Value 1 | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-SMB1Disable.log"
+            Write-Host "[.] However, we will give you a chance to disable it now, if you prefer:" -ForegroundColor Yellow | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-SMB1Disable.log"
           } else {  # If registry key IS set, we ran this last month or more, lets check logs for event 3000 and report
             # Would be really nice to know the last run date here also, for how many days back to check for these events, we'll just do 30 days for now
             $smb1AccessEvents = Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-SMBServer/Audit'; ID=3000; StartTime=(Get-Date).AddDays(-30)} -ErrorAction SilentlyContinue
             if ($smb1AccessEvents) { # we need to know the 3000 event 'Client Address' in it, and report this IP/hostname, move recursively thru the list for each address using SMB1
-              Write-Host "[-] Found evidence of SMB1 client access in the event log:" -ForegroundColor Red
+              Write-Host "[-] Found evidence of SMB1 client access in the event log:" -ForegroundColor Red | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-SMB1Disable.log"
               foreach ($thisevent in $smb1AccessEvents) {  
                   $eventMessage = $thisevent.Message
-                  $pattern = "Client Address: (.*)"
+                  $pattern = "Client Address: (.*)" 
                   $match = [regex]::Match($eventMessage, $pattern)
                   if ($match.Success) {
                       $clientIP = $match.Groups[1].Value # Capture only the group, not the entire match
-                      Write-Host "[-] Client IP Address: $clientIP" -ForegroundColor Red
+                      Write-Host "[-] Client IP Address: $clientIP" -ForegroundColor Red | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-SMB1Disable.log"
                   }
               }
               $smb1AccessEvent | Format-List
             } else {
-              Write-Host "[+] No evidence of SMB1 client access found in event logs. Safe to disable completely, and disable the check next month." -ForegroundColor Green
-              Set-RegistryEntry -Name SMB1Auditing -Value 0
+              Write-Host "[+] No evidence of SMB1 client access found in event logs. Safe to disable completely, and disable the check next month." -ForegroundColor Green | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-SMB1Disable.log"
+              Set-RegistryEntry -Name SMB1Auditing -Value 0 | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-SMB1Disable.log"
             }
           } # No matter what, we will give them the option to just run this
           if (-not $script:Automated) {
             if (Get-YesNo "NOTE: If you go further, disabling SMB1 may break things!!! `n`nRisks:`n  [ ] Old iCAT XP computers `n  [ ] Old copier/scanners (scan to SMB) `n  [ ] Other devices that need to access this computer over SMB1.`n`nAre you sure you want to continue " -Results $Results -QID $ThisQID) {  
               # Write-Host "It may be safest to do some monitoring first, by turning on SMB v1 auditing (Set-SmbServerConfiguration -AuditSmb1Access `$True) and checking for Event 3000 in the ""Microsoft-Windows-SMBServer\Audit"" event log next month, and then identifying each client that attempts to connect with SMBv1."
               # Write-Host "I have turned on SMB1 auditing for you now, and the script can automatically check for clients next month and disable this if you aren't sure."
-              Write-Host "`n[.] Removing Feature for SMB 1.0:" -ForegroundColor Green
+              Write-Host "`n[.] Removing Feature for SMB 1.0:" -ForegroundColor Green | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-SMB1Disable.log"
               # CAPTION INSTALLSTATE NAME SMB 1.0/CIFS File Sharing Support SMB Server version 1 is Enabled# 
-              Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart
+              Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-SMB1Disable.log"
               # HKLM\SYSTEM\CurrentControlSet\Services\mrxsmb10 Start = 2 SMB Client version 1 is Enabled#  # <-- This could show up also
-              Write-Host "[.] Disabling service MRXSMB10:" -ForegroundColor Green
+              Write-Host "[.] Disabling service MRXSMB10:" -ForegroundColor Green | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-SMB1Disable.log"
               if (-not (Test-Path "HKLM:\SYSTEM\CurrentControlSet\Services\mrxsmb10")) {
-                New-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Services\mrxsmb10" -Force | Out-Null
+                New-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Services\mrxsmb10" -Force -ErrorAction Continue | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-SMB1Disable.log"
+                $RebootRequired = $true
+    
               }
-              Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\mrxsmb10" -Name "Start" -Value 4
-              Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\mrxsmb10" -Name "Start" 
-              Write-Host "[.] Done.  A reboot will be needed for this to go into effect. Please test all applications and access after!" -ForegroundColor Yellow
+              Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\mrxsmb10" -Name "Start" -Value 4 -ErrorAction Continue | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-SMB1Disable.log"
+              Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\mrxsmb10" -Name "Start"  -ErrorAction Continue | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-SMB1Disable.log"
+              Write-Host "[.] Done.  A reboot will be needed for this to go into effect. Please test all applications and access after!" -ForegroundColor Yellow | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-SMB1Disable.log"
+              $RebootRequired = $true
             } else {
-              Write-Host "[!] Nothing changed! Please re-run in a month and check back if any systems have used SMB1 to access this machine." -ForegroundColor Green
+              Write-Host "[!] Nothing changed! Please re-run in a month and check back if any systems have used SMB1 to access this machine." -ForegroundColor Green | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-SMB1Disable.log"
             }
           } else {
-              Write-Host "[.] Refusing to remove feature for SMB 1.0 with -Automated, if you want to do this we can modify the code to allow it" -ForegroundColor Yello
-          }
+              Write-Host "[.] Refusing to remove feature for SMB 1.0 with -Automated, if you want to do this we can modify the code to allow it" -ForegroundColor Yellow | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-SMB1Disable.log"
+          }  
+          API-SendLogs -QID $ThisQID -LogFile "$($log)\$($ThisQID)-SMB1Disable.log"
         }
       }
       110251 {
@@ -4771,12 +4840,14 @@ foreach ($CurrentQID in $QIDs) {
           $Products = Get-WmiObject Win32_Product | Where-Object { $_.Name -like "Microsoft Office" }
           if ($Products.Name -eq "Microsoft Office") {
               if (Get-YesNo "[?] Remove $Products.Name - $Products.IdentifyingNumber") {
-                Remove-Software -Products $Products -Results $Results
+                Remove-Software -Products $Products -Results $Results | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-MSOffice-C2R_MS15-022.log"
               }
           } else {
-            Write-Host "[!] Product not found: (MS Office click-to-run version with 'Microsoft Office' in the name).. Please remove manually/update script !!`n" -ForegroundColor Red
-            appwiz.cpl
+            Write-Host "[!] Product not found: (MS Office click-to-run version with 'Microsoft Office' in the name).. Please remove manually/update script !!`n" -ForegroundColor Red  | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-MSOffice-C2R_MS15-022.log"
+            if (-not $Automated) { appwiz.cpl }
           }  
+          $RebootRequired = $true
+          API-SendLogs -QID $ThisQID -LogFile "$($log)\$($ThisQID)-MSOffice-C2R_MS15-022.log"
         }       
       }	
       376709 {
@@ -4785,16 +4856,20 @@ foreach ($CurrentQID in $QIDs) {
         if (Get-YesNo "$_ Remove HP Support Assistant Multiple Security Vulnerabilities (HPSBGN03762)? " -Results $Results -QID $ThisQID) { 
           $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like 'HP Support Assist*'})
           if ($Products) {
-              Remove-Software -Products $Products  -Results $Results
+              Remove-Software -Products $Products  -Results $Results | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-HPSupportAssist.log"
           } else {
             Write-Host "[!] Product not found: 'HP Support Assist*' !!`n" -ForegroundColor Red
           }  
+          $RebootRequired = $true
+          API-SendLogs -QID $ThisQID -LogFile "$($log)\$($ThisQID)-HPSupportAssist.log"
+
         }       
       }	
       106116 {        
         if (Get-YesNo "$_ Delete EOL/Obsolete Software: Microsoft Visual C++ 2010 Redistributable Package Detected? " -Results $Results -QID $ThisQID) { 
-          Remove-File "$($env:ProgramFiles)\Common Files\Microsoft Shared\VC\msdia100.dll" -Results $Results
-          Remove-File "$(${env:ProgramFiles(x86)})\Common Files\Microsoft Shared\VC\msdia100.dll" -Results $Results
+          Remove-File "$($env:ProgramFiles)\Common Files\Microsoft Shared\VC\msdia100.dll" -Results $Results   | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-MSVC_2010.log"
+          Remove-File "$(${env:ProgramFiles(x86)})\Common Files\Microsoft Shared\VC\msdia100.dll" -Results $Results    | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-MSVC_2010.log"
+          API-SendLogs -QID $ThisQID -LogFile "$($log)\$($ThisQID)-MSVC_2010.log"
         }       
       }	
 <#      110432 {  # This was not finished..
@@ -4822,32 +4897,34 @@ foreach ($CurrentQID in $QIDs) {
         if (Get-YesNo "$_ Microsoft Office and Microsoft Office Services and Web Apps Security Update 2018/2019 " -Results $Results -QID $ThisQID) {
           $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like "*Office 2007*"})
           if ($Products) {
-            Write-Host "[!] WARNING: Office 2007 product found! Can't auto-fix this.. Need one or more of these KB's installed: "
-            Write-Host "  KB4092464, KB4461565, KB4461518, KB4092444, KB4092466, KB4011202, KB4011207, KB4011202"
-            Write-Host "[!] Product found installed:"
+            Write-Host "[!] WARNING: Office 2007 product found! Can't auto-fix this.. Need one or more of these KB's installed: "   | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-OfficeWebAppsSecUpdate2018-2019.log" 
+            Write-Host "  KB4092464, KB4461565, KB4461518, KB4092444, KB4092466, KB4011202, KB4011207, KB4011202"   | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-OfficeWebAppsSecUpdate2018-2019.log"
+            Write-Host "[!] Product found installed:"   | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-OfficeWebAppsSecUpdate2018-2019.log"
             Write-Host "$Products"
           } else {
             # If Office2007 is not installed, it should be safe to remove these conversion apps that may be vulnerable.
             $Result = (($Results -split('is not installed'))[1] -split ('Version is'))[0].trim()
             if (Test-Path $Result) {
               if (Get-YesNo "Delete $Result ?") {
-                Write-Verbose "Removing file $Result"
+                Write-Host "[.] Removing file: $Result"  | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-OfficeWebAppsSecUpdate2018-2019.log"
                 Remove-File $Result
                 if (!(Test-Path $Result)) {
-                  Write-Verbose "Removed file $Result"
+                  Write-Host "[+] Removed file $Result"   | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-OfficeWebAppsSecUpdate2018-2019.log"
                 } else {
-                  Write-Host "[!] ERROR: Couldn't remove $Result !!"
+                  Write-Host "[!] ERROR: Couldn't remove $Result !!"   | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-OfficeWebAppsSecUpdate2018-2019.log"
                 }
               }
             }
             if (Get-Item $Path) {
               if (Get-YesNo "Delete registry item $Path ?") {
-                Remove-RegistryItem $Path
+                Remove-RegistryItem $Path   | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-OfficeWebAppsSecUpdate2018-2019.log"
+                $RebootRequired = $true
               }
               # $QIDsOffice2007 = 1 # Not doing this, need to check for each EXE
             } else {
-              Write-Verbose "Looks like registry key $Path was already removed."
+              Write-Host "[.] Looks like registry key $Path was already removed."    | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-OfficeWebAppsSecUpdate2018-2019.log"
             }
+            API-SendLogs -QID $ThisQID -LogFile "$($log)\$($ThisQID)-OfficeWebAppsSecUpdate2018-2019.log"
           }
         }
       }
@@ -4857,7 +4934,7 @@ foreach ($CurrentQID in $QIDs) {
         $AppxVersion = ($results -split "Version")[1].replace("'","").replace("#","").trim()
         if (Get-YesNo "$_ Remove Microsoft Office app Remote Code Execution (RCE) Vulnerability $AppxVersion" -Results $Results -QID $ThisQID) {
           if ($Results -like "*Microsoft vulnerable Office app detected*") {
-            Write-Host "`n[!] This needs manual remediation:" -Foregroundcolor Red
+            Write-Host "`n[!] This needs manual remediation:" -Foregroundcolor Red 
             Write-Host "  $Results" -ForegroundColor White
 
           }
@@ -4901,8 +4978,8 @@ foreach ($CurrentQID in $QIDs) {
                 #sl "C:\Program Files\Common Files\Microsoft Shared\ClickToRun"
                 #& "OfficeC2RClient.exe" /update user displaylevel=false forceappshutdown=true
                 Write-Host "[+] Attempting to patch with C:\Program Files\Common Files\Microsoft Shared\ClickToRun\OfficeC2RClient.exe /update user displaylevel=false forceappshutdown=true .. This could take 30-60s"  -ForegroundColor Green
-                $args = "/update user displaylevel=false forceappshutdown=true"
-                Start-Process "C:\Program Files\Common Files\microsoft shared\ClickToRun\OfficeC2RClient.exe" -ArgumentList $args -Wait
+                $arguments = "/update user displaylevel=false forceappshutdown=true"
+                Start-Process "C:\Program Files\Common Files\microsoft shared\ClickToRun\OfficeC2RClient.exe" -ArgumentList $arguments -Wait
                 Write-Host "[+] Done, should be patched." -ForegroundColor Green
               } else {
                 Write-Host "[+] EXE patched version found : $CheckEXEVersion > $ResultsVersion - already patched." -ForegroundColor Green  # SHOULD never get here, patches go in a new folder..
@@ -4927,6 +5004,8 @@ foreach ($CurrentQID in $QIDs) {
               Write-Host "[!] EXE no longer found: $CheckEXE - Same issue. Likely update has been applied." -ForegroundColor Green
             }
           }
+          $RebootRequired = $true
+          #API-SendLogs -QID $ThisQID -LogFile 
         }
       }
 
@@ -5136,9 +5215,11 @@ foreach ($CurrentQID in $QIDs) {
       }
       92067 {
         if (Get-YesNo "$_ Microsoft HTTP/2 Protocol Distributed Denial of Service (DoS) Vulnerability" -Results $Results -QID $ThisQID) {
-          Write-Host "[.] Disabling HTTP/2 TLS with registry key: HKLM:\SYSTEM\CurrentControlSet\Services\HTTP\Parameters\EnableHttp2Tls=0" -ForegroundColor Yellow
-          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\HTTP\Parameters" -Name EnableHttp2Tls -Value 0
+          Write-Host "[.] Disabling HTTP/2 TLS with registry key: HKLM:\SYSTEM\CurrentControlSet\Services\HTTP\Parameters\EnableHttp2Tls=0" -ForegroundColor Yellow   | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-HTTP2ddos.log"
+          Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\HTTP\Parameters" -Name EnableHttp2Tls -Value 0  | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-HTTP2ddos.log"
           Write-Host "[+] Done!" -ForegroundColor Green
+          $RebootRequired = $true
+          API-SendLogs -QID $ThisQID -LogFile "$($log)\$($ThisQID)-HTTP2ddos.log"
         }
       }
       92167 {
@@ -5150,25 +5231,25 @@ foreach ($CurrentQID in $QIDs) {
       #HKLM\SYSTEM\CurrentControlSet\Services\HTTP\Parameters EnableHttp2Tls
       378985 { #Disable-TLSCipherSuite TLS_RSA_WITH_3DES_EDE_CBC_SHA
         $AllCipherSuites = (Get-TLSCipherSuite).Name
-        $CipherSuites = ((Get-TLSCipherSuite) | ? {$_.Name -like '*DES*'}).Name
+        $CipherSuites = ((Get-TLSCipherSuite) | Where-Object {$_.Name -like '*DES*'}).Name
         if (Get-YesNo "$_ Birthday attacks against Transport Layer Security (TLS) ciphers with 64bit block size Vulnerability (Sweet32)" -Results $Results -QID $ThisQID) {
-          if ($CipherSuites -ne $null) {
+          if ($null -ne $CipherSuites) {
             foreach ($CipherSuite in $CipherSuites) {
-              Write-Host "[.] TLS Cipher suite(s) found: $CipherSuite - Disabling." -ForegroundColor Yellow
-              Disable-TLSCipherSuite $CipherSuite
+              Write-Host "[.] TLS Cipher suite(s) found: $CipherSuite - Disabling." -ForegroundColor Yellow  | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-TLSCiphers.log"
+              Disable-TLSCipherSuite $CipherSuite  | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-TLSCiphers.log"
               if ((Get-TlsCipherSuite -Name DES) -or (Get-TlsCipherSuite -Name 3DES)) {
                 Write-Host "[!] ERROR: Cipher suites still found!! Results:" -ForegroundColor Red
-                Get-TlsCipherSuite -Name DES
-                Get-TlsCipherSuite -Name 3DES
-                Write-Host "[!] Please remove manually!" -ForegroundColor Red
+                Get-TlsCipherSuite -Name DES  | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-TLSCiphers.log"
+                Get-TlsCipherSuite -Name 3DES  | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-TLSCiphers.log"
+                Write-Host "[!] Please remove manually!" -ForegroundColor Red  | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-TLSCiphers.log"
               } else {
-                Write-Host "[+] Cipher Suite removed." -ForegroundColor Green
+                Write-Host "[+] Cipher Suite removed." -ForegroundColor Green  | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-TLSCiphers.log"
               }
             }
           } else {
-            Write-Host "[.] TLS Cipher suite(s) not found for DES or 3DES - Looks like this might have been fixed already? Investigate manually if not." -ForegroundColor Yellow
-            Write-Host "[.] Listing all TLS Cipher suites:" -ForegroundColor Yellow
-            $AllCipherSuites            
+            Write-Host "[.] TLS Cipher suite(s) not found for DES or 3DES - Looks like this might have been fixed already? Investigate manually if not." -ForegroundColor Yellow  | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-TLSCiphers.log"
+            Write-Host "[.] Listing all TLS Cipher suites:" -ForegroundColor Yellow  | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-TLSCiphers.log"  | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-TLSCiphers.log"
+            $AllCipherSuites         | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-TLSCiphers.log"
           }
           # Also apply registry fixes:  NOTE: Creating reg keys with '/' character will not work correctly, so there is a fix, they can be created this way:
             # Write-Host "[ ] Creating Ciphers subkeys (with /).." -ForegroundColor Green
@@ -5176,22 +5257,24 @@ foreach ($CurrentQID in $QIDs) {
             # $null = $key.CreateSubKey('AES 128/128')
           $RegItems = @("Triple DES 168/168","DES 56/56")
           Foreach ($Regitem in $Regitems) {
-            Write-Host "[.] Creating new key for SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\$($RegItem) "
+            Write-Host "[.] Creating new key for SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\$($RegItem) "  | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-TLSCiphers.log"
             #New-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\$($RegItem)" -Name Enabled -Force -ErrorAction Continue | Out-Null  # WONT WORK because of "/" character in key.. Hack below.
             $key = (get-item HKLM:\).OpenSubKey("SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers", $true)
             $null = $key.CreateSubKey($RegItem)
-            Write-Host "[.] Setting property for $RegItem - Enabled = DWORD 0"
+            Write-Host "[.] Setting property for $RegItem - Enabled = DWORD 0"  | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-TLSCiphers.log"
             Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\""$($RegItem)""" -Name Enabled -Value 0 -Force -ErrorAction SilentlyContinue | Out-Null
           }
           Foreach ($Regitem in $Regitems) {
-            $Property=(Get-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\$($RegItem)" -ErrorAction SilentlyContinue).Property
+            $Property=(Get-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\$($RegItem)" -ErrorAction SilentlyContinue).Property 
             if ($Property -eq "Enabled") {
-              Write-Host "[.] Checking for created keys: $RegItem : $($Property) - GOOD" -Foregroundcolor Green
+              Write-Host "[.] Checking for created keys: $RegItem : $($Property) - GOOD" -Foregroundcolor Green | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-TLSCiphers.log"
             } else {
-              Write-Host "[.] Checking for created keys: $RegItem : $($Property) - ERROR, or key does not exist! Listing cipher keys:" -Foregroundcolor Red
+              Write-Host "[.] Checking for created keys: $RegItem : $($Property) - ERROR, or key does not exist! Listing cipher keys:" -Foregroundcolor Red | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-TLSCiphers.log"
               Get-ChildItem -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Ciphers\*"
             }
           }
+          $RebootRequired = $true
+          API-SendLogs -QID $ThisQID -LogFile "$($log)\$($ThisQID)-TLSCiphers.log"
         }
       }      
 
@@ -5218,21 +5301,24 @@ foreach ($CurrentQID in $QIDs) {
                       Write-Verbose "Success!"
                   }
               }
-              Write-Host "[!] Completed. A reboot may be required." -Foregroundcolor Green
+              Write-Host "[!] Completed. A reboot may be required." -Foregroundcolor Green | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-MSOffice-HTML-RCE-July2023.log"
+              $RebootRequired = $true
           }
           else {
-              Write-Host $RemediationTargets
-              Write-Warning "No products were selected! The valid value's for -OfficeProducts is listed below you can also use a comma seperated list or simply put 'All'."
+              Write-Host $RemediationTargets | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-MSOffice-HTML-RCE-July2023.log"
+              Write-Warning "No products were selected! The valid value's for -OfficeProducts is listed below you can also use a comma seperated list or simply put 'All'." | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-MSOffice-HTML-RCE-July2023.log"
               $RemediationValues | Sort-Object Name | Format-Table | Out-String | Write-Host
               Write-Error "ERROR: Nothing to do!"
               exit 1
           }
+          $RebootRequired = $true
+          API-SendLogs -QID $ThisQID -LogFile "$($log)\$($ThisQID)-MSOffice-HTML-RCE-July2023.log"
         }
       }
       371263 {
         if (Get-YesNo "$_ Fix Intel Graphics drivers" -Results $Results -QID $ThisQID) {
           foreach($gpu in Get-WmiObject Win32_VideoController) {  
-            Write-Host $gpu.Description
+            Write-Host $gpu.Description  | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-intelgrfx.log"
             $GpuName = ""
             if ($gpu.Description -like '*Intel*') {
               $IntelcardFound = $true
@@ -5264,21 +5350,43 @@ foreach ($CurrentQID in $QIDs) {
               if ($gpu.Description -like "*ARC*") { 
                 $GpuName = "Intel ARC" 
                 $GPUWin10 = "https://www.intel.com/content/www/us/en/download/785597/intel-arc-iris-xe-graphics-windows.html"
+                $GPUWin11 = "n/a"
               }
             }
           }
           if ($Intelcardfound) {
             if ($GPUName) {
               $OSVersion = [version](Get-OSVersion)
-              if ($OSVersion -le [version]10.0.19045) { Write-Host "GPU Update URL (Win 10): $GPUWin10" ; explorer $GPUWin10 }
-              if ($OSVersion -gt [version]10.0.19045) { Write-Host "GPU Update URL (Win 11): $GPUWin11" ; explorer $GPUWin11 }
+              if ($OSVersion -le [version]10.0.19045) { 
+                "[+] GPU Update URL (Win 10): $GPUWin10" | Tee-Object -Append -FilePath  "$($log)\$($ThisQID)-intelgrfx.log" ; 
+                if (-not $Automated) { explorer $GPUWin10 }
+              }
+              if ($OSVersion -gt [version]10.0.19045) {  
+                if ($GPUWin11 = "n/a") {
+                  $FixData = @{
+                    "FixNote" = "Unfixable, no Win11 Drivers available."
+                    "FixDate" = "n/a"
+                  }
+                  "[-] GPU Update not available for Win 11!! Launching API-Remed FixData:  $FixData" | Tee-Object -Append -FilePath  "$($log)\$($ThisQID)-intelgrfx.log" ; 
+                  API-Remed -QID $ThisQID -FixData $FixData
+                } else {
+                  "[+] GPU Update URL (Win 11): $GPUWin11" | Tee-Object -Append -FilePath  "$($log)\$($ThisQID)-intelgrfx.log" ; 
+                  if (-not $Automated) { explorer $GPUWin11 } 
+                }
+              }
             } else {
-              Write-Host "[!] Please fix manually, opening https://www.intel.com/content/www/us/en/security-center/advisory/intel-sa-00166.html :" -Foregroundcolor Yellow
-              explorer.exe "https://www.intel.com/content/www/us/en/security-center/advisory/intel-sa-00166.html"
+              if (-not $Automated) {
+                Write-Host "[!] Please fix manually, opening https://www.intel.com/content/www/us/en/security-center/advisory/intel-sa-00166.html :" -Foregroundcolor Yellow | Tee-Object -Append -FilePath  "$($log)\$($ThisQID)-intelgrfx.log"
+                explorer.exe "https://www.intel.com/content/www/us/en/security-center/advisory/intel-sa-00166.html"
+              } else {
+                "[!] Please fix manually: Win11: $($GPUWin11)`nWin10: $($GPUWin10)" | Tee-Object -Append -FilePath  "$($log)\$($ThisQID)-intelgrfx.log"
+              }
             }
           } else {
             Write-Host "[!] No Intel card found! or, program error.."
           }
+          API-SendLogs -QID $ThisQID -LogFile "$($log)\$($ThisQID)-intelgrfx.log"
+          $RebootRequired = $true
         }
       }
       371476 {
@@ -5299,14 +5407,15 @@ foreach ($CurrentQID in $QIDs) {
               Remove-Folder "$($env:programfiles)\intel\wifi" -Results $Results
             }
           }
+          $RebootRequired = $true
         }
-
+        API-SendLogs -QID $ThisQID -LogFile "$($log)\$($ThisQID)-intelwireless.log"
       }
       
       90019 {
         $LmCompat = (Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa").LmCompatibilityLevel
         if ($LmCompat -eq 5) {
-          Write-Output "$_ Fix already in place it appears: LMCompatibilityLevel = 5, Good!"
+          Write-Output "$_ Fix already in place it appears: LMCompatibilityLevel = 5, Good!" | Tee-Object -append "$($log)\$($ThisQID)-ntlmv1.log"
         } else {
           if (Get-YesNo "$_ Fix LanMan/NTLMv1 Authentication? Currently LmCompatibilityLevel = $LmCompat ? " -Results $Results -QID $ThisQID) { 
             <#
@@ -5318,20 +5427,22 @@ foreach ($CurrentQID in $QIDs) {
             5- Clients use only NTLMv2 authentication, and they use NTLMv2 session security if the server supports it. Domain controller refuses LM and NTLM authentication responses, but it accepts NTLMv2.
             #>
             if (Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa" -Name "LmCompatibilityLevel") {
-              Write-Output "[+] Setting registry item: HKLM\System\CurrentControlSet\Control\Lsa LMCompatibilityLevel = 5"
+              Write-Output "[+] Setting registry item: HKLM\System\CurrentControlSet\Control\Lsa LMCompatibilityLevel = 5" | Tee-Object -append "$($log)\$($ThisQID)-ntlmv1.log"
               Set-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Lsa" -Name "LmCompatibilityLevel" -Value "5" -Force | Out-Null
             } else {
-              Write-Output "[+] Creating registry item: HKLM\System\CurrentControlSet\Control\Lsa LMCompatibilityLevel = 5"
+              Write-Output "[+] Creating registry item: HKLM\System\CurrentControlSet\Control\Lsa LMCompatibilityLevel = 5" | Tee-Object -append "$($log)\$($ThisQID)-ntlmv1.log"
               New-ItemProperty -Path "HKLM:\System\CurrentControlSet\Control\Lsa" -Name "LmCompatibilityLevel" -Value "5" -Force | Out-Null
             }
-            Write-Output "[.] Checking fix: HKLM\System\CurrentControlSet\Control\Lsa LMCompatibilityLevel = 5"
+            Write-Output "[.] Checking fix: HKLM\System\CurrentControlSet\Control\Lsa LMCompatibilityLevel = 5" | Tee-Object -append "$($log)\$($ThisQID)-ntlmv1.log"
             if ((Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa").LmCompatibilityLevel -eq 5) {
-              Write-Output "[+] Found: LMCompatibilityLevel = 5, Good!"
+              Write-Output "[+] Found: LMCompatibilityLevel = 5, Good!" | Tee-Object -append "$($log)\$($ThisQID)-ntlmv1.log"
             } else {
-              Write-Output "[+] Found: LMCompatibilityLevel = $((Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa").LmCompatibilityLevel) - not 5!"
+              Write-Output "[+] Found: LMCompatibilityLevel = $((Get-ItemProperty "HKLM:\System\CurrentControlSet\Control\Lsa").LmCompatibilityLevel) - not 5!" | Tee-Object -append "$($log)\$($ThisQID)-ntlmv1.log"
             }
+            $RebootRequired = $true
           }
         }
+        API-SendLogs -QID $ThisQID -LogFile "$($log)\$($ThisQID)-ntlmv1.log"
       }
       372294 {
         if (Get-YesNo "$_ Fix service permissions issues? " -Results $Results -QID $ThisQID) {
@@ -5339,10 +5450,10 @@ foreach ($CurrentQID in $QIDs) {
           Write-Verbose "IN MAIN LOOP: Returned from Get-ServicePermIssues: $ServicePermIssues"
           foreach ($file in $ServicePermIssues) {
             if (!(Get-ServiceFilePerms $file)) {
-              Write-Output "[+] Permissions look good for $file ..."
+              "[+] Permissions look good for $file ..." | Tee-Object -append "$($tmp)\serviceperms.log"
             } else { # FIX PERMS.
               $objACL = Get-ACL $file
-              Write-Output "[.] Checking owner of $file .. $($objacl.Owner)"
+              Write-Output "[.] Checking owner of $file .. $($objacl.Owner)" | Tee-Object -append "$($tmp)\serviceperms.log"
               # Check for file owner, to resolve problems setting inheritance (if needed)
               if ($objacl.Owner -notlike "*$($env:USERNAME)") { # also allow [*\]User besides just User
                 #if (Get-YesNo "Okay to take ownership of $file as $($env:USERNAME) ?") {   
@@ -5353,9 +5464,9 @@ foreach ($CurrentQID in $QIDs) {
                 }
               }
               try {
-                Set-ACL $file -AclObject $objACL  
+                Set-ACL $file -AclObject $objACL  | Tee-Object -append "$($tmp)\serviceperms.log"
               } catch {
-                Write-Output "[!] ERROR: Couldn't set owner to $($env:Username) on $($file) .."
+                Write-Output "[!] ERROR: Couldn't set owner to $($env:Username) on $($file) .." | Tee-Object -append "$($tmp)\serviceperms.log"
               }
               $objACL = Get-ACL $file
               Write-Verbose "[.] Checking inheritance for $file - $(!($objacl.AreAccessRulesProtected)).."
@@ -5365,12 +5476,12 @@ foreach ($CurrentQID in $QIDs) {
                 $objacl.SetAccessRuleProtection($true,$true)  # 1=protected?, 2=copy inherited ACE? we will modify below
                 #$objacl.SetAccessRuleProtection($true,$false)  # 1=protected?, 2=drop inherited rules
                 try {
-                  Set-ACL $file -AclObject $objACL  
+                  Set-ACL $file -AclObject $objACL  | Tee-Object -append "$($tmp)\serviceperms.log"
                 } catch {
-                  Write-Output "[!] ERROR: Couldn't set inheritance on $($file) .."
+                  Write-Output "[!] ERROR: Couldn't set inheritance on $($file) .." | Tee-Object -append "$($tmp)\serviceperms.log"
                 }
               }
-              Write-Output "[.] Removing Everyone full permissions on $file .."
+              Write-Output "[.] Removing Everyone full permissions on $file .." | Tee-Object -append "$($tmp)\serviceperms.log"
               $Right = [System.Security.AccessControl.FileSystemRights]::ReadAndExecute
               $InheritanceFlag = [System.Security.AccessControl.InheritanceFlags]::None 
               $PropagationFlag = [System.Security.AccessControl.PropagationFlags]::InheritOnly  
@@ -5381,12 +5492,12 @@ foreach ($CurrentQID in $QIDs) {
               $objACL = Get-ACL $file
               $objACL.RemoveAccessRuleAll($objACE) 
               try {
-                Set-ACL $file -AclObject $objACL  
+                Set-ACL $file -AclObject $objACL  | Tee-Object -append "$($tmp)\serviceperms.log"
               } catch {
-                Write-Output "[!] ERROR: Couldn't remove Everyone-full permissions on $file .."
+                Write-Output "[!] ERROR: Couldn't remove Everyone-full permissions on $file .." | Tee-Object -append "$($tmp)\serviceperms.log"
               }
-              Write-Output "[.] Removing Users-Write/Modify/Append permissions on $file .."
-              # .. Remove write/append/etc from 'Users'. First remove Users rule completely.
+              Write-Output "[.] Removing Users-Write/Modify/Append permissions on $file .." | Tee-Object -append "$($tmp)\serviceperms.log"
+              # .. Remove write/append/etc from 'Users'. First remove Users rule completely. 
               $objUser = New-Object System.Security.Principal.NTAccount("Users") 
               $objACE = New-Object System.Security.AccessControl.FileSystemAccessRule `
                   ($objUser, $Right, $InheritanceFlag, $PropagationFlag, $objType) 
@@ -5394,7 +5505,7 @@ foreach ($CurrentQID in $QIDs) {
               try {
                 $objACL.RemoveAccessRuleAll($objACE) 
               } catch {
-                Write-Output "[!] ERROR: Couldn't reset Users permissions on $file .."
+                Write-Output "[!] ERROR: Couldn't reset Users permissions on $file .." | Tee-Object -append "$($tmp)\serviceperms.log"
               }
               # Then add ReadAndExecute only for Users
               $Right = [System.Security.AccessControl.FileSystemRights]::ReadAndExecute
@@ -5404,15 +5515,16 @@ foreach ($CurrentQID in $QIDs) {
               try {
                 Set-ACL $file -AclObject $objACL  
               } catch {
-                Write-Output "[!] ERROR: Couldn't modify Users to R+X permissions on $file .."
+                Write-Output "[!] ERROR: Couldn't modify Users to R+X permissions on $file .." | Tee-Object -append "$($tmp)\serviceperms.log"
               }
               # Check that issue is actually fixed
               if (!(Get-ServiceFilePerms $file)) {
-                Write-Output "[+] Permissions are good for $file "
+                Write-Output "[+] Permissions are good for $file " | Tee-Object -append "$($tmp)\serviceperms.log"
               } else {
-                Write-Output "[!] WARNING: Permissions NOT fixed on $file .. "
-                Get-FilePerms "$($file)"
+                Write-Output "[!] WARNING: Permissions NOT fixed on $file .. " | Tee-Object -append "$($tmp)\serviceperms.log"
+                Get-FilePerms "$($file)" | Tee-Object -append "$($log)\$($ThisQID)-serviceperms.log"
               }
+              $RebootRequired = $true
             }
           }
           <# 
@@ -5426,6 +5538,7 @@ foreach ($CurrentQID in $QIDs) {
             Write-Output "[+] $a"
           }
           #>
+          API-SendLogs -QID $ThisQID -LogFile "$($tmp)\serviceperms.log"
         }
       }
       $QIDsMSXMLParser4 {
@@ -5434,6 +5547,7 @@ foreach ($CurrentQID in $QIDs) {
           Invoke-WebRequest -UserAgent $AgentString -Uri "https://download.microsoft.com/download/A/7/6/A7611FFC-4F68-4FB1-A931-95882EC013FC/msxml4-KB2758694-enu.exe" -OutFile "$($tmp)\msxml.exe"
           Write-Host "[.] Running installer: $($tmp)\msxml.exe .."
           Start-Process -Wait "$($tmp)\msxml.exe" -ArgumentList "/quiet /qn /norestart /log $($tmp)\msxml.log"
+          API-SendLogs -QID $ThisQID -LogFile "$($log)\$($ThisQID)-msxml.log"
         }
         $QIDsMSXMLParser4 = 1
       }
@@ -5441,9 +5555,10 @@ foreach ($CurrentQID in $QIDs) {
         if (Get-YesNo "$_ Install newest .NET Core 6.0.36 update? " -Results $Results -QID $ThisQID) { 
           Write-Host "[.] Downloading installer to $($tmp)\netcore.exe .."
           
-          Invoke-WebRequest -UserAgent $AgentString -Uri $NetCore6NewestUpdate -OutFile "$($tmp)\netcore.exe"
+          Invoke-WebRequest -UserAgent $AgentString -Uri $NetCore6NewestUpdate -OutFile "$($tmp)\netcore.exe" | Tee-Object -Append "$($tmp)\netcore.log"
           Write-Host "[.] Running installer: $($tmp)\netcore.exe .."
-          Start-Process -Wait "$($tmp)\netcore.exe" -ArgumentList '/install /quiet /norestart'
+          Start-Process -Wait "$($tmp)\netcore.exe" -ArgumentList "/install /quiet /norestart /log $($tmp)\netcore.log"
+          API-SendLogs -QID $ThisQID -LogFile "$($log)\$($ThisQID)-netcore.log"
         }
         $QIDs_dotNET_Core6 = 1
       }
@@ -5488,6 +5603,7 @@ foreach ($CurrentQID in $QIDs) {
                       else {
                           Set-ItemProperty -Path $registryPath -Name $valueName -Value 1 -Type DWord
                           Write-Host "[+] The $registryPath value 'AllowOptionalContent' value has been set to 1." -ForegroundColor Green
+                          $RebootRequired = $true
                       }
                     } else {
                       New-Item -Path $registryPath -Force | Out-Null
@@ -5549,10 +5665,14 @@ Set-RegistryEntry -Name "ReRun" -Value $false
 if (!($script:Automated)) {
   $null = Read-Host "--- Press enter to exit ---"
 } else {
-  Write-Host "`n[AUTOMATED REBOOT] Suspending Bitlocker for 1 reboot.."
-  manage-bde -protectors -disable c: -rebootcount 1
-  Write-Host "`n[AUTOMATED REBOOT] Setting reboot for 5 minutes from now, please use shutdown /a to abort!"
-  shutdown /r /f /t 300
+  if ($RebootRequired) {
+    Write-Host "`n[AUTOMATED REBOOT] Suspending Bitlocker for 1 reboot.."
+    Suspend-BitLocker -mountpoint c -rebootcount 1
+    manage-bde -protectors -disable c: -rebootcount 1     # Just in case the powershell didn't work? shouldn't hurt
+    Write-Host "`n[AUTOMATED REBOOT] Setting reboot for 5 minutes from now, please use 'shutdown /a' to abort!"
+    shutdown /r /f /t 300
+  }
+  Write-Host "`n[AUTOMATED REBOOT] No automated reboot required."
 }
 
 Write-Host "[o] Done! Stopping transcript" -ForegroundColor Green
@@ -5564,10 +5684,15 @@ try {
   Copy-Item $script:LogFile $LogPath -Force
 #  Write-Host "[+] Log copied to: $LogPath `n"
 } catch {
-  Write-Error "[!] Log copy failed! $_" | Tee-Object -Append -Path $script:LogFile 
+  Write-Error "[!] Log copy failed! $_" | Tee-Object -Append -FilePath  $script:LogFile 
 }
-API-SendLogs -LogFile $script:LogFile
-API-Checkout
+Log $(API-SendLogs -UniqueId $UniqueId -APIKey $APIKey -LogFile $script:LogFile)
+
+if (API-Checkout) {
+  Log "[API] [+] Checked out @ $datetime" 
+} else {
+  Log "[API] [-] Failed checkout @ $datetime"
+}
 
 Write-Event -type "information" -eventid 101 -msg "Script ended"
 Exit

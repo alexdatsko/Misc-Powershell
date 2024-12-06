@@ -18,6 +18,16 @@ $ST_StartTime = Get-Date -Format "23:00:00"      # 11pm
 $ST_DayOfWeek = 4                                # Thursday
 $ST_IgnoreComputers = @("SERVER")                # Comptuers to NOT run a scheduled task with -automated
 
+# Configuration file in v0.51+ should have the following information:
+$CheckOptionalUpdates = $true                # Set this to false to ignore Optional Updates registry value
+$AlreadySetOptionalUpdates = $false          # This is to make sure we do not keep trying to set the Optional Updates registry value.
+$oldPwd = $pwd                               # Grab location script was run from
+$UpdateBrowserWait = 60                      # Default to 60 seconds for updating Chrome, Edge or Firefox with -Automated. Can be overwritten in Config, for slower systems.. 
+$UpdateNiniteWait = 90                       # How long to wait for the Ninite updater to finish and then force-close, default 90 seconds
+$UpdateDellCommandWait = 60                  # How long to wait for Dell Command Update to re-install/update
+$SoftwareInstallWait = 60                    # How long to wait for generic software to finish installing
+$LogToEventLog = $true                       # Set this to $false to not log to event viewer Application log, source "MQRA", also picked up in _config.ps1
+
 #### MQRA API related
 $API_key = ""
 
