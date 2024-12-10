@@ -64,10 +64,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.33"
-# New in this version:  Further API fixes
+$Version = "0.50.34"
+# New in this version:  Further API fixes, Get-Fix slight update
 
-$VersionInfo = "v$($Version) - Last modified: 12/09/2024"
+$VersionInfo = "v$($Version) - Last modified: 12/10/2024"
 
 
 # CURRENT BUGS TO FIX:
@@ -257,9 +257,13 @@ function Get-Fix {
   $csvContent = Import-Csv -Path $dbPath
   $record = $csvContent | Where-Object { $_.QID -eq $QID }
   if ($record) {
+    if ($record.Datefixed) {
       return $record.Datefixed
+    } else {
+      return $false
+    }
   } else {
-      return $null
+    return $false
   }
 }
 
