@@ -64,10 +64,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.32"
-# New in this version:  More work on API calls and logging
+$Version = "0.50.33"
+# New in this version:  Further API fixes
 
-$VersionInfo = "v$($Version) - Last modified: 12/06/2024"
+$VersionInfo = "v$($Version) - Last modified: 12/09/2024"
 
 
 # CURRENT BUGS TO FIX:
@@ -95,7 +95,7 @@ $ghostscripturl = "https://github.com/ArtifexSoftware/ghostpdl-downloads/release
 $AdobeReaderUpdateUrl = "https://rdc.adobe.io/reader/products?lang=mui&site=enterprise&os=Windows%2011&country=US&nativeOs=Windows%2010&api_key=dc-get-adobereader-cdn"
 $NetCore6NewestUpdate = "https://download.visualstudio.microsoft.com/download/pr/396abf58-60df-4892-b086-9ed9c7a914ba/eb344c08fa7fc303f46d6905a0cb4ea3/dotnet-sdk-6.0.428-win-x64.exe"
 
-$MQRAUserAgent = "MQRA v0.50 PS"        # Useragent for API communications
+$MQRAUserAgent = "MQRA $Version PS"        # Useragent for API communications
 $MQRAdir = "C:\Program Files\MQRA"      # This should never change
 $Log = "$($MQRADir)\logs"               # Save Logs to MQRA folder
 $ConfigFile = "$($pwd)\_config.ps1"     # Configuration file 
@@ -203,6 +203,7 @@ function Create-IfNotExists {
 
 Create-IfNotExists "$MQRAdir"
 Create-IfNotExists "$($MQRAdir)\logs"
+Create-IfNotExists "$($MQRAdir)\scans"
 Create-IfNotExists "$($MQRAdir)\temp"
 Create-IfNotExists "$($MQRAdir)\db"
 Create-IfNotExists "$($MQRAdir)\backup"
@@ -1277,12 +1278,12 @@ function Copy-FilesToMQRAFolder {
   }
 }
 
-function Find-ConfigFileLine {  # CONTEXT Search, a match needs to be found but NOT need to be exact line, i.e '$QIDsFlash = 1,2,3,4' returns true if '#$QIDsFlash = 1,2,3,4,9999,12345' is found
+function Find-ConfigFileLine {
   param (
     [string]$ConfigFile = "_config.ps1",
     [string]$ConfigLine
   )
-
+  # CONTEXT Search, a match needs to be found but NOT need to be exact line, i.e '$QIDsFlash = 1,2,3,4' returns true if '#$QIDsFlash = 1,2,3,4,9999,12345' is found..
   $ConfigContents = (Get-Content -path $ConfigFile)
   ForEach ($str in $ConfigContents) {
     if ($str -like "*$($ConfigLine)*") {
@@ -2485,22 +2486,37 @@ function MD5hash {
 }
  
 function Get-ConfigFileLine {
-  param ( 
-    [string]$Search = "*",
-    [string]$ConfigFile = "$($MQRADir)\_config.ps1"
+  param (
+      [string]$Search = "*",
+      [string]$ConfigFile = "$($script:MQRADir)\_config.ps1"
   )
   if (!(Test-Path "$ConfigFile")) { "" | Set-Content $ConfigFile }
   $content = Get-Content $ConfigFile -ErrorAction SilentlyContinue
 
   foreach ($line in $content) {
-    if ($line -like "$($Search)*") {
-      Log "Line: $line"
-      Log "Returning Config line: $($line.split("$($Search)")[1].trim().replace('"',''))"
-      return $line.split("$($Search)")[1].trim().replace('"','')
-    } 
+      if ($line -like "$Search*") {
+#          Log "Line: $line"
+#          Log "Search: $Search*"
+          
+          # Split the line by '=' and process the second part
+          $parts = $line -split '='
+          if ($parts.Count -gt 1) {
+              $value = $parts[1].Trim()
+              # Remove surrounding quotes, if present
+              if (($value.StartsWith('"') -or $value.StartsWith("'")) -and
+                  ($value.EndsWith('"') -or $value.EndsWith("'"))) {
+                  $value = $value.Substring(1, $value.Length - 2)
+              }
+#              Log "Returning Config line: $value"
+              return $value
+          }
+      }
   }
   return $false
 }
+
+
+
 
 function Set-ConfigFileLine {
   param ( 
@@ -2545,7 +2561,7 @@ function Put-UniqueId {
 
 function Get-UniqueId {
   param (
-    [string]$FilePath = '_config.ps1'
+    [string]$FilePath = '$($MQRADir)\_config.ps1'
   )
   try {
     (Get-Content $filepath -ErrorAction SilentlyContinue) | ForEach-Object {
@@ -3029,7 +3045,7 @@ function API-DownloadScan {
     [string]$UniqueID,
     [string]$APIKey,
     [string]$Filename,
-    [string]$WriteTo
+    [string]$WriteTo = "$($MQRAdir)\scans"
   )
   if (!($SkipAPI)) {
     $APIRoute = "/clientscan/csv"
@@ -3105,13 +3121,29 @@ function API-Test {
 }
 
 
-
 # All the microsoft office products with their corresponding dword value
 $RemediationValues = @{ "Excel" = "Excel.exe"; "Graph" = "Graph.exe"; "Access" = "MSAccess.exe"; "Publisher" = "MsPub.exe"; "PowerPoint" = "PowerPnt.exe"; "OldPowerPoint" = "PowerPoint.exe" ; "Visio" = "Visio.exe"; "Project" = "WinProj.exe"; "Word" = "WinWord.exe"; "Wordpad" = "Wordpad.exe" }
 
 ################################################################################################################## MAIN ############################################################################################################
 ################################################################################################################## MAIN ############################################################################################################
 ################################################################################################################## MAIN ############################################################################################################
+
+
+
+########################################################## PRE API STUFF THAT MUST BE DONE IMMEDIATELY!! ########################################################################
+
+
+# Lets copy everything to MQRA folder before going any further
+if (!(Find-ConfigFileLine -ConfigLine '$APIKey = ' -ConfigFile "C:\Program Files\MQRA\_config.ps1")) {
+  if (Copy-FilesToMQRAFolder) {
+    $ConfigFile = "C:\Program Files\MQRA\_config.ps1"
+  }
+  Check-ConfigForBadValues
+  set-location "C:\Program Files\MQRA"
+} else {
+  $ConfigFile = "C:\Program Files\MQRA\_config.ps1"
+  set-location "C:\Program Files\MQRA"
+}
 
 Init-Script -Automated $Automated
 Write-Event -type "information" -eventid 100 -msg "Script starting"
@@ -3137,15 +3169,6 @@ if (([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDat
   }
 }
 
-# Lets copy everything to MQRA folder:
-if (!(Test-Path "C:\Program Files\MQRA\_config.ps1")) {
-  if (Copy-FilesToMQRAFolder) {
-    $ConfigFile = "C:\Program Files\MQRA\_config.ps1"
-  }
-  Check-ConfigForBadValues
-} else {
-  $ConfigFile = "C:\Program Files\MQRA\_config.ps1"
-}
 
 $ServerName=""
 Write-Host "[.] Loading config from $ConfigFile .." -ForegroundColor Yellow
@@ -3179,7 +3202,8 @@ if (!($UniqueId)) {
   Log "[+] Found UniqueId: $UniqueId" -Both
 }
 
-if ($APIKey = Get-ConfigFileLine -Search '$APIKey = ') {
+$APIKey = (Get-ConfigFileLine -Search '$APIKey = ' -ConfigFile "C:\Program Files\MQRA\_config.ps1")
+if ($APIKey) {
   Log "[+] Got API key" -ForegroundColor Green -Both
 } else {
   Log "[-] Couldn't get API key from $configfile !!" -ForegroundColor Red -Both
@@ -3252,6 +3276,7 @@ if ($Filename) {
 } else {
   Log "[-] API-GetLatestClientScan - Couldn't get filename!!" -ForegroundColor Red
 }
+$CSVPath = "$($MQRADir)\scans\"
 $FileDown = API-DownloadScan -WriteTo $CSVPath -Filename $Filename -UniqueID $UniqueId -APIKey $APIKey
 if ($FileDown) {
   Log "[+] Downloaded Filename: '$FileDown'" -ForegroundColor Green
@@ -4538,6 +4563,9 @@ foreach ($CurrentQID in $QIDs) {
           # %SYSTEMROOT%\System32\msoledbsql19.dll  Version is  19.3.2.0  %SYSTEMROOT%\SysWOW64\msoledbsql19.dll  Version is  19.3.2.0#
           # 19.3.5.0 OLE DB x64 download : https://go.microsoft.com/fwlink/?linkid=2278038
           # Added OLE DB vars
+
+# 12-6-2024
+#          %SYSTEMROOT%\System32\msoledbsql.dll  Version is  18.7.2.0  %SYSTEMROOT%\SysWOW64\msoledbsql.dll  Version is  18.7.2.0#	Customers are advised to refer to  CVE-2024-37320 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37320), CVE-2024-20701 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-20701), CVE-2024-21317 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-21317), CVE-2024-21331 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-21331), CVE-2024-21425 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-21425), CVE-2024-37319 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37319), CVE-2024-35272 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-35272), CVE-2024-35271 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-35271), CVE-2024-38087 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-38087), CVE-2024-21303 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-21303), CVE-2024-37321 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37321), CVE-2024-21428 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-21428), CVE-2024-21415 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-21415), CVE-2024-37324 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37324), CVE-2024-21449 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-21449), CVE-2024-37326 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37326), CVE-2024-37327 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37327), CVE-2024-37328 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37328), CVE-2024-37329 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37329), CVE-2024-37330 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37330), CVE-2024-37334 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37334), CVE-2024-37333 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37333), CVE-2024-37336 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37336), CVE-2024-28928 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-28928), CVE-2024-35256 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-35256), CVE-2024-38088 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-38088), CVE-2024-37322 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37322), CVE-2024-21332 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-21332) for more information regarding the vulnerabilities and their patches.  Patch:  Following are links for downloading patches to fix the vulnerabilities:   CVE-2024-37320 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37320)
 
           if ($Results -like "*oledbsql*" -and $Results -like "*19*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2248728"; $LicenseTerms="IACCEPTMSOLEDBSQLLICENSETERMS=YES"; $OLEODBC="19.3.2 OLE"; $ProductCheck = "Microsoft OLE DB Driver" } else { #19.3.2 OLE
             if ($Results -like "*oledbsql*" -and $Results -like "*18*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2266757"; $LicenseTerms="IACCEPTMSOLEDBSQLLICENSETERMS=YES"; $OLEODBC="18.7.2 OLE"; $ProductCheck = "Microsoft OLE DB Driver"  } else { #18.7.2 OLE
