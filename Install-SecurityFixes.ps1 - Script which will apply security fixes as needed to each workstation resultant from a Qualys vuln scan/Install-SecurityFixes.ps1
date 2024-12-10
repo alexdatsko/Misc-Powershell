@@ -71,6 +71,7 @@ $VersionInfo = "v$($Version) - Last modified: 12/10/2024"
 
 
 # CURRENT BUGS TO FIX:
+#    - Copy script log and upload
 #    - VLC update broken - Winget? also ninite?
 #    - Notepad++ - check 
 
@@ -248,10 +249,10 @@ function Get-Fix {
       [string]$QID,
       [string]$dbPath = "C:\Program Files\MQRA\db\QIDsFixed.csv"
   )
-  if ($QID -eq 0) { return $null } # some Get-YesNo have no QID, because its the question is not related to a QID fix
+  if ($QID -eq 0) { return $false } # some Get-YesNo have no QID, because its the question is not related to a QID fix
   if (-not (Test-Path $dbPath)) {
       Create-FixDB
-      return $null
+      return $false
   }
 
   $csvContent = Import-Csv -Path $dbPath
@@ -3393,6 +3394,7 @@ if (!(Test-Path $($tmp))) {
 $oldpwd=(Get-Location).Path
 Set-Location "$($tmp)"  # Fix for Cmd.exe cannot be run from a server share..
 
+<#
 ### Find CSV File name. 2024-05- This is dumb using 2 variables, I have added on to this so many times its terribly messy, but works. Ugh. Needs a rewrite/refactor SO badly.
 if (!($CSVFile -like "*.csv")) {  # Check for command line param -CSVFile
   $CSVFilename = Find-ServerCSVFile "$($ServerName)\$($CSVLocation)"
@@ -3408,6 +3410,7 @@ if (!($CSVFile -like "*.csv")) {  # Check for command line param -CSVFile
     Write-Verbose "Using: $($CSVFilename)"
   }
 }
+#>
 
 ########### Scheduled task check:
 
@@ -3415,6 +3418,7 @@ if ($AddScheduledTask) { Check-ScheduledTask -ServerName $ServerName ; Exit }
 
 # READ CSV
 
+<#
 if (!(Test-Path -Path $CSVFilename -ErrorAction SilentlyContinue)) {  # Split path from file if it doesn't exist
   if (!(Test-Path "$($oldpwd)\$(Split-Path $CSVFilename -leaf)")) {
     Write-Host "[!] Error: Couldn't locate $CSVFilename or $($oldpwd)\$(Split-Path $CSVFilename -leaf) in $($oldpwd) !" -ForegroundColor Red | Tee-Object -Append -FilePath "$($log)/csv.log"
@@ -3423,17 +3427,18 @@ if (!(Test-Path -Path $CSVFilename -ErrorAction SilentlyContinue)) {  # Split pa
     $CSVFilename = Split-Path $CSVFilename -leaf
   }
 }
+#>
 if ($null -eq $CSVFilename) {
   Write-Host "[X] Couldn't find CSV file : $CSVFilename " -ForegroundColor Red
   Exit
 } else {
-  if ($CSVFilename -ne $(Split-Path $CSVFilename -leaf) -and $CSVFilename -like "*\\") {
-    Write-Verbose "Splitting path for $CSVFilename to $(Split-Path $CSVFilename -leaf)"
-    $CSVFilename = Split-Path $CSVFilename -leaf  # Lets just split the damn path off here if its part of a unc path \\
-  }
-  $CSVFullpath = "$($oldpwd)\$(Split-Path $CSVFilename -leaf)" # Lets look in the old folder for this, where it should be..
-  try {
-    
+  #if ($CSVFilename -ne $(Split-Path $CSVFilename -leaf) -and $CSVFilename -like "*\\") {
+    #$delimiter = Find-Delimiter $CSVFilename
+    #Write-Verbose "Splitting path for $CSVFilename to $(Split-Path $CSVFilename -leaf)"
+    #$CSVFilename = Split-Path $CSVFilename -leaf  # Lets just split the damn path off here if its part of a unc path \\
+  #}
+  $CSVFullpath =  $CSVFilename  # "$($oldpwd)\$(Split-Path $CSVFilename -leaf)" # Lets look in the old folder for this, where it should be..
+  try { 
     Write-Verbose "Finding delimeter for $CSVFullPath"
     $delimiter = Find-Delimiter $CSVFullPath
     Write-Host "`n[.] Importing data from $CSVFullPath" -ForegroundColor Yellow
