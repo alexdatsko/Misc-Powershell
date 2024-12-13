@@ -65,10 +65,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.36"
-# New in this version:  Further API fixes, Scheduled task change to execute from MQRAdir, 92194 Microsoft Visual Studio 2010 Tools
+$Version = "0.50.37"
+# New in this version:  Further CSV file stuff, jfc.
 
-$VersionInfo = "v$($Version) - Last modified: 12/12/2024"
+$VersionInfo = "v$($Version) - Last modified: 12/13/2024"
 
 
 # CURRENT BUGS TO FIX:
@@ -3312,6 +3312,7 @@ Log "###########################################################################
 
 # Lets find a CSV file.. lets check the Config 1st, Registry 2nd, default hostnames 3rd for a place with our CSV file shared in \\$serverName\Data\SecAud
 
+<#
 if (-not $CSVFile) {   # Pass all this crap up if I've passed -CSVFile or we've downloaded 1 from the API
   $ServerName = "SERVER" # start with this..
   if (Test-Connection -ComputerName $ServerName -Count 1 -Delay 1 -Quiet -ErrorAction SilentlyContinue) {
@@ -3338,7 +3339,8 @@ if (-not $CSVFile) {   # Pass all this crap up if I've passed -CSVFile or we've 
   }
 }
 
-if (!($CSVFile -like "*.csv")) {  
+#>
+if (!($CSVFile.ToUpper() -like "*.CSV")) {  
   Write-Host "[.] Searching for files modified within the last 30 days that match the pattern '*_Internal_*.csv' in path - $SecAudPath"
   $dateLimit = (Get-Date).AddDays(-30)
   $files = Get-ChildItem -Path $SecAudPath -Filter "*_Internal_*.csv" -File -ErrorAction SilentlyContinue | Where-Object { $_.LastWriteTime -gt $dateLimit } | Sort-Object $_.LastWriteTime -Descending
@@ -3391,7 +3393,7 @@ if (!(Test-Path $($tmp))) {
   }
 }
 $oldpwd=(Get-Location).Path
-Set-Location "$($tmp)"  # Fix for Cmd.exe cannot be run from a server share..
+#Set-Location "$($tmp)"  # Fix for Cmd.exe cannot be run from a server share..
 
 
 ################# ( READ IN CSV AND PROCESS ) #####################
@@ -5724,7 +5726,7 @@ if (!($script:Automated)) {
 Write-Host "[o] Done! Stopping transcript" -ForegroundColor Green
 Set-Location $oldpwd
 Stop-Transcript
-Write-Host "[+] Log written to: $script:LogFile , copying to $LogPath `n"
+Write-Host "[+] Log written to: $script:LogFile , copying to $LogPath `n"`
 Create-IfNotExists $LogPath
 try {
   Copy-Item $script:LogFile $LogPath -Force
