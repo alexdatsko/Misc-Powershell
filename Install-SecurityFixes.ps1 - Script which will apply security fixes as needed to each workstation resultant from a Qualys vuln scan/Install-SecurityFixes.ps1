@@ -18,6 +18,7 @@ param (
   [string] $SecAudPath = (Get-Location),     # Where to check for the latest CSV file
   [string] $LogPath = "C:\Program Files\MQRA\logs",   # Where to copy log files to after.  (Should be overwritten from the config file if existing there.)
   [string] $tmp = "$($env:temp)\SecAud",              # "temp" Temporary folder to save downloaded files to, this will be overwritten when checking config ..
+  [string] $dateshort = (Get-Date -Format "yyyy-MM-dd_HH-mm-ss"),                     # Consistent date format..
   [string] $LogFile = "$($tmp)\$($hostname)_Install-SecurityFixes_$($dateshort).log"  # Save Log to %temp% first.
 )
  
@@ -65,8 +66,8 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.37"
-# New in this version:  Further CSV file stuff, jfc.
+$Version = "0.50.38"
+# New in this version:  Fix 106233, etc
 
 $VersionInfo = "v$($Version) - Last modified: 12/13/2024"
 
@@ -173,9 +174,9 @@ try {
 }
 catch [System.InvalidOperationException]{}
 
-$dateshort= Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+$dateshort= Get-Date -Format "yyyy-MM-dd_HH-mm-ss"
 try {
-  $script:LogFile = "$($tmp)\$($hostname)_Install-SecurityFixes_$($dateshort).log"
+  #$script:LogFile = "$($tmp)\$($hostname)_Install-SecurityFixes_$($dateshort).log"  # Already set up top, date is diff now..
   Start-Transcript $script:LogFile -ErrorAction SilentlyContinue
 } catch {
   if ($Error[0].Exception.Message -match 'Transcript is already in progress') {
@@ -3253,7 +3254,6 @@ if (!($ping = API-Test)) {
 Log;Log "-------------- API-CheckIn ---------------------------" -Both
 if (!(API-Check -Direction "in" -UniqueID $UniqueID -APIKey $APIKey)) {   # "in" must stay lowercase!
   Log "[API] Failed Checkin. Trying Hello.." -Both
-
   Log;Log "-------------- API-Hello tests ---------------------------" -Both
   $Result = API-Hello -APIKey $APIKey -UniqueID $UniqueID -NetBios $NetBios -hostname $hostname
   Log "--- API-Hello Result: $Result" -Both
@@ -4476,11 +4476,11 @@ foreach ($CurrentQID in $QIDs) {
       }
       106233 {
         if (Get-YesNo "$_ Remove .NET Core 7 " -Results $Results -QID $ThisQID) { 
-          Write-Host "[.] Checking for product: '{5A66E598-37BD-4C8A-A7CB-A71C32ABCD78}' (.NET Core 5) .." -ForegroundColor Yellow
+          Write-Host "[.] Checking for product: '.NET Core 7' .." -ForegroundColor Yellow
           try {
-            $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{5A66E598-37BD-4C8A-A7CB-A71C32ABCD78}'})
+            $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like '*.NET Core 7*'})
           } catch {
-            Write-Host "[!] Error running command: '(get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{5A66E598-37BD-4C8A-A7CB-A71C32ABCD78}'})'" -ForegroundColor Red
+            Write-Host "[!] Error running command: '$Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like '*.NET Core 7*' })'" -ForegroundColor Red
             Write-Host "[!] Please remove or update .NET 5 manually." -ForegroundColor Red
             break
           }
@@ -5730,13 +5730,17 @@ Write-Host "[+] Log written to: $script:LogFile , copying to $LogPath `n"`
 Create-IfNotExists $LogPath
 try {
   Copy-Item $script:LogFile $LogPath -Force
-#  Write-Host "[+] Log copied to: $LogPath `n"
+  if (Test-Path -Path "$($LogPath)\$($LogFile)") {
+    Write-Host "[+] Log copied to: $LogPath `n"
+  } else {
+    Write-Host "[-] Couldn't copy log!! $($LogPath)\$($LogFile) not written.. `n"
+  }
 } catch {
   Write-Error "[!] Log copy failed! $_" | Tee-Object -Append -FilePath  $script:LogFile 
 }
 Log $(API-SendLogs -UniqueId $UniqueId -APIKey $APIKey -LogFile $script:LogFile)
 
-if (API-Checkout) {
+if (API-Check -Direction "out" -UniqueID $UniqueID -APIKey $APIKey) { 
   Log "[API] [+] Checked out @ $datetime" 
 } else {
   Log "[API] [-] Failed checkout @ $datetime"
