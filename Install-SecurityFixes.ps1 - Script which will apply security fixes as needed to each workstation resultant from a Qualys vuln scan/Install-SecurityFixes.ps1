@@ -15,6 +15,7 @@ param (
   [switch] $AddScheduledTask = $false,       # This switch will install a scheduled task to run the script first thursday of each month and reboot after
   [switch] $AutoUpdateAdobeReader = $false,  # Auto update adobe reader, INCLUDING REMOVAL OF OLD PRODUCT WHICH COULD BE LICENSED!!! if this flag is set
   [string] $hostname = $env:computername,    # Set the hostname of this computer to a variable
+  [string] $SecAudPath = (Get-Location),     # Where to check for the latest CSV file
   [string] $LogPath = "C:\Program Files\MQRA\logs",   # Where to copy log files to after.  (Should be overwritten from the config file if existing there.)
   [string] $tmp = "$($env:temp)\SecAud",              # "temp" Temporary folder to save downloaded files to, this will be overwritten when checking config ..
   [string] $LogFile = "$($tmp)\$($hostname)_Install-SecurityFixes_$($dateshort).log"  # Save Log to %temp% first.
@@ -64,10 +65,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.34"
-# New in this version:  Further API fixes, Get-Fix slight update
+$Version = "0.50.36"
+# New in this version:  Further API fixes, Scheduled task change to execute from MQRAdir, 92194 Microsoft Visual Studio 2010 Tools
 
-$VersionInfo = "v$($Version) - Last modified: 12/10/2024"
+$VersionInfo = "v$($Version) - Last modified: 12/12/2024"
 
 
 # CURRENT BUGS TO FIX:
@@ -231,11 +232,22 @@ function Set-Fix {
   param (
       [Parameter(Mandatory)]
       [string]$QID,
-      [string]$dbPath = "C:\Program Files\MQRA\db\QIDsFixed.csv"
+      [string]$dbPath = "C:\Program Files\MQRA\db\QIDsFixed.csv",
+      [switch]$Remove
   )
   if ($QID -eq 0) { return $null }
   if (-not (Test-Path $dbPath)) {
       Create-FixDB
+  }
+  if ($Remove) {  #lets remove this line if -Remove is added..
+     $filecontents = Get-Content -Path $dbPath
+     foreach ($line in $Filecontents) {
+      if (!($line -like "*$($QID)*")) {
+        $newcontents += $line
+      }
+     }
+     $newcontents | Set-Content -Path $dbPath
+     return $true
   }
   $dateFixed = (Get-Date).ToString("yyyy-MM-dd")
   $entry = "$QID,$dateFixed"
@@ -366,7 +378,7 @@ function Get-YesNo {
   $done = 0
   $SkipQIDs = $script:SkipQIDs
   
-  if (-not (Get-Fix -QID $QID)) {
+  if ((Get-Fix -QID $QID) -eq $false) {
     if (-not $script:Automated) {    # Catch the global var or the registry entry
       Write-Verbose "Qid: $QID - SkipQIDs: $SkipQIDs"
       if ($SkipQIDs -notcontains $QID) {
@@ -403,7 +415,11 @@ function Get-YesNo {
     }
   } else {
     $FixedDate = Get-Fix -QID $QID
-    Write-Host "[+] Skipping QID $($QID): Already fixed on $FixedDate" -ForegroundColor Green
+    if ($FixedDate -ne $false) {
+      Write-Host "[+] Skipping QID $($QID): Already fixed on $FixedDate" -ForegroundColor Green
+    } else {
+      Set-Fix -QID $QID -Remove # if date = $false we should try to remove this line??
+    }
   }
 }
 
@@ -1273,7 +1289,7 @@ function Copy-FilesToMQRAFolder {
       Write-Host "[+] Error copying file from: '$($ConfigFolder)\$($file)' to '$($NewConfigFolder)\$($file)':  $_ " -ForegroundColor Red
       return $false
     }
-    Set-Location $NewConfigFolder
+#    Set-Location $NewConfigFolder
     Write-Host "[.] Creating folders: logs, temp, db, backup" -ForegroundColor Yellow
     new-item -itemtype Directory -Path "logs" -ErrorAction SilentlyContinue
     new-item -itemtype Directory -Path "temp"  -ErrorAction SilentlyContinue
@@ -1281,6 +1297,7 @@ function Copy-FilesToMQRAFolder {
     new-item -itemtype Directory -Path "backup"  -ErrorAction SilentlyContinue
     return $true
   }
+  exit
 }
 
 function Find-ConfigFileLine {
@@ -1289,7 +1306,7 @@ function Find-ConfigFileLine {
     [string]$ConfigLine
   )
   # CONTEXT Search, a match needs to be found but NOT need to be exact line, i.e '$QIDsFlash = 1,2,3,4' returns true if '#$QIDsFlash = 1,2,3,4,9999,12345' is found..
-  $ConfigContents = (Get-Content -path $ConfigFile)
+  $ConfigContents = (Get-Content -path $ConfigFile -ErrorAction SilentlyContinue)
   ForEach ($str in $ConfigContents) {
     if ($str -like "*$($ConfigLine)*") {
       return $str
@@ -3139,15 +3156,15 @@ $RemediationValues = @{ "Excel" = "Excel.exe"; "Graph" = "Graph.exe"; "Access" =
 
 
 # Lets copy everything to MQRA folder before going any further
-if (!(Find-ConfigFileLine -ConfigLine '$APIKey = ' -ConfigFile "C:\Program Files\MQRA\_config.ps1")) {
+if (!(Test-Path -Path "C:\Program Files\MQRA\_config.ps1")) {
   if (Copy-FilesToMQRAFolder) {
     $ConfigFile = "C:\Program Files\MQRA\_config.ps1"
   }
   Check-ConfigForBadValues
-  set-location "C:\Program Files\MQRA"
+  #set-location "C:\Program Files\MQRA"
 } else {
   $ConfigFile = "C:\Program Files\MQRA\_config.ps1"
-  set-location "C:\Program Files\MQRA"
+  #set-location "C:\Program Files\MQRA"
 }
 
 Init-Script -Automated $Automated
@@ -3175,23 +3192,19 @@ if (([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDat
 }
 
 
-$ServerName=""
-Write-Host "[.] Loading config from $ConfigFile .." -ForegroundColor Yellow
-. "$($ConfigFile)"
-Write-Host "[.] Loading QIDList from $QIDsListFile .." -ForegroundColor Yellow
-. "$($QIDsListFile)"
+Write-Host "[.] Loading config from $(Get-Location) .." -ForegroundColor Yellow
+. "./_config.ps1"
+Write-Host "[.] Loading QIDList from $(Get-Location) .." -ForegroundColor Yellow
+. "./QIDLists.ps1"
 
 # Check for newer version of script before anything..
 Update-Script  # CHECKS FOR SCRIPT UPDATES, UPDATES AND RERUNS IF NECESSARY
 if (Update-QIDLists) { 
-  Write-Host "[.] Loading new QIDList from $QIDsListFile .." -ForegroundColor Yellow        
- . "$($QIDsListFile)" 
+  Write-Host "[.] Loading new QIDList from $(Get-Location) .." -ForegroundColor Yellow        
+ . "./QIDLists.ps1" 
  }
 
 # CONFIG AND OTHER FILES  HAVE BEEN COPIED ALREADY BY HERE..
-
-################################################ BEGINNING OF ACTUAL MAIN ###################################################
-
 
 ####################################################### MAIN API CODE #######################################################
 
@@ -3283,7 +3296,7 @@ if ($Filename) {
 }
 $CSVPath = "$($MQRADir)\scans\"
 $FileDown = API-DownloadScan -WriteTo $CSVPath -Filename $Filename -UniqueID $UniqueId -APIKey $APIKey
-if ($FileDown) {
+if (Test-Path -Path $FileDown -ErrorAction SilentlyContinue) {
   Log "[+] Downloaded Filename: '$FileDown'" -ForegroundColor Green
   $CSVFilename = $FileDown
   $CSVFile = $FileDown
@@ -3292,20 +3305,15 @@ if ($FileDown) {
 }
 
 
-
 $datetime = Get-Date -Format "yyyy-MM-dd HH:mm:ss" 
 Log "################################################################################################# API END $datetime"
 
 #######################################################
 
-# Lets check the Cofnig 1st, Registry 2nd, default hostnames 3rd for a place with our CSV file shared in \\$serverName\Data\SecAud
+# Lets find a CSV file.. lets check the Config 1st, Registry 2nd, default hostnames 3rd for a place with our CSV file shared in \\$serverName\Data\SecAud
 
-#Config should have already loaded $ServerName
-Write-Verbose "Found ServerName $ServerName"
-if (!($ServerName)) {
-  $ServerName = Get-RegistryEntry "ServerName"
-}
-if ($Servername -ne "non-domain") {
+if (-not $CSVFile) {   # Pass all this crap up if I've passed -CSVFile or we've downloaded 1 from the API
+  $ServerName = "SERVER" # start with this..
   if (Test-Connection -ComputerName $ServerName -Count 1 -Delay 1 -Quiet -ErrorAction SilentlyContinue) {
     Write-Output "[.] Checking location \\$($ServerName)\$($CSVLocation) .."
     if (Get-Item "\\$($ServerName)\$($CSVLocation)\Install-SecurityFixes.ps1" -ErrorAction SilentlyContinue) {
@@ -3314,7 +3322,7 @@ if ($Servername -ne "non-domain") {
     }
   } else {
     # Lets also check SERVER, DC-SERVER, localhost in case config is wrong?
-    $ServerNames = "SERVER","DC-SERVER",($env:computername)
+    $ServerNames = "SERVER","DC-SERVER","DC","DC1",($env:computername)
     foreach ($ServerName in $ServerNames) {
       Write-Output "[.] Checking default locations: \\$($ServerName)\Data\SecAud .."
       if (Test-Connection -ComputerName "$($ServerName)" -Count 1 -Delay 1 -Quiet -ErrorAction SilentlyContinue) {
@@ -3329,16 +3337,7 @@ if ($Servername -ne "non-domain") {
     }
   }
 }
-if (!($CSVFile) -and (Get-Item "C:\Program Files\MQRA\Install-SecurityFixes.ps1" -ErrorAction SilentlyContinue)) {  # we will be keeping the qualys scans here from now on, and deleting them when not in use..
-  $oldpwd = "C:\Program Files\MQRA"
-  $servername = "non-domain"
-} 
-if (-not $script:Automated) {
-  $script:ServerShare = $SecAudPath  # Where logs are copied to
-  if (!(Test-Path $SecAudPath)) {
-    $null = New-Item -ItemType Directory -Path $SecAudPath | Out-Null
-  }
-}
+
 if (!($CSVFile -like "*.csv")) {  
   Write-Host "[.] Searching for files modified within the last 30 days that match the pattern '*_Internal_*.csv' in path - $SecAudPath"
   $dateLimit = (Get-Date).AddDays(-30)
@@ -3366,6 +3365,8 @@ if (!($CSVFile -like "*.csv")) {
     exit
   }
   Set-RegistryEntry -Name "ServerName" -Value $ServerName # This should be legit or we don't get out of the above, without a CSV.
+} else {
+  $CSVFilename = $CSVFile
 }
 
 if (!$OnlyQIDs) {   # If we are not just trying a fix for one CSV, we will also see if we can install the Dell BIOS provider and set WOL to on, and backup Bitlocker keys to AD if possible
@@ -3380,8 +3381,6 @@ if (!$OnlyQIDs) {   # If we are not just trying a fix for one CSV, we will also 
 }
 $OSVersionInfo = Get-OSVersionInfo
 
-################# ( READ IN CSV AND PROCESS ) #####################
-
 if (!(Test-Path $($tmp))) {
   try {
     Write-Host "[ ] Creating $($tmp) .." -ForegroundColor Gray
@@ -3394,40 +3393,14 @@ if (!(Test-Path $($tmp))) {
 $oldpwd=(Get-Location).Path
 Set-Location "$($tmp)"  # Fix for Cmd.exe cannot be run from a server share..
 
-<#
-### Find CSV File name. 2024-05- This is dumb using 2 variables, I have added on to this so many times its terribly messy, but works. Ugh. Needs a rewrite/refactor SO badly.
-if (!($CSVFile -like "*.csv")) {  # Check for command line param -CSVFile
-  $CSVFilename = Find-ServerCSVFile "$($ServerName)\$($CSVLocation)"
-  if ($null -eq $CSVFilename) {
-    $CSVFilename = Find-LocalCSVFile "." $OldPwd
-  }
-} else {
-  if (!($CSVFilename)) {
-    Write-Verbose "Parameter found: -CSVFile $CSVFile"
-    Write-Verbose "Using: $($oldPwd)\$($CSVFile)"
-    $CSVFilename = "$($oldPwd)\$($CSVFile)"
-  } else {
-    Write-Verbose "Using: $($CSVFilename)"
-  }
-}
-#>
+
+################# ( READ IN CSV AND PROCESS ) #####################
+
+
 
 ########### Scheduled task check:
-
 if ($AddScheduledTask) { Check-ScheduledTask -ServerName $ServerName ; Exit }
 
-# READ CSV
-
-<#
-if (!(Test-Path -Path $CSVFilename -ErrorAction SilentlyContinue)) {  # Split path from file if it doesn't exist
-  if (!(Test-Path "$($oldpwd)\$(Split-Path $CSVFilename -leaf)")) {
-    Write-Host "[!] Error: Couldn't locate $CSVFilename or $($oldpwd)\$(Split-Path $CSVFilename -leaf) in $($oldpwd) !" -ForegroundColor Red | Tee-Object -Append -FilePath "$($log)/csv.log"
-    exit
-  } else {
-    $CSVFilename = Split-Path $CSVFilename -leaf
-  }
-}
-#>
 if ($null -eq $CSVFilename) {
   Write-Host "[X] Couldn't find CSV file : $CSVFilename " -ForegroundColor Red
   Exit
@@ -3908,7 +3881,23 @@ foreach ($CurrentQID in $QIDs) {
           $RebootRequired = $true
       }
       }
-
+      92194	{
+        if (Get-YesNo "$_ Remove Microsoft Visual Studio 2010 Tools for Office? " -Results $Results -QID $ThisQID) {
+          Write-Host "[.] Checking for product: '*Microsoft Visual Studio 2010 Tools*' .." -ForegroundColor Yellow
+          $Products = Search-Software "Microsoft Visual Studio 2010 Tools for Office" 
+          if ($Products) {
+            Remove-Software -Products $Products -Results $Results
+          } else {
+            Write-Host "[!] Software not found: $Products !!`n" -ForegroundColor Red
+          } 
+          # Try to delete paths from registry, if it still exists
+          $Path = "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\{9495AEB4-AB97-39DE-8C42-806EEF75ECA7}"
+          Remove-RegistryItem $Path
+          $Path = "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Microsoft Visual Studio 2010 Tools for Office Runtime (x64)"
+          Remove-RegistryItem $Path
+          $RebootRequired = $true
+        }
+      }
       ###################################################### START OF UPDATERS ################################################
       ####################################################### Installers #######################################
         # Install newest apps via Winget or Ninite, using $UpdateString
@@ -4483,6 +4472,26 @@ foreach ($CurrentQID in $QIDs) {
         }
         $QIDsMSTeams = 1
       }
+      106233 {
+        if (Get-YesNo "$_ Remove .NET Core 7 " -Results $Results -QID $ThisQID) { 
+          Write-Host "[.] Checking for product: '{5A66E598-37BD-4C8A-A7CB-A71C32ABCD78}' (.NET Core 5) .." -ForegroundColor Yellow
+          try {
+            $Products = (get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{5A66E598-37BD-4C8A-A7CB-A71C32ABCD78}'})
+          } catch {
+            Write-Host "[!] Error running command: '(get-wmiobject Win32_Product | Where-Object { $_.IdentifyingNumber -like '{5A66E598-37BD-4C8A-A7CB-A71C32ABCD78}'})'" -ForegroundColor Red
+            Write-Host "[!] Please remove or update .NET 5 manually." -ForegroundColor Red
+            break
+          }
+          if ($Products) {
+              Remove-Software -Products $Products -Results $Results
+              $QIDsMicrosoftNETCoreV5 = 1
+          } else {
+            Write-Host "[!] Guids not found: $Products !!`n" -ForegroundColor Red
+            $QIDsMicrosoftNETCoreV5 = 1
+          }             
+        }        
+      }
+
       { $QIDsMicrosoftNETCoreV5 -contains $_ } {
         if (Get-YesNo "$_ Remove .NET Core 5 (EOL) " -Results $Results -QID $ThisQID) { 
           <# Remove one or all of these??
