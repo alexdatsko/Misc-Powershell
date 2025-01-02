@@ -11,6 +11,7 @@ $info = "
 # v0.1 - 11-14-2024 - initial
 # v0.2 - 11-14-2024 - added 2 other fixes
 # v0.3 - 12-05-2024 - random save? not sure if this is 100%
+# v0.4 - 01-02-2025 - Fix for IIS 10.0 header on 2022+
 "
 
 $dateshort= Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -86,7 +87,8 @@ function Add-HSTSHeaderFix {
   Reset-IISServerManager -Confirm:$false
   Start-IISCommitDelay
 
-  Get-Website # Note name of web site for below
+  #Get-Website # Note name of web site for below
+  # This will always be Default Web Site unless we rename it, unlikely.
   $sitesCollection = Get-IISConfigSection -SectionPath "system.applicationHost/sites" | Get-IISConfigCollection
   $siteElement = Get-IISConfigCollectionElement -ConfigCollection $sitesCollection -ConfigAttribute @{"name"="Default Web Site"}  # Change name of website as needed
   $hstsElement = Get-IISConfigElement -ConfigElement $siteElement -ChildElementName "hsts"
@@ -98,13 +100,41 @@ function Add-HSTSHeaderFix {
   Remove-Module IISAdministration
   Write-Output "[+] Done with Add-HSTSHeaderFix"
 }
+function Get-OSVersion {
+  return [version](Get-CimInstance Win32_OperatingSystem).version
+}
 
 function Add-ServerHeaderRemoval {
-  Write-OuFtput "`n[!] Starting Add-ServerHeaderRemoval - this will remove 'Server: Microsoft-IIS/10.0' from the server headers"
-  Write-Output "[.] Adding regkey: cmd.exe /c 'reg add HKLM\SYSTEM\CurrentControlSet\Services\HTTP\Parameters /v DisableServerHeader /t REG_DWORD /d 2'"
-  cmd.exe /c 'reg add HKLM\SYSTEM\CurrentControlSet\Services\HTTP\Parameters /v DisableServerHeader /t REG_DWORD /d 2'
-  Start-Sleep 3
-  iisreset.exe
+  $osInfo = Get-CimInstance Win32_OperatingSystem
+  if ($osInfo.ProductType -ge 2) {
+    Write-Output "`n[!] Starting Add-ServerHeaderRemoval - this will remove 'Server: Microsoft-IIS/10.0' from the server headers"
+    if (Get-OSVersion -ge 10.0.20348) {
+      # First, back it up!!!      
+      $num = 0
+      while (Test-Path "C:\Windows\System32\inetsrv\config\applicationHost.config.bak$($num)") {
+        $num += 1
+      }
+      Copy-Item -Path "C:\Windows\System32\inetsrv\config\applicationHost.config" -Destination "C:\Windows\System32\inetsrv\config\applicationHost.config.bak$($num)" -Force
+      Import-Module WebAdministration
+      #Write-Output "[.] Removing x-aspnet-version header..."  
+      # this is not showing up currently, will come back to it.
+
+      Write-Output "[.] Removing 'X-Powered-By: ASP.NET' header..."
+      Clear-WebConfiguration "/system.webServer/httpProtocol/customHeaders/add[@name='X-Powered-By']"
+      
+      Write-Output "[.] Removing 'Server: Microsoft-IIS/10.0' header..."
+      Set-WebConfigurationProperty -Filter "system.webServer/security/requestFiltering" -Name "removeServerHeader" -Value "true" -PSPath "MACHINE/WEBROOT/APPHOST"
+      iisreset.exe
+    } else {
+      Write-Output "[.] Adding regkey: cmd.exe /c 'reg add HKLM\SYSTEM\CurrentControlSet\Services\HTTP\Parameters /v DisableServerHeader /t REG_DWORD /d 1'"
+      cmd.exe /c 'reg add HKLM\SYSTEM\CurrentControlSet\Services\HTTP\Parameters /v DisableServerHeader /t REG_DWORD /d 1'
+      Start-Sleep 3
+      iisreset.exe
+      # This doesn't work on Server 2022+
+    }
+  } else {
+    Write-Output "`n[!] Error: not a Windows server!"
+  }
   Write-Output "[+] Done with Add-ServerHeaderRemoval"
 }
 

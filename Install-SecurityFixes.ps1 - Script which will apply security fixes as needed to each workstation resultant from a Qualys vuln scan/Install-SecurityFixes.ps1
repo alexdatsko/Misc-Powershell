@@ -66,10 +66,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.38"
-# New in this version:  Fix 106233, etc
+$Version = "0.50.41"
+# New in this version:  Fix scheduled tasks, removed QIDlists.ps1, put it in the script
 
-$VersionInfo = "v$($Version) - Last modified: 12/13/2024"
+$VersionInfo = "v$($Version) - Last modified: 12/31/2024"
 
 
 # CURRENT BUGS TO FIX:
@@ -103,7 +103,6 @@ $MQRAdir = "C:\Program Files\MQRA"      # This should never change
 $Log = "$($MQRADir)\logs"               # Save Logs to MQRA folder
 $ConfigFile = "$($pwd)\_config.ps1"     # Configuration file 
 $OldConfigFile = "$oldpwd\_config.ps1"  # Configuration file  (old location)
-$QIDsListFile = "$(Get-Location)\QIDLists.ps1"   # QID List file 
 $SQLiteDB = "$($MQRADir)\client.db"     # SQLite DB (eventually..)
 
 $DCUFilename = ($DCUUrl -split "/")[-1]
@@ -119,7 +118,7 @@ $CheckOptionalUpdates = $true                # Set this to false to ignore Optio
 $AlreadySetOptionalUpdates = $false          # This is to make sure we do not keep trying to set the Optional Updates registry value.
 $oldPwd = $pwd                               # Grab location script was run from
 $UpdateBrowserWait = 60                      # Default to 60 seconds for updating Chrome, Edge or Firefox with -Automated. Can be overwritten in Config, for slower systems.. 
-$UpdateNiniteWait = 90                       # How long to wait for the Ninite updater to finish and then force-close, default 90 seconds
+$UpdateNiniteWait = 120                      # How long to wait for the Ninite updater to finish and then force-close, default 90 seconds
 $UpdateDellCommandWait = 60                  # How long to wait for Dell Command Update to re-install/update
 $SoftwareInstallWait = 60                    # How long to wait for generic software to finish installing
 $LogToEventLog = $true                       # Set this to $false to not log to event viewer Application log, source "MQRA", also picked up in _config.ps1
@@ -127,6 +126,49 @@ $LogToEventLog = $true                       # Set this to $false to not log to 
 # Applications we currently support updating through WinGet:
 $WingetApplicationList = @("Chrome","MSEdge","Firefox","Brave","Teamviewer 15","Irfanview","Notepad++","Zoom client","Dropbox","7-zip","Visual Studio Code","iTunes","iCloud")   
 $WinGetOpts = "-h --accept-source-agreements --accept-package-agreements"
+
+##################################################### QIDLists.ps1 contents
+
+# QIDLists - These variables contain the list of vulnerabilities that can be fixed by the script. It is kept in a separate file so it can be updated programatically.
+#    Note: to make these lists, copy large list of QIDs related to out of date app, 1 per line to a file, which you can copy from Excel and paste into a txt file. 
+#          in linux, cat filename | sort | uniq | tr -s '\n' ','
+#          delete the first and last comma if exists..
+
+$QIDsAppleiCloud = 371058,371249,371292,371367,371588,371708,371813,372150,372200,372313,372369,372373,372374,372464,372819,372851,373343,373495,373503
+$QIDsAppleiTunes = 371057,371222,371294,371368,371680,371710,371816,372149,372196,372309,372351,372372,372466,372812,373324,374108,374163,375508,375801,375876,376488,376647,376649,376650,376654
+$QIDsChrome = 115077,115149,115166,119485,119493,119539,119601,119609,119627,119708,119743,119750,119773,119872,119930,119950,120059,120198,120220,120235,120297,120338,120405,120456,120560,120697,120725,120803,120812,120988,121201,121225,121283,121317,121362,121395,121485,121517,121583,121586,121622,121719,121757,121798,121813,121825,121840,121844,121893,122052,122075,122091,122127,122366,122485,122579,122630,122695,122725,122745,122829,122842,122867,123023,123141,123188,123196,123266,123364,123385,123501,123525,123570,123596,123704,123721,123740,123798,123869,123967,124153,124185,124379,124390,124410,124589,124693,124746,124758,124772,124865,124907,370005,370014,370067,370091,370109,370124,370134,370151,370162,370226,370249,370288,370339,370356,370376,370419,370446,370485,370546,370566,370613,370619,370643,370678,370691,370741,370763,370780,370808,370829,370889,370916,370950,370970,370974,370990,371003,371097,371172,371250,371268,371319,371327,371365,371378,371614,371639,371679,371692,371758,371771,371782,371820,371848,372020,372048,372050,372073,372111,372117,372166,372177,372186,372247,372286,372323,372342,372365,372403,372408,372410,372411,372438,372455,372476,372491,372517,372525,372534,372555,372572,372575,372576,372578,372579,372584,372630,372634,372636,372638,372639,372640,372829,372873,372894,373151,373319,373342,373368,373387,373421,373485,373510,373544,373714,373995,373998,374167,374531,374832,374876,375080,375091,375119,375319,375378,375426,375445,375459,375461,375505,375546,375595,375622,375638,375718,375738,375761,375784,375821,375846,375875,375883,375923,375948,375966,376000,376055,376140,376159,376734,376828,377960,378040,378059,378123,378340,378417,378426,378455,378496,378549,378676,378734,378777,378799,378818
+$QIDsEdge = 374833,375094,375097,375327,375342,375385,375446,375456,375463,375499,375526,375575,375596,375618,375627,375628,375641,375660,375737,375742,375793,375822,375830,375843,375861,375868,375884,375927,375952,375974,376010,376092,376158,376166,376229,376288,376374,376393,376424,376446,376480,376500,376510,376528,376542,376572,376599,376646,376660,376666,376685,376715,376719,376744,376800,376829,376844,376964,376966,377593,377613,377636,377720,377732,377757,377798,377805,377840,377894,377923,377935,377964,378000,378001,378034,378067,378128,378358,378418,378442,378471,378502,378546
+$QIDsFirefox = 115077,115149,115166,119485,119493,119539,119601,119609,119627,119708,119743,119750,119773,119872,119930,119950,120059,120198,120220,120235,120297,120338,120405,120456,120560,120697,120725,120803,120812,120988,121201,121225,121283,121317,121362,121395,121485,121517,121583,121586,121622,121719,121757,121798,121813,121825,121840,121844,121893,122052,122075,122091,122127,122366,122485,122579,122630,122695,122725,122745,122829,122842,122867,123023,123141,123188,123196,123266,123364,123385,123501,123525,123570,123596,123704,123721,123740,123798,123869,123967,124153,124185,124379,124390,124410,124589,124693,124746,124758,124772,124865,124907,370005,370014,370067,370091,370109,370124,370134,370151,370162,370226,370249,370288,370339,370356,370376,370419,370446,370485,370546,370566,370613,370619,370643,370678,370691,370741,370763,370780,370808,370829,370889,370916,370950,370970,370974,370990,371003,371097,371172,371250,371268,371319,371327,371365,371378,371614,371639,371679,371692,371758,371771,371782,371820,371848,372020,372048,372050,372073,372111,372117,372166,372177,372186,372247,372286,372323,372342,372365,372392,372403,372408,372410,372411,372438,372445,372455,372476,372481,372490,372491,372517,372525,372534,372555,372572,372575,372576,372578,372579,372584,372630,372634,372636,372638,372639,372640,372825,372829,372873,372894,373103,373120,373151,373319,373320,373342,373368,373387,373388,373421,373485,373490,373510,373542,373544,373714,373989,373995,373998,374166,374167,374531,374576,374827,374832,374876,374918,375080,375091,375100,375119,375209,375319,375378,375408,375426,375445,375459,375461,375478,375505,375542,375546,375595,375606,375622,375638,375642,375712,375718,375738,375753,375761,375784,375821,375824,375833,375846,375875,375883,375923,375945,375948,375966,376000,376015,376055,376140,376143,376159,376237,376387,376447,376458,376519,376574,376625,376643,376705,376758,376828,377600
+$QIDsZoom = 371344,372477,372832,373366,375391,375487,375805,376046,376117,376624,376638,376640,376957,376960,376967,376970,376973,377083,377687,377694,377756,378079,378097,378580,378581,378582,378583,378585,378814,378783
+$QIDsTeamviewer = 371174,372386,373335,371077,372237
+$QIDsDropbox = 111111 # Dummy entry, none found yet..
+$QIDsOracleJava = 123168,123519,123714,124169,124567,124882,370087,370161,370280,370371,370469,370610,370727,370887,371079,371265,371528,371749,372013,372163,372333,372508,373156,373540,374873,375477,375729,375964,376252,376546,376733,377642,377904,378425,378673
+$QIDsAdoptOpenJDK = 376436,376423
+$QIDsVirtualBox = 372509,372512,372542,373154,373553,374881,375481,375736,375967,376255,376548,376736
+$QIDsAdobeReader = 116893,117797,118087,118319,118438,118486,118670,118782,118956,119053,119076,119145,119594,119768,119838,120103,120295,120777,120866,121176,121442,121711,121867,122484,122663,123021,123265,123579,123662,124151,124506,124767,370084,370154,370277,370364,370499,370650,370948,371060,371132,371210,371230,371317,371372,371395,371638,371659,371729,371777,375845,375953,377630
+$QIDsIntelGraphicsDriver = 370842,371696,371263,370842
+$QIDsNVIDIA = 370263,376609,376042,376247,375689,372472,372875,373158,375727
+#$QIDsUpdateMicrosoftStoreApps = 91914,91834,91869,91866,91847,91764,91773,91774,91775,91761,91834,91871,91919,92015,91726
+$QIDsFlash = 115231,120098,122742,122827,122866,123022,123140,123181,123187,123259,123399,123524,123580,123601,123702,123712,123797,123963,124152,124154,124208,124388,124421,124690,124779,124872,370060,370083,370131,370155,370260,370756,370819,370869,370934,370996,371062,371138,371185,371320,371330,371361,371646,371731,371780,371835,372106,372381,372457,372853,373520
+$QIDsMSXMLParser4 = 105457
+$QIDsSpectreMeltdown = 91537,91462,91426,91428
+$QIDsMicrosoftAccessDBEngine = 106067,106069
+$QIDsSQLServerCompact4 = 106023
+$QIDsDellCommandUpdate = 376132
+$QIDsMicrosoftVisualStudioActiveTemplate = 90514
+$QIDsMicrosoftNETCoreV5 = 106089
+$QIDsMicrosoftSilverlight = 106028
+$QIDsGhostScript = 371157
+$QIDsOffice2007 = 110330,110327,110325,110324,110323,110320
+$QIDsVLC = 379007,379008
+$QIDsMSTeams = 378941,378755
+$QIDsIrfanView = 379695
+$QIDsNotepadPP = 378819,379100
+$QIDs_dotNET_Core6 = 92112,92080,92100,92155,92129,92180
+$MicrosoftODBCOLEDB = 378931,379596,380160
+$QIDsVsCode = 380598
+$QIDs7zip = 378839
+
 
 ################################################### INITIAL CHECKS ########
 
@@ -528,33 +570,6 @@ Remove-RegistryEntry -Name "BooleanValue"
 Show-RegistryValues
 #>
 
-function Read-QIDLists {    # NOT USING!!!!
-  # READ IN VALUES FROM QIDsList 
-  if ($QIDsListFile -like "*.ps1") {
-    if (Test-Path $QIDsListFile) {
-      try {
-        #. "$($QIDsListFile)"  # This does not import our variables for global use..
-        $scriptContent = Get-Content $QIDsListFile -Raw
-        $scriptBlock = [scriptblock]::Create($scriptContent)
-    
-        # Invoke the script block in the global scope
-        &$scriptBlock
-        foreach ($variableName in $scriptBlock.Variables.Keys) {
-            # Define each variable in the global scope
-            #$script:$variableName = $scriptBlock.Variables[$variableName]  # Need to do this for all other vars, not ideal.. skipping this for now.
-        }
-      } catch {
-        Write-Output "`n`n[!] ERROR: Couldn't import $($QIDsListFile) !! Exiting"
-        Stop-Transcript
-        Set-Location $pwd
-        Exit
-      }
-    } else {
-      Write-Output "`n`n[!] Warning: Couldn't find $($QIDsListFile) .. Will try to update.."
-    }
-    # Update will be done separately..
-  }
-}
 
 function Get-OSVersion {
   return [version](Get-CimInstance Win32_OperatingSystem).version
@@ -707,25 +722,6 @@ Function Update-Script {
     Write-Host "[-] No update found for $($Version)."
     #return $false
   }
-}
-
-Function Update-QIDLists {
-  # For 0.32 I am assuming $pwd is going to be the correct path
-  if (!($QIDsVersion)) { $QIDsVersion = "0.01" }   # If its missing, assume its super old.
-  Write-Host "[.] Checking for updated QIDLists file on github.. Current Version = $($QIDsVersion)"  # Had to change to Write-Host, Write-Output is being send back to caller
-  $url = "https://raw.githubusercontent.com/alexdatsko/Misc-Powershell/main/Install-SecurityFixes.ps1%20-%20Script%20which%20will%20apply%20security%20fixes%20as%20needed%20to%20each%20workstation%20resultant%20from%20a%20Qualys%20vuln%20scan/QIDLists.ps1"
-  if (Update-ScriptFile -URL $url -FilenameTmp "$($tmp)\QIDLists.ps1" -FilenamePerm "$($mqradir)\QIDLists.ps1" -VersionStr '$QIDsVersion = *' -VersionToCheck $QIDsVersion) {
-    Write-Host "[+] Updates found, reloading QIDLists.ps1 .."
-    return $true
-    #Read-QIDLists  # Doesn't work in this scope, do it below in global scope
-#    if ($script:Automated) {    # This isnt necessary here, just overwriting variables, not rerunning the script!
-#      Set-RegistryEntry -Name "ReRun" -Value $true
-#    }
-  } else {
-    Write-Host "[-] No update found for $($QIDsVersion)."
-    return $false
-  }
-  return $false
 }
 
 Function Get-OS {
@@ -1282,7 +1278,7 @@ function Copy-FilesToMQRAFolder {
       return $true
     }
   }
-  Foreach ($File in @("Install-SecurityFixes.ps1","_config.ps1","QIDLists.ps1","*.csv")) {
+  Foreach ($File in @("Install-SecurityFixes.ps1","_config.ps1","*.csv")) {
     Write-Host "[+] Copying file from: '$($ConfigFolder)\$($file)' to '$($NewConfigFolder)\$($file)'" -ForegroundColor Yellow
     try {
       $null = Copy-Item -Path "$($ConfigFolder)\$($file)" -Destination "$($NewConfigFolder)\" -Force | Out-Null
@@ -1471,41 +1467,6 @@ function Start-Browser {
   param ($url)
   #Start-Process "C:\Program Files (x86)\Google\Chrome\Application\chrome.exe" -ArgumentList "$($url)"   
   Start-Process "$($url)"  # Lets just load the URL in the system default browser..
-}
-
-Function Add-VulnToQIDList {
-  param ( $QIDNum,
-          $QIDName,
-          $QIDVar,
-          $QIDsAdded)
-  if ($QIDsAdded -notcontains $QIDNum) {
-    #$QIDsListFile = $ConfigFile  # Default to using the ConfigFile.. Probably want to split this out again.. but leave for now
-    if (Get-YesNo "New vulnerability found: [QID$($QIDNum)] - [$($QIDName)] - Add?") {
-      Write-Verbose "[v] Adding to variable in $($QIDsListFile): Variable: $($QIDVar)"
-      if ($script:Automated) { Write-Output "[QID$($QIDNum)] - [$($QIDName)] - Adding" }
-      $QIDLine = (Select-String  -Path $QIDsListFile -pattern $QIDVar).Line
-      Write-Verbose "[v] Found match: $QIDLine"
-      $QIDLineNew = "$QIDLine,$QIDNum"  | Select-Object -Unique  
-      Write-Verbose "[v] Replaced with: $QIDLineNew"
-      $QIDFileNew=@()
-      ForEach ($str in $(Get-Content -path $QIDsListFile)) {
-        if ($str -like "*$($QIDLine)*") {
-          Write-Verbose "Replaced: `n$str with: `n$QIDLineNew"
-          $QIDFileNew += $QIDLineNew
-        } else {
-          $QIDFileNew += $str
-        }
-      }
-      
-      $QIDFileNew | Set-Content -path $QIDsListFile -Force
-      # Can't run this here as the scope is local vs global..
-      $QIDsAdded += $QIDNum
-      Write-Verbose "[!] Adding $QIDNum to QIDsAdded. QIDsAdded = $QIDsAdded"
-    }
-  } else {
-    Write-Output "[.] QID $QIDNum already added, skipping"
-    Write-Verbose "Found $QIDNum in $QIDsAdded"
-  }
 }
 
 ################################################# VULN REMED FUNCTIONS ###############################################
@@ -2321,7 +2282,7 @@ Function Update-Application {
       Write-Host "[.] Running the Ninite $Updatestring updater, please close this window by hitting DONE when complete! Otherwise, we will kill the proce after $UpdateNiniteWait seconds."
       Start-Process -FilePath $OutFile -NoNewWindow -Wait
       if ($Risky) {
-        Start-Sleep $UpdateNiniteWait # Wait X seconds to make sure the app has updated, usually 30-45s or so at least!! Longer for slower machines!
+        Start-Sleep $UpdateNiniteWait # Wait X seconds to make sure the app has updated, usually 30-45s or so at least!! Longer for slower machines! Set to 120s-12/16/24
         Write-Host "[.] Killing the Ninite updater window, hopefully it is stuck at 'Done'"
         taskkill.exe /f /im $(($Outfile -split "\\")[-1])  # Grab filename from full path if given
       } else {
@@ -2419,17 +2380,17 @@ function Check-ScheduledTask {
     $taskSettings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 1) -WakeToRun
 
     # Check $ST_DayOfWeek and $ST_StartTime for sane values first....
-    if ($ST_StartTime -eq "0") {
+    if (-not $ST_StartTime) {
       $ST_StartTime = Get-Date -Format "23:00:00"
       $ST_StartTimeHours = $ST_StartTime.Substring(0,2)  # get number of hours from date format
       Write-Verbose "ST_StartTimeHours = $ST_StartTimeHours"
     }
-    if ($ST_DayOfWeek -eq "0") {
+    if (-not $ST_DayOfWeek) {
       $ST_DayOfWeek = 4 # Thursday
     }
     Write-Verbose "ST_StartTime: $ST_StartTime ST_DayOfWeek: $ST_DayOfWeek"
     #$FirstRun = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $ST_DayOfWeek -WeeksInterval 1 -At $ST_StartTime -RandomDelay 01:00:00
-    $FirstRun = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $ST_DayOfWeek -WeeksInterval 4 -At $ST_StartTime  -RandomDelay 01:00:00
+    $FirstRun = New-ScheduledTaskTrigger -Weekly -DaysOfWeek $ST_DayOfWeek -WeeksInterval 1 -At $ST_StartTime  -RandomDelay 01:00:00
 
     #IGNORING 2nd run date now, can retrigger remotely eventually..
     #$SecondRunDate = (Get-Date -Day 14).AddHours($ST_StartTimeHours)
@@ -2452,22 +2413,15 @@ function Check-ScheduledTask {
             Write-Verbose "No task found, task will be added."
             $taskRequiresUpdate = $true
         }
-    } else {
-      Write-Verbose "ExistingTask: $existingTask"
-      $taskRequiresUpdate = $true
-    }
-
-    # If the task doesn't exist or needs an update, create/update it
+    } 
     if ($taskRequiresUpdate) {
-        Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
-        try {
-          $null = Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $FirstRun -RunLevel Highest -User "SYSTEM" -Settings $taskSettings | Out-Null  # ... Add $SecondRun
-        } catch {
-          Write-Host "[!] Error with Register-ScheduledTask:  $_"
-        }
+      Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue
+      try {
+        $null = Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $FirstRun -RunLevel Highest -User "SYSTEM" -Settings $taskSettings | Out-Null  # ... Add $SecondRun
         Write-Host "[+] Scheduled task '$taskName' has been created or updated." -ForegroundColor Green
-    } else {
-        Write-Host "[+] Scheduled task '$taskName' is already configured correctly."  -ForegroundColor Green
+      } catch {
+        Write-Host "[!] Error with Register-ScheduledTask:  $_" -ForegroundColor Red
+      }
     }
   } else {
     Write-Host "[+] Scheduled task will not be created on $($ComputerName), per _config.ps1"  -ForegroundColor Yellow
@@ -3195,15 +3149,8 @@ if (([WMI]'').ConvertToDateTime((Get-WmiObject Win32_OperatingSystem).InstallDat
 
 Write-Host "[.] Loading config from $(Get-Location) .." -ForegroundColor Yellow
 . "./_config.ps1"
-Write-Host "[.] Loading QIDList from $(Get-Location) .." -ForegroundColor Yellow
-. "./QIDLists.ps1"
 
-# Check for newer version of script before anything..
 Update-Script  # CHECKS FOR SCRIPT UPDATES, UPDATES AND RERUNS IF NECESSARY
-if (Update-QIDLists) { 
-  Write-Host "[.] Loading new QIDList from $(Get-Location) .." -ForegroundColor Yellow        
- . "./QIDLists.ps1" 
- }
 
 # CONFIG AND OTHER FILES  HAVE BEEN COPIED ALREADY BY HERE..
 
@@ -3401,7 +3348,7 @@ $oldpwd=(Get-Location).Path
 
 
 ########### Scheduled task check:
-if ($AddScheduledTask) { Check-ScheduledTask -ServerName $ServerName ; Exit }
+if ($AddScheduledTask) { Check-ScheduledTask ; Exit }
 
 if ($null -eq $CSVFilename) {
   Write-Host "[X] Couldn't find CSV file : $CSVFilename " -ForegroundColor Red
@@ -3438,116 +3385,6 @@ if ($null -eq $CSVFilename) {
 $Rows = @()
 $QIDsAdded = @()
 $CurrentQID = ""
-$CSVData | ForEach-Object {
-# Search by title:
-  $CurrentQID=($_.QID).Replace('.0','') 
-  if ($CurrentQIDsAdded -notcontains $CurrentQID) {
-    if ($_.Title -like "Apple iCloud for Windows*") {
-      if (!($QIDsAppleiCloud -contains $CurrentQID)) {
-        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsAddedQIDsAppleiTunes' 
-        . $($QIDsListFile)
-        $QIDsAdded+=[int]$CurrentQID
-      }
-    }
-    if ($_.Title -like "Apple iTunes for Windows*") {
-      if (!($QIDsAppleiTunes -contains $CurrentQID)) {
-        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsAppleiTunes' 
-        . $($QIDsListFile)
-        $QIDsAdded+=[int]$CurrentQID
-      }
-    }
-    if ($_.Title -like "Chrome*") {
-      if (!($QIDsTeamviewer -contains $CurrentQID)) {
-        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsTeamViewer' 
-        . $($QIDsListFile)
-        $QIDsAdded+=[int]$CurrentQID
-      }
-    }
-    if ($_.Title -like "Firefox*") {
-      if (!($QIDsFirefox -contains $CurrentQID)) {
-        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsFirefox'
-        . $($QIDsListFile)
-        $QIDsAdded+=[int]$CurrentQID
-      }
-    }
-    if ($_.Title -like "Zoom Client*") {
-      if (!($QIDsZoom -contains $CurrentQID)) {
-        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsZoom'
-        . $($QIDsListFile)
-        $QIDsAdded+=[int]$CurrentQID
-      }
-    }
-    if ($_.Title -like "TeamViewer*") {
-      if (!($QIDsTeamviewer -contains $CurrentQID)) {
-        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsTeamViewer'
-        . $($QIDsListFile)
-        $QIDsAdded+=[int]$CurrentQID
-      }
-    }  
-    if ($_.Title -like "Dropbox*") {
-      if (!($QIDsDropbox -contains $CurrentQID)) {
-        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsDropbox'
-        . $($QIDsListFile)
-        $QIDsAdded+=[int]$CurrentQID
-      }
-    }
-    if ($_.Title -like "Oracle Java*") {            ########
-      if (!($QIDsOracleJava -contains $CurrentQID)) {
-        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsOracleJava' 
-        . $($QIDsListFile)
-        $QIDsAdded+=[int]$CurrentQID
-      }
-    }
-    if ($_.Title -like "Adopt Open JDK*") {             ############
-      if (!($QIDsAdoptOpenJDK -contains $CurrentQID)) {
-        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsAdoptOpenJDK' 
-        . $($QIDsListFile)
-        $QIDsAdded+=[int]$CurrentQID
-      }
-    }
-    if ($_.Title -like "VirtualBox*") {
-      if (!($QIDsVirtualBox -contains $CurrentQID)) {
-        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsVirtualBox'
-        . $($QIDsListFile)
-        $QIDsAdded+=[int]$CurrentQID
-      }
-    }
-    if ($_.Title -like "Adobe Reader*") {  
-      if (!($QIDsAdobeReader -contains $CurrentQID)) {
-        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsAdobeReader'
-        $QIDsAdded+=[int]$CurrentQID
-      }
-    }
-    if ($_.Title -like "Intel Graphics*") {
-      if (!($QIDsIntelGraphicsDriver -contains $CurrentQID)) {
-        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsIntelGraphicsDriver'
-        . $($QIDsListFile)
-        $QIDsAdded+=[int]$CurrentQID
-      }
-    }
-    if ($_.Title -like "NVIDIA*") {
-      if (!($QIDsNVIDIA -contains $CurrentQID)) { 
-        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsNVIDIA' 
-        . $($QIDsListFile)
-        $QIDsAdded+=[int]$CurrentQID
-      }
-    }
-    if ($_.Title -like "Dell Client*") {
-      if (!($QIDsDellCommandUpdate -contains $CurrentQID)) {
-        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsDellCommandUpdate' 
-        . $($QIDsListFile)
-        $QIDsAdded+=[int]$CurrentQID
-      }
-    }
-    if ($_.Title -like "Ghostscript*") {
-      if (!($QIDsGhostscript -contains $CurrentQID)) {
-        Add-VulnToQIDList $CurrentQID $_.Title  'QIDsGhostScript' 
-        . $($QIDsListFile)
-        $QIDsAdded+=[int]$CurrentQID
-      }
-    }
-  }
-}
 Write-Output "[.] Done checking for new vulns.`n"
 
 ############################### Find applicable rows to this machine #################################
