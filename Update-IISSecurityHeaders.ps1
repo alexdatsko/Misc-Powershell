@@ -11,7 +11,7 @@ $info = "
 # v0.1 - 11-14-2024 - initial
 # v0.2 - 11-14-2024 - added 2 other fixes
 # v0.3 - 12-05-2024 - random save? not sure if this is 100%
-# v0.4 - 01-02-2025 - Fix for IIS 10.0 header on 2022+
+# v0.4 - 01-03-2025 - Fix for IIS 10.0 header on 2022+
 "
 
 $dateshort= Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -131,6 +131,7 @@ function Add-ServerHeaderRemoval {
       Start-Sleep 3
       iisreset.exe
       # This doesn't work on Server 2022+
+      Write-Host "`n[!] NOTE: This will require a reboot after!!`n"
     }
   } else {
     Write-Output "`n[!] Error: not a Windows server!"
@@ -138,11 +139,48 @@ function Add-ServerHeaderRemoval {
   Write-Output "[+] Done with Add-ServerHeaderRemoval"
 }
 
+function Check-IISServices {
+  $iisServices = @("W3SVC", "WAS", "IISADMIN")
+  $statusReport = @()
+  Write-Output "[.] Checking Services : $iisServices"
+  foreach ($serviceName in $iisServices) {
+      $service = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+
+      if ($null -eq $service) {
+          Write-Output "[!] Service $serviceName not found on this system."
+          continue
+      }
+
+      if ($service.Status -ne 'Running') {
+          Write-Output "[-] Service $serviceName is not running. Attempting to start it..."
+          try {
+              Start-Service -Name $serviceName -ErrorAction Stop
+              Write-Output "Service $serviceName started successfully."
+              $status = "Started"
+          } catch {
+              Write-Output "[-] Failed to start service $serviceName: $_"
+              $status = "Failed to Start"
+          }
+      } else {
+          Write-Output "[+] Service $serviceName is running."
+          $status = "Running"
+      }
+      $statusReport += [PSCustomObject]@{
+          ServiceName = $serviceName
+          Status      = $status
+      }
+  }
+  return $statusReport
+}
+
+
 Add-IISReferrerPolicyEtc
 Add-HSTSHeaderFix
 Add-ServerHeaderRemoval
+$result = Check-IISServices
+$result | Format-Table -AutoSize
 
 Write-Output "[.] Stopping transcript."
 stop-transcript
 
-Write-Output "[!] Done! Device will need a reboot for the ServerHeader removal fix, you will need to take care of this."
+Write-Output "[!] Done! (Device may need a reboot for header fix, if noted above.)"
