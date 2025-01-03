@@ -12,6 +12,7 @@ $info = "
 # v0.2 - 11-14-2024 - added 2 other fixes
 # v0.3 - 12-05-2024 - random save? not sure if this is 100%
 # v0.4 - 01-03-2025 - Fix for IIS 10.0 header on 2022+
+# v0.5 - 01-03-2025 - Remove TLS 1.0/1.1
 "
 
 $dateshort= Get-Date -Format "yyyy-MM-dd HH:mm:ss"
@@ -173,10 +174,66 @@ function Check-IISServices {
   return $statusReport
 }
 
+function Remove-TLS10and11 {
+  $datetime = Get-Date -Format "yyyy-MM-dd hh_mm_ss"
+  $logfile = "c:\Temp\Disable-TLS10And11.txt"
+  $debug = 0
+
+  "------------------- $datetime"  | tee -append $logfile
+  if (!(Test-Path "C:\Temp")) {
+    New-Item -ItemType Directory -Path "C:\Temp" -ErrorAction Continue
+  }
+
+  Write-Output "[.] Current TLS 1.0, 1.1 and 1.2 settings:"  | tee -append $logfile
+  Get-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.0\Server"  | ft  | tee -append $logfile
+  Get-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.1\Server"  | ft  | tee -append $logfile
+  Get-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.2\Server"  | ft  | tee -append $logfile
+
+  try {
+    Write-Output "[.] Disable TLS 1.0 to Disabled : creating key" | tee -append $logfile
+    New-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.0\Server" -Force | Out-Null
+    Write-Output "[+]   Setting HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.0\Server\Enabled=0" | tee -append $logfile
+    New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.0\Server" -Name "Enabled" -Value 0 -PropertyType "DWORD" -Force | Out-Null
+    Write-Output "[+]   Setting HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.0\Server\DisabledByDefault=1" | tee -append $logfile
+    New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.0\Server" -Name "DisabledByDefault" -Value 1 -PropertyType "DWORD" -Force | Out-Null
+  } catch {
+    Write-Output "ERROR: $_" | tee -append $logfile
+  }
+  try {
+    Write-Output "[.]  Disable TLS 1.1 to Disabled : creating key" | tee -append $logfile
+    Write-Output "[+]   Setting HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.1\Server\Enabled=0" | tee -append $logfile
+    New-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.1\Server" -Force | Out-Null
+    New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.1\Server" -Name "Enabled" -Value 0 -PropertyType "DWORD" -Force | Out-Null
+    Write-Output "[+]   Setting HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.1\Server\DisabledByDefault=1" | tee -append $logfile
+    New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.1\Server" -Name "DisabledByDefault" -Value 1 -PropertyType "DWORD" -Force | Out-Null
+  } catch {
+    Write-Output "ERROR: $_" | tee -append $logfile
+  }
+  try {
+    Write-Output "[.] Enable TLS 1.2 to Enabled : creating key" | tee -append $logfile
+    New-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.2\Server" -Force | Out-Null
+    Write-Output "[+]   Setting HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.2\Server\Enabled=1" | tee -append $logfile
+    New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.2\Server" -Name "Enabled" -Value 1 -PropertyType "DWORD" -Force | Out-Null
+    Write-Output "[+]   Setting HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.2\Server\DisabledByDefault=0" | tee -append $logfile
+    New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.2\Server" -Name "DisabledByDefault" -Value 0 -PropertyType "DWORD" -Force | Out-Null
+  } catch {
+    Write-Output "ERROR: $_" | tee -append $logfile
+  }
+
+  Write-Output "[.] New TLS 1.0, 1.1 and 1.2 settings:"
+  Get-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.0\Server"  | ft
+  Get-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.1\Server"  | ft
+  Get-Item -Path "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols\TLS 1.2\Server"  | ft
+
+  Write-Output "[+] TLS 1.0 and 1.1 are disabled, and TLS 1.2 is enabled. Please restart the server to apply changes." | tee -append $logfile
+  Write-Output "[!] Done!" 
+
+}
 
 Add-IISReferrerPolicyEtc
 Add-HSTSHeaderFix
 Add-ServerHeaderRemoval
+Remove-TLS10and11
 $result = Check-IISServices
 $result | Format-Table -AutoSize
 
