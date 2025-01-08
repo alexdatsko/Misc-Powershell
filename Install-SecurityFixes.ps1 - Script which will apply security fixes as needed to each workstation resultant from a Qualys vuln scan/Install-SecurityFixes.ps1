@@ -4722,13 +4722,15 @@ foreach ($CurrentQID in $QIDs) {
 
         if (Get-YesNo "$_ Remove Microsoft Office Remote Code Execution Vulnerabilities (MS15-022) (Msores.dll) - ClickToRun office removal? " -Results $Results -QID $ThisQID) { 
           #$Products = Get-Products "Microsoft Office"    # This will select ANY version with that string in the name like the actual version installed alongside Click-To-Run..
-          $Products = Get-WmiObject Win32_Product | Where-Object { $_.Name -like "Microsoft Office" }
-          if ($Products.Name -eq "Microsoft Office") {
-              if (Get-YesNo "[?] Remove $Products.Name - $Products.IdentifyingNumber") {
-                Remove-Software -Products $Products -Results $Results | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-MSOffice-C2R_MS15-022.log"
+          $Products = Get-WmiObject Win32_Product | Where-Object { $_.Name -like "Microsoft Office (en-US)" -or $_.Name -like "Microsoft Office (fr-fr)" -or $_.Name -like "Microsoft Office (es-es)" }
+          # NOT 100% sure this works...
+
+          foreach ($ProductName in $Products.Name) {
+              if (Get-YesNo "[?] Remove $ProductName ") {
+                Remove-Software -Products $ProductName -Results $Results | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-MSOffice-C2R_MS15-022.log"
               }
           } else {
-            Write-Host "[!] Product not found: (MS Office click-to-run version with 'Microsoft Office' in the name).. Please remove manually/update script !!`n" -ForegroundColor Red  | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-MSOffice-C2R_MS15-022.log"
+            Write-Host "[!] Product not found: (MS Office click-to-run version with 'Microsoft Office (xx-xx)' in the name).. Please remove manually/update script !!`n" -ForegroundColor Red  | Tee-Object -Append -FilePath "$($log)\$($ThisQID)-MSOffice-C2R_MS15-022.log"
             if (-not $Automated) { appwiz.cpl }
           }  
           $RebootRequired = $true
