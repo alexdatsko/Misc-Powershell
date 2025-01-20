@@ -104,7 +104,7 @@ $Log = "$($MQRADir)\logs"               # Save Logs to MQRA folder
 $ConfigFile = "$($pwd)\_config.ps1"     # Configuration file 
 $OldConfigFile = "$oldpwd\_config.ps1"  # Configuration file  (old location)
 $SQLiteDB = "$($MQRADir)\client.db"     # SQLite DB (eventually..)
-$TimeoutSec = 10
+$TimeoutSec = 10                        # How many seconds until Invoke-RestMethod times out
 
 $DCUFilename = ($DCUUrl -split "/")[-1]
 $DCUVersion = (($DCUUrl -split "_WIN_")[1] -split "_A0")[0]
@@ -3179,6 +3179,7 @@ if ($APIKey) {
 
 if (!($ping = API-Test)) {
   Log "[-] ERROR: API not functional."  -ForegroundColor Red -Both
+  $SkipAPI = $true
 } else {
   $colors = @("Red","Orange","Yellow","Light Green","Green")
   $pings = @(125,100,75,50,25)
