@@ -66,10 +66,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.41"
-# New in this version:  Fix scheduled tasks, removed QIDlists.ps1, put it in the script
+$Version = "0.50.42"
+# New in this version:  Fix API down issue
 
-$VersionInfo = "v$($Version) - Last modified: 12/31/2024"
+$VersionInfo = "v$($Version) - Last modified: 01/20/2025"
 
 
 # CURRENT BUGS TO FIX:
@@ -104,6 +104,7 @@ $Log = "$($MQRADir)\logs"               # Save Logs to MQRA folder
 $ConfigFile = "$($pwd)\_config.ps1"     # Configuration file 
 $OldConfigFile = "$oldpwd\_config.ps1"  # Configuration file  (old location)
 $SQLiteDB = "$($MQRADir)\client.db"     # SQLite DB (eventually..)
+$TimeoutSec = 10
 
 $DCUFilename = ($DCUUrl -split "/")[-1]
 $DCUVersion = (($DCUUrl -split "_WIN_")[1] -split "_A0")[0]
@@ -2833,7 +2834,7 @@ Function API-Call {
   }
   try {
     Log "[API-Call] Calling IRM : -Uri '$url' -UserAgent '$UserAgent' -Method '$Method' -Headers '$($headers | out-string) $($headers.Value)' -Body '$body'"
-    $Resp = Invoke-RestMethod -Uri $url -UserAgent $UserAgent -Method $Method -Headers $headers -Body $body -Contenttype 'application/json'
+    $Resp = Invoke-RestMethod -Uri $url -UserAgent $UserAgent -Method $Method -Headers $headers -Body $body -Contenttype 'application/json' -TimeoutSec $TimeoutSec
     Log "[API-Call] response: $($Resp)"
     return ($Resp)
   } catch {
