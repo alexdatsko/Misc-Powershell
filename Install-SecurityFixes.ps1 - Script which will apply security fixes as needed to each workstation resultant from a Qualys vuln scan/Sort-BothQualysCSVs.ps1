@@ -79,6 +79,7 @@ function Convert-CSVtoXLSX {
     foreach ($prop in $row.PSObject.Properties) {
       $Worksheet.Cells.Item($rowIndex, $colIndex) = $prop.Value
       if ($prop.Name -eq 'QID') { $QIDValue = $prop.Value }
+      if ($prop.Name -eq 'Severity') { $Severity = $prop.Value }
       $colIndex++
     }
     if ($highlightQIDsInt -contains $QIDValue) {
@@ -90,6 +91,11 @@ function Convert-CSVtoXLSX {
       $Worksheet.Rows.Item($rowIndex).Interior.ColorIndex = 6
       $Worksheet.Cells.Item($rowIndex, 11) = 'AlexD'
       $Worksheet.Cells.Item($rowIndex, 12) = 'Ignored, low risk'
+    }
+    if ($Severity -eq '0') {  # Catch external IPs that are clean, mark it!
+      $Worksheet.Rows.Item($rowIndex).Interior.ColorIndex = 4
+      $Worksheet.Cells.Item($rowIndex, 11) = 'AlexD'
+      $Worksheet.Cells.Item($rowIndex, 12) = 'Clean!'
     }
     $rowIndex++
   }
