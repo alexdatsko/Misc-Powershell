@@ -2,75 +2,17 @@
 param(
   [string]$CSVType,
   [string]$InFile,
-  [string]$OutFile = "REMEDIATION-$($InFile)",
-  [string]$LogFile,
-  [bool]$Popup_Enabled = $false
+  [string]$OutFile = "REMEDIATION-$($InFile)"
 )
 
-$info='''
- `n`n##########################################################################
- # Sort-BothQualysCSVs.ps1  --  Sorts Qualys reports into preferred format
- # v0.3 - 9-30-2024 - Alex Datkso MME Consulting Inc 
- # 
- #        Picks most recent Internal and External CSV file in the folder the script is run from, arranges them, and opens them both as their XLSX form.
- #        Pops up a warning if there is a hit on the CISA KEV - Known Exploited Vulnerabilities list - if run with -Popup_Enabled 1, otherwise outputs to screen.
- #        NOTE: This process takes about 60 seconds per file!
-'''
-
-$CISA_KEV_URL = "https://www.cisa.gov/sites/default/files/csv/known_exploited_vulnerabilities.csv"
-
-$tmp = "C:\Temp"
-$Verbose = 0
-
-if ($LogFile) {
-Start-Transcript -Path $Logfile # Logging disabled for now, unneeded
-}
-$date = Get-Date -Format "MM-dd-yyyy hh:mm"
-Write-Host $info
-Write-Host "[.] Started:  $date"
-
-$UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.67 Safari/537.36"
-[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12  # Hack for SSL error downloading files.
-
-function Display-Popup {
-  param (
-    [string]$message
-  )
-  if ($Popup_Enabled) {
-    Add-Type -AssemblyName PresentationCore,PresentationFramework 
-    $ButtonType = [System.Windows.MessageBoxButton]::YesNoCancel 
-    $MessageIcon = [System.Windows.MessageBoxImage]::Warning
-    $MessageBody = "CISA KEV Found: $($message)" 
-    $MessageTitle = "CISA KEV Found!!!"
-  #  [system.windows.forms]::EnableVisualStyles()
-    $Result = [System.Windows.MessageBox]::Show($MessageBody,$MessageTitle,$ButtonType,$MessageIcon) 
-  } else {
-    #Write-Verbose "No popups enabled"
-  }
-  Write-Host "`n[!!!] CISA KEV FOUND [!!!] - $($message)" -ForegroundColor Red
-}
-
-function Get-CVERow {
-    param (
-        [string]$cveID,
-        $KEV
-    )
-  if ($cveID.length -gt 4) {
-    $matchingrow = 0
-    # Search for the row where cveID matches the supplied string
-    $matchingRow = $KEV | Where-Object { $_.cveID -eq $cveID }
-
-    # Return the matching row if found
-    if ($matchingRow) {
-        Write-Verbose "[+] Matching CVE ID found for $cveID !!!"
-        return $matchingRow
-    } else {
-#        Write-Verbose "[-] No matching CVE ID found for $cveID."
-        return 0
-    }
-  }
-  return 0
-}
+Write-Host "`n`n##########################################################################"
+Write-Host "# Sort-BothQualysCSVs.ps1  --  Sorts Qualys reports into preferred format"
+Write-Host "# Alex Datkso MME Consulting Inc "
+Write-Host "#   v0.2 - 5-9-2024 - Initial working script"
+Write-Host "#   v0.3 - 1-20-2025 - Added further automation"
+Write-Host "# "
+Write-Host "#        Picks most recent Internal and External CSV file in the folder the script is run from, arranges them, and opens them both as their XLSX form."
+Write-Host "#        NOTE: This process takes about 30 seconds per file!"
 
 function Select-BothFiles {
   param (
@@ -91,57 +33,135 @@ function Select-BothFiles {
 }
 
 function Convert-CSVtoXLSX {
-    param (
-        [Parameter(Mandatory=$true)]
-        [string]$CSVFilePath,
-        [string]$XLSXFilePath
+  param (
+      [Parameter(Mandatory=$true)]
+      [string]$CSVFilePath,
+      [string]$XLSXFilePath,
+      [string]$FilteredQIDs
 
-    )
+  )
 
-    Write-Verbose "CSVFilePath: $CSVFilePath"
-    Write-Verbose "XLSXFilePath: $XLSXFilePath"
+  Write-Verbose "CSVFilePath: $CSVFilePath"
+  Write-Verbose "XLSXFilePath: $XLSXFilePath"
 
-    # Get the directory and base name of the CSV file
-    $Directory = [System.IO.Path]::GetDirectoryName($CSVFilePath)
-    $BaseName = [System.IO.Path]::GetFileNameWithoutExtension($CSVFilePath)
-    Write-Verbose "Directory $Directory"
-    Write-Verbose "Basename $Basename"
-    if ($XLSXFilePath -eq "") {
-      $XLSXFilePath = ("$($BaseName).xlsx").replace(".csv","")
+  # Get the directory and base name of the CSV file
+  $Directory = [System.IO.Path]::GetDirectoryName($CSVFilePath)
+  $BaseName = [System.IO.Path]::GetFileNameWithoutExtension($CSVFilePath)
+  Write-Verbose "Directory $Directory"
+  Write-Verbose "Basename $Basename"
+  if ($XLSXFilePath -eq "") {
+    $XLSXFilePath = ("$($BaseName).xlsx").replace(".csv","")
+  }
+  Write-Verbose "XLSXFilePath: $XLSXFilePath"
+
+#####
+
+  $Data = Import-Csv -Path $CSVFilePath
+  $Excel = New-Object -ComObject Excel.Application
+  $Workbook = $Excel.Workbooks.Add()
+  $Worksheet = $Workbook.Worksheets.Item(1)
+
+  # Populate headers
+  $colIndex = 1
+  foreach ($prop in $Data[0].PSObject.Properties) {
+      $Worksheet.Cells.Item(1, $colIndex) = $prop.Name
+      $colIndex++
+  }
+
+  # Populate data
+  $highlightQIDsInt = '90006','90007','91564','91565','105170','105171'      # Internal QIDs to ignore every time
+  $highlightQIDsExt = '82003','38169','38170','38173','38863'                # External QIDs to ignore every time
+
+  $rowIndex = 2
+  foreach ($row in $Data) {
+    $colIndex  = 1
+    $QIDValue  = $null
+    foreach ($prop in $row.PSObject.Properties) {
+      $Worksheet.Cells.Item($rowIndex, $colIndex) = $prop.Value
+      if ($prop.Name -eq 'QID') { $QIDValue = $prop.Value }
+      if ($prop.Name -eq 'Severity') { $Severity = $prop.Value }
+      $colIndex++
     }
-    Write-Verbose "XLSXFilePath: $XLSXFilePath"
-
-    $Data = Import-Csv -Path $CSVFilePath
-    $Excel = New-Object -ComObject Excel.Application
-    $Workbook = $Excel.Workbooks.Add()
-    $Worksheet = $Workbook.Worksheets.Item(1)
-    $colIndex = 1
-    foreach ($prop in $Data[0].PSObject.Properties) {
-        $Worksheet.Cells.Item(1, $colIndex) = $prop.Name
-        $colIndex++
+    if ($highlightQIDsInt -contains $QIDValue) {
+      $Worksheet.Rows.Item($rowIndex).Interior.ColorIndex = 6
+      $Worksheet.Cells.Item($rowIndex, 8) = 'AlexD'
+      $Worksheet.Cells.Item($rowIndex, 9) = 'Ignored, low risk'
     }
-    $rowIndex = 2
-    foreach ($row in $Data) {
-        $colIndex = 1
-        foreach ($prop in $row.PSObject.Properties) {
-            $Worksheet.Cells.Item($rowIndex, $colIndex) = $prop.Value
-            $colIndex++
-        }
-        $rowIndex++
+    if ($highlightQIDsExt -contains $QIDValue) {
+      $Worksheet.Rows.Item($rowIndex).Interior.ColorIndex = 6
+      $Worksheet.Cells.Item($rowIndex, 11) = 'AlexD'
+      $Worksheet.Cells.Item($rowIndex, 12) = 'Ignored, low risk'
     }
+    if ($Severity -eq '0') {  # Catch external IPs that are clean, mark it!
+      $Worksheet.Rows.Item($rowIndex).Interior.ColorIndex = 4
+      $Worksheet.Cells.Item($rowIndex, 11) = 'AlexD'
+      $Worksheet.Cells.Item($rowIndex, 12) = 'Clean!'
+    }
+    $rowIndex++
+  }
 
-    # Save the workbook to the XLSX file path
-    $Workbook.SaveAs($XLSXFilePath)
-    $Workbook.Close()
-    $Excel.Quit()
-    [System.Runtime.InteropServices.Marshal]::ReleaseComObject($Excel) | Out-Null
+  # ADD TABLE
+  $lastRow    = $Data.Count + 1
+  #$lastColumn = $Data[0].PSObject.Properties.Count
+  $lastColumn = $worksheet.UsedRange.Columns.Count
+  Write-Host "Setting range for table from A1 to: $lastRow , $lastColumn"
+  $range      = $Worksheet.Range("A1", $Worksheet.Cells.Item($lastRow, $lastColumn))
+  $table      = $Worksheet.ListObjects.Add(1, $range, "importedCSV", 1)
+
+
+##
+
+  if ($Basename -like "*INTERNAL*") {
+    # Column widths for Internal report
+    $Worksheet.Columns.Item(1).ColumnWidth  = 18
+    $Worksheet.Columns.Item(2).ColumnWidth  = 18
+    $Worksheet.Columns.Item(3).ColumnWidth  = 18
+    $Worksheet.Columns.Item(4).ColumnWidth  = 8
+    $Worksheet.Columns.Item(5).ColumnWidth  = 55
+    $Worksheet.Columns.Item(7).ColumnWidth  = 14
+    $Worksheet.Columns.Item(8).ColumnWidth  = 14
+    $Worksheet.Columns.Item(9).ColumnWidth  = 28
+    $Worksheet.Columns.Item(10).ColumnWidth = 70
+    $Worksheet.Columns.Item(11).ColumnWidth = 70
+    $Worksheet.Columns.Item(12).ColumnWidth = 70
+    $Worksheet.Columns.Item(13).ColumnWidth = 70
+    $Worksheet.Columns.Item(14).ColumnWidth = 22
+    $Worksheet.Columns.Item(15).ColumnWidth = 22
+    $Worksheet.Columns.Item(16).ColumnWidth = 22
+  }
+
+  if ($Basename -like "*EXTERNAL*") {
+    # Column widths for External report
+    $Worksheet.Columns.Item(1).ColumnWidth  = 14
+    $Worksheet.Columns.Item(2).ColumnWidth  = 24
+    $Worksheet.Columns.Item(3).ColumnWidth  = 36
+    $Worksheet.Columns.Item(4).ColumnWidth  = 9
+    $Worksheet.Columns.Item(5).ColumnWidth  = 9
+    $Worksheet.Columns.Item(9).ColumnWidth  = 9
+    $Worksheet.Columns.Item(10).ColumnWidth = 9
+    $Worksheet.Columns.Item(11).ColumnWidth = 9
+    $Worksheet.Columns.Item(12).ColumnWidth = 24
+    $Worksheet.Columns.Item(13).ColumnWidth = 67
+    $Worksheet.Columns.Item(14).ColumnWidth = 67
+    $Worksheet.Columns.Item(15).ColumnWidth = 67
+    $Worksheet.Columns.Item(16).ColumnWidth = 67
+  }
+
+  $Worksheet.Activate()
+  $Worksheet.Range("B1").Select() 
+  $Excel.ActiveWindow.FreezePanes = $true
+
+  # Save the workbook to the XLSX file path
+  $Workbook.SaveAs($XLSXFilePath)
+  $Workbook.Close()
+  $Excel.Quit()
+  [System.Runtime.InteropServices.Marshal]::ReleaseComObject($Excel) | Out-Null
 }
 
 function Convert-CSVFile {
   param(
     [string]$InFile,
-    [string]$OutFile,
-    $KEVcsvData
+    [string]$OutFile
   )
 
   # If not set, set Outfile name based on Internal
@@ -165,35 +185,11 @@ function Convert-CSVFile {
   Write-Host "[.] Populating new CSV file.. "
   if ($InFile -like "*Internal*") {  
     # Column order I want: "NetBIOS","IP","QID","Vulnerability Description","Severity","Fixed Date","Fixed Name","Fixed Note","Results","Solution","Threat","Impact","CVE ID","Last Detected"
-    $CSV = Import-CSV $InFile
-
-    # Search KEV for vuln and popup if one found!
-    $CVEs = $CSV | Select-Object "CVE ID"
-    foreach ($CVE in ($CVEs -split ",").trim()) {
-      $KEV_Found = Get-CVERow -cveID $CVE -KEV $KEVcsvData
-      if ($KEV_Found) {
-        Display-Popup -Message "`n  $($KEV_Found -split ";")"
-      }
-    }
-   
-    $CSV | Select-Object "NetBIOS","IP","QID","Vulnerability Description","Severity","Fixed Date","Fixed Name","Fixed Note","Results","Solution","Threat","Impact","CVE ID","Last Detected","First Detected" | Sort-Object "NetBIOS","Vulnerability Description" | Export-CSV $OutFile
+    Import-CSV $InFile | Select-Object "NetBIOS","Computer Name (DNS)","IP","QID","Vulnerability Description","Severity","Fixed Date","Fixed Name","Fixed Note","Results","Solution","Threat","Impact","CVE ID","Last Detected","First Detected" | Sort-Object "NetBIOS","Vulnerability Description" | Export-CSV $OutFile
   }
   if ($InFile -like "*External*") {  
     # Column order I want: "IP","Computer Name (DNS)","Devices connected from IP addresses","IPs","Port","Protocol","QID","Vulnerability Description","Severity","Results","Solution","Threat","Impact"
-    $CSV = Import-CSV $InFile 
-
-    # Search KEV for vuln and popup if one found!
-    $CVEs = $CSV | Select-Object "CVE ID"
-    Write-Verbose "CVEs: $($CVEs -split ",")"
-    foreach ($CVE in ($CVEs -split ",").trim()) {
-      $KEV_Found = 0
-      $KEV_Found = Get-CVERow -cveID $CVE -KEV $KEVcsvData
-      if ($KEV_Found) {
-        Display-Popup -Message "CISA KEV found: $KEV_Found"
-      }
-    }
-
-    $CSV | Select-Object "IP","Computer Name (DNS)","Devices connected from IP addresses","IPs","Port","Protocol","QID","Vulnerability Description","Severity","Fixed Date","Fixed Name","Fixed Note","Results","Solution","Threat","Impact" | Sort-Object "IP","Port","Vulnerability Description"| Export-CSV $OutFile
+    Import-CSV $InFile | Select-Object "IP","Computer Name (DNS)","Devices connected from IP addresses","IPs","Port","Protocol","QID","Vulnerability Description","Severity","Fixed Date","Fixed Name","Fixed Note","Results","Solution","Threat","Impact" | Sort-Object "IP","Port","Vulnerability Description"| Export-CSV $OutFile
   }
 
   if (Test-Path $Outfile) {
@@ -240,18 +236,9 @@ $InternalFile,$ExternalFile = Select-BothFiles -ScriptRoot $runPath
 Write-Verbose "InternalFile $InternalFile"
 Write-Verbose "ExternalFile $ExternalFile"
 
-Write-Host "`n[.] Downloading CISA KEV..."
-$csvFile = Invoke-WebRequest -Uri $CISA_KEV_URL -UseBasicParsing -UserAgent $UserAgent
-Write-Host "[.] Reading in CSV content..."
-$csvContent = $csvFile.Content
-$KEVcsvData = $csvContent | ConvertFrom-Csv
-Write-Host "[.] Done. Converting CSVs...`n"
-
 if ($InternalFile) {
-  Convert-CSVFile -InFile "$($InternalFile)" -KEV $KEVcsvData
-  Convert-CSVFile -InFile "$($ExternalFile)" -KEV $KEVcsvData
+  Convert-CSVFile "$($InternalFile)"
+  Convert-CSVFile "$($ExternalFile)" 
 }
 
 #$input = Read-Host "[ press enter to exit, or close this window ]"
-
-Stop-Transcript # Stop Logging

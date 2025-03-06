@@ -1,7 +1,7 @@
 [cmdletbinding()]  # For verbose, debug etc
 param (
-  $FromPath = "C:\Windows\Twain_32 - TSSCAN.dll",    # File to copy from
-  $ToPath = "C:\Windows\Twain_32.dll",               # File to copy to (or folder name, file is more specific..)
+  $FromPath = "C:\Windows\twain_32 - TSSCAN.dll",    # File to copy from
+  $ToPath = "C:\Windows\twain_32.dll",               # File to copy to (or folder name, file is more specific..)
   $LogFile = "c:\Scripts\Logs\Copy-FileToFolder.log"
 )
 
@@ -19,6 +19,7 @@ $info = ''######################################################################
 #                    v0.3 - 9/12/24 - logging to c:\Scripts\Logs
 #                    v0.4 - 9/23/24 - Logging fixes, testing if files exist, etc''
 #                    v0.5 - 10/7/24 - Added Fix-FilePermissions to try to take ownership from TrustedInstaller and fix permissions so we can revert the file.
+#		     v0.6 - 10/21/24 - RobR-Changed take-ownership to takeown and hard coded filename after testing. It had been failing.
 
 $info
 
@@ -28,53 +29,42 @@ $tryseconds = 300       # Amount of time to sleep between tries, defaults to 300
 $DateTime = Get-Date -Format "yyyy-MM-dd hh:mm"
 "`n$DateTime ------------------------------" | tee -append $LogFile
 
-function Find-ProcessUsingDLL {
-  param($DLLFullPath,
-        $Kill = $false)
-  
-  $returnPids = @()
-  foreach ($p in Get-Process -IncludeUserName) {
-    foreach ($m in $p.modules) {
-      if ($m.FileName -like $DLLFullPath) {
-        $returnPids += $p.id
-        if ($Kill) {
-          "Found: $($p.UserName) using $($m.FileName) in $($p.Path) PID: $($p.id) - In 'Kill' mode. Terminating!"
-          Stop-Process -Id $p.id -Force
-        } else {
-          "Found: $($p.UserName) using $($m.FileName) in $($p.Path) PID: $($p.id) - Not in 'Kill' mode. Use -Kill to kill the process."
-        }
-      }
-    }
-  }
-  if ($returnPids) {
-   # return $returnPids # Probably unnecessary..
-  }
-}
-#Find-ProcessUsingDLL "C:\windows\twain_32.dll" 
-#Find-ProcessUsingDLL "C:\windows\twain_32.dll" -Kill $true
 
 function Fix-FilePermissions {
   param (
-    [string] $dllPath
+    [string] $ToPath
   )
 
-  if (Test-Path $dllPath) { # Take ownership and set Administrators to full control:
-    $currentOwner = Get-Acl $dllPath | Select-Object -ExpandProperty Owner
-    if ($currentOwner -ne "Administrator" -and $currentOwner -ne "Administrators") {
+  if (Test-Path $ToPath) { # Take ownership and set Administrators to full control:
+    $currentOwner = Get-Acl $ToPath | Select-Object -ExpandProperty Owner
+
+    if ($currentOwner -ne "Administrator" -and $currentOwner -ne "BUILTIN\Administrators") {
       try {
-        Take-Ownership -Path $dllPath -Recurse -Force
+        Takeown /f $ToPath /A
       } catch {
         "[!] Issue changing ownership of '$dllPath' from $($currentOwner)! Error: $_" | Tee -Append $LogFile
       }
     }
 
     try {
-      Set-Acl $dllPath -AccessRule @{Identity = "Administrators"; Rights = "FullControl"; InheritanceFlags = "ContainerInherit, ObjectInherit"}
+      $user = "BUILTIN\Administrators"
+      $accessRule = New-Object System.Security.AccessControl.FileSystemAccessRule($user, "FullControl", "Allow")
+
+      # Get the existing ACL
+      $acl = Get-Acl $ToPath
+
+      # Add the new access rule
+      $acl.AddAccessRule($accessRule)
+
+      # Set the modified ACL
+      Set-Acl $ToPath $acl
+      
+ 
     } catch {
-      "[!] Issue changing permissions on '$dllPath' from $($currentOwner)! Error: $_"  | Tee -Append $LogFile
+      "[!] Issue changing permissions on '$ToPath' from $($currentOwner)! Error: $_"  | Tee -Append $LogFile
     }
   } else {
-    "[!] The file '$dllPath' does not exist."  | Tee -Append $LogFile
+    "[!] The file '$ToPath' does not exist."  | Tee -Append $LogFile
   }
 }
 
@@ -135,3 +125,5 @@ if (Test-Path $ToPath) {
   "[-] Can't find file $ToPath !!! Exiting" | tee -append $LogFile
   Exit
 }
+
+
