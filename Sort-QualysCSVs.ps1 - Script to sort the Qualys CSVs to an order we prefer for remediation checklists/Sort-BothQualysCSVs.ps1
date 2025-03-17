@@ -199,7 +199,9 @@ function Convert-CSVFile {
   }
 
   # Convert to XLSX and remove intermediary file
-  $OutXLSXFile = ("$($OutFile).xlsx").replace('.csv','')
+  $dateformat = get-date -format "yyyy-MM-dd"
+  $datestring = "_$($dateformat)_"
+  $OutXLSXFile = ("$($OutFile).xlsx").replace('.csv','').replace('__',$datestring) # Added to change to todays date
   Write-Host "[.] Converting $OutFile to XLSX : $OutXLSXFile"
   Convert-CSVtoXLSX -CSVFilePath $OutFile -XLSXFilePath $OutXLSXFile
   
