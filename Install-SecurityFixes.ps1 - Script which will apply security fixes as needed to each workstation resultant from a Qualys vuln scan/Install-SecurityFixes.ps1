@@ -66,10 +66,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.42"
-# New in this version:  Fix API down issue
+$Version = "0.50.43"
+# New in this version:  Fixing ServicePerm issues.. and force previous fix ignore, with QIDSpecific from -QID or OnlyQIDs
 
-$VersionInfo = "v$($Version) - Last modified: 01/20/2025"
+$VersionInfo = "v$($Version) - Last modified: 03/24/2025"
 
 
 # CURRENT BUGS TO FIX:
@@ -459,7 +459,7 @@ function Get-YesNo {
     }
   } else {
     $FixedDate = Get-Fix -QID $QID
-    if ($FixedDate -ne $false) {
+    if (($FixedDate -ne $false) -and (-not $QIDSpecific)) {
       Write-Host "[+] Skipping QID $($QID): Already fixed on $FixedDate" -ForegroundColor Green
     } else {
       Set-Fix -QID $QID -Remove # if date = $false we should try to remove this line??
@@ -1780,27 +1780,35 @@ function Get-ServicePermIssues {
 }
 
 Function Get-ServiceFilePerms {
-param ([string]$FilesToCheck)
-  $RelevantList = @("Everyone","BUILTIN\Users","BUILTIN\Authenticated Users","BUILTIN\Domain Users")
+  param ([string]$FilesToCheck)
+  
+  $RelevantList = @("Everyone", "Users", "Authenticated Users", "Domain Users")
   Write-Verbose "Relevant user list: $RelevantList"
-  $Output = @() 
-  ForEach ($FileToCheck in $FilesToCheck) { 
-    $Acl = Get-Acl -Path $FileToCheck   #.FullName   #Not using object from gci
-    ForEach ($Access in $Acl.Access) { 
-      Write-Verbose "Identity for $($FileToCheck):       $($Access.IdentityReference)"
-      if ($RelevantList -contains $Access.IdentityReference) {
-        foreach ($CurrentRight in $Access.FileSystemRights) {
-          Write-Verbose "FileSystemRights: $CurrentRight"
-          if (($CurrentRight -match "FullControl") -or ($CurrentRight -like "*Write*")) {
-            $Properties = [ordered]@{'Folder Name'=$FileToCheck;'Group/User'=$Access.IdentityReference;'Permissions'=$CurrentRight;'Inherited'=$Access.IsInherited} 
-            $Output += New-Object -TypeName PSObject -Property $Properties 
+  $Output = @()
+  ForEach ($FileToCheck in $FilesToCheck) {
+      $Acl = Get-Acl -Path $FileToCheck   #.FullName   #Not using object from gci
+      ForEach ($Access in $Acl.Access) {
+          Write-Verbose "Identity for $($FileToCheck):       $($Access.IdentityReference)"          
+          $match = $RelevantList | Where-Object { $Access.IdentityReference -match $_ }
+          if ($match) {
+            foreach ($CurrentRight in $Access.FileSystemRights) {
+                  Write-Verbose "FileSystemRights: $CurrentRight"
+                  if (($CurrentRight -match "FullControl") -or ($CurrentRight -like "*Write*") -or ($CurrentRight -like "*Append*")) {
+                      $Properties = [ordered]@{
+                          'Folder Name'   = $FileToCheck
+                          'Group/User'    = $Access.IdentityReference
+                          'Permissions'   = $CurrentRight
+                          'Inherited'     = $Access.IsInherited
+                      }
+                      $Output += New-Object -TypeName PSObject -Property $Properties
+                  }
+              }
           }
-        }
       }
-    }
   }
-  Return $Output   # If something is returned, this is not good
+  Return $Output
 }
+
 
 Function Get-FilePerms {
 param ([string]$FilesToCheck)
@@ -2230,7 +2238,7 @@ function Remove-SpecificAppXPackage {
         $AppName = ($Result).PackageName
         if ([System.Version]$AppVersion -le [System.Version]$Version) {
           Write-Host "[!] Vulnerable version of Provisioned Appx Package still found : $AppName - $AppVersion <= $Version"  -ForegroundColor Red
-          Write-Vebose "result: $result"
+          Write-Verbose "result: $result"
           Write-Host "[!] Please either reboot and test again, or fix manually.." -ForegroundColor Red
           $RebootRequired = $true
         }
@@ -5385,8 +5393,9 @@ foreach ($CurrentQID in $QIDs) {
               } catch {
                 Write-Output "[!] ERROR: Couldn't remove Everyone-full permissions on $file .." | Tee-Object -append "$($tmp)\serviceperms.log"
               }
-              Write-Output "[.] Removing Users-Write/Modify/Append permissions on $file .." | Tee-Object -append "$($tmp)\serviceperms.log"
+
               # .. Remove write/append/etc from 'Users'. First remove Users rule completely. 
+              Write-Output "[.] Removing Users-Write/Modify/Append permissions on $file .." | Tee-Object -append "$($tmp)\serviceperms.log"
               $objUser = New-Object System.Security.Principal.NTAccount("Users") 
               $objACE = New-Object System.Security.AccessControl.FileSystemAccessRule `
                   ($objUser, $Right, $InheritanceFlag, $PropagationFlag, $objType) 
@@ -5406,6 +5415,30 @@ foreach ($CurrentQID in $QIDs) {
               } catch {
                 Write-Output "[!] ERROR: Couldn't modify Users to R+X permissions on $file .." | Tee-Object -append "$($tmp)\serviceperms.log"
               }
+
+              # .. Remove write/append/etc from 'Authenticated Users'. First remove Users rule completely. 
+              Write-Output "[.] Removing Authenticated Users-Write/Modify/Append permissions on $file .." | Tee-Object -append "$($tmp)\serviceperms.log"
+              $objUser = New-Object System.Security.Principal.NTAccount("Authenticated Users") 
+              $objACE = New-Object System.Security.AccessControl.FileSystemAccessRule `
+                  ($objUser, $Right, $InheritanceFlag, $PropagationFlag, $objType) 
+              $objACL = Get-ACL $file 
+              try {
+                $objACL.RemoveAccessRuleAll($objACE) 
+              } catch {
+                Write-Output "[!] ERROR: Couldn't reset Authenticated Users permissions on $file .." | Tee-Object -append "$($tmp)\serviceperms.log"
+              }
+              # Then add ReadAndExecute only for Authenticated Users
+              $Right = [System.Security.AccessControl.FileSystemRights]::ReadAndExecute
+              $objACE = New-Object System.Security.AccessControl.FileSystemAccessRule `
+                  ($objUser, $Right, $InheritanceFlag, $PropagationFlag, $objType) 
+              $objACL.AddAccessRule($objACE) 
+              try {
+                Set-ACL $file -AclObject $objACL  
+              } catch {
+                Write-Output "[!] ERROR: Couldn't modify Users to R+X permissions on $file .." | Tee-Object -append "$($tmp)\serviceperms.log"
+              }
+
+
               # Check that issue is actually fixed
               if (!(Get-ServiceFilePerms $file)) {
                 Write-Output "[+] Permissions are good for $file " | Tee-Object -append "$($tmp)\serviceperms.log"
