@@ -66,15 +66,14 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.43"
-# New in this version:  Fixing ServicePerm issues.. and force previous fix ignore, with QIDSpecific from -QID or OnlyQIDs
+$Version = "0.50.45"
+# New in this version:  Added VLC to Winget updates list
 
-$VersionInfo = "v$($Version) - Last modified: 03/24/2025"
+$VersionInfo = "v$($Version) - Last modified: 04/2/2025"
 
 
 # CURRENT BUGS TO FIX:
 #    - Copy script log and upload
-#    - VLC update broken - Winget? also ninite?
 #    - Notepad++ - check 
 
 #### VERSION ###################################################
@@ -125,7 +124,7 @@ $SoftwareInstallWait = 60                    # How long to wait for generic soft
 $LogToEventLog = $true                       # Set this to $false to not log to event viewer Application log, source "MQRA", also picked up in _config.ps1
 
 # Applications we currently support updating through WinGet:
-$WingetApplicationList = @("Chrome","MSEdge","Firefox","Brave","Teamviewer 15","Irfanview","Notepad++","Zoom client","Dropbox","7-zip","Visual Studio Code","iTunes","iCloud")   
+$WingetApplicationList = @("Chrome","MSEdge","Firefox","Brave","Teamviewer 15","Irfanview","Notepad++","Zoom client","Dropbox","7-zip","Visual Studio Code","iTunes","iCloud","VLC")   
 $WinGetOpts = "-h --accept-source-agreements --accept-package-agreements"
 
 ##################################################### QIDLists.ps1 contents
@@ -315,7 +314,8 @@ function Get-Fix {
   $record = $csvContent | Where-Object { $_.QID -eq $QID }
   if ($record) {
     if ($record.Datefixed) {
-      return $record.Datefixed
+#      return $false
+      return $record.Datefixed 
     } else {
       return $false
     }
@@ -2269,6 +2269,7 @@ Function Update-Application {
     if ($UpdateString -eq "Visual Studio Code") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Microsoft.VisualStudioCode $WinGetOpts" }
     if ($UpdateString -eq "Apple iTunes") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Apple.iTunes $WinGetOpts" }
     if ($UpdateString -eq "Apple iCloud") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update Apple.iCloud $WinGetOpts" }
+    if ($UpdateString -eq "VLC") { Start-Process "winget" -NoNewWindow -Wait -ArgumentList "update VideoLAN.VLC $WinGetOpts" }
     
     Write-Host "[+] Done."
   } else {
@@ -4034,40 +4035,7 @@ foreach ($CurrentQID in $QIDs) {
       { ($VulnDesc -like "*VLC*" -and ($QIDsVLC -ne 1)) } {
         if (Get-YesNo "$_ Install newest VLC? " -Results $Results -QID $ThisQID) { 
           #Remove any existing file before downloading..
-          if (Test-Path $installerPath) { Remove-Item $InstallerPath -Force }
-          Write-Host "[.] Checking for old versions of VLC to remove"
-          $Products = Search-Software "*VLC media player*"
-          if ($Products) {
-            Write-Verbose "Products : $Products"
-            Remove-Software -Products $Products -Results $Results
-          } else {
-            Write-Host "[!] VLC products not found under '*VLC media player*' : `n    Products: [ $Products ]`n" -ForegroundColor Red
-          }   
-
-          $url1 = "https://www.videolan.org/vlc/download-windows.html"
-          $response1 = Invoke-WebRequest -Uri $url1
-
-          # response1 contains a bunch of links, find the ones with ".msi", return the First one.
-          $url2 = $response1.Links | Where-Object { $_.href -match ".msi"} | Select-Object href -First 1
-          Write-Verbose "Download link 1: $($url2.href)"  # Should be something like "//get.videolan.org/vlc/3.0.18/win32/vlc-3.0.18-win32.msi"
-          $response2 = Invoke-WebRequest -Uri ("https:" + $url2.href) # Href is missing the protocol so add it back.
-
-          # response2 contains a bunch of links to Mirror sites, find the First one containing ".msi".
-          $url3 = $response2.Links | Where-Object { $_.href -match ".msi"} | Select-Object href -First 1
-          Write-Verbose "Download link 2 (redirect to mirror): $($url3.href)" # Should be something like "https://mirror.aarnet.edu.au/pub/videolan/vlc/3.0.18/win32/vlc-3.0.18-win32.msi"
-          $filename = Split-Path $url3.href -Leaf # Gets the last part of the URL as the filename.
-          $vlcversion = ((($filename -split "vlc-")[1] -split "-win32.msi")[0]).trim()
-          write-verbose "VLC Version found: $vlcversion)"
-#          $ProgressPreference = 'SilentlyContinue' # Disables the progress meter, showing the progress is incredibly slow
-          $installerPath = "$($tmp)\$($vlcFilename)"
-
-          Write-Host "[.] Downloading $vlcUrl - output: $installerPath"
-          Invoke-WebRequest -Uri $url3.href -UserAgent $AgentString -OutFile $installerPath -ErrorAction SilentlyContinue
-
-          $Arguments = "/i $installerPath /qn /quiet /norestart WRAPPED_ARGUMENTS=""/S"""
-          Write-Host "[.] Running: msiexec.exe $Arguments"
-          Start-Process -FilePath "msiexec.exe" -ArgumentList $Arguments -Wait
-          Write-Host "[.] Looks to have finished!"
+          Update-Application -Uri "https://ninite.com/vlc/ninite.exe" -OutFile "$($tmp)\vlcninite.exe" -KillProcess "vlc.exe"  -Updatestring "VLC" 
         }
         $QIDsVLC = 1 # Whether updated or not, don't ask again.
       }
@@ -4434,8 +4402,10 @@ foreach ($CurrentQID in $QIDs) {
 # 12-6-2024
 #          %SYSTEMROOT%\System32\msoledbsql.dll  Version is  18.7.2.0  %SYSTEMROOT%\SysWOW64\msoledbsql.dll  Version is  18.7.2.0#	Customers are advised to refer to  CVE-2024-37320 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37320), CVE-2024-20701 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-20701), CVE-2024-21317 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-21317), CVE-2024-21331 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-21331), CVE-2024-21425 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-21425), CVE-2024-37319 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37319), CVE-2024-35272 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-35272), CVE-2024-35271 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-35271), CVE-2024-38087 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-38087), CVE-2024-21303 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-21303), CVE-2024-37321 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37321), CVE-2024-21428 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-21428), CVE-2024-21415 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-21415), CVE-2024-37324 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37324), CVE-2024-21449 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-21449), CVE-2024-37326 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37326), CVE-2024-37327 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37327), CVE-2024-37328 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37328), CVE-2024-37329 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37329), CVE-2024-37330 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37330), CVE-2024-37334 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37334), CVE-2024-37333 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37333), CVE-2024-37336 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37336), CVE-2024-28928 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-28928), CVE-2024-35256 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-35256), CVE-2024-38088 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-38088), CVE-2024-37322 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37322), CVE-2024-21332 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-21332) for more information regarding the vulnerabilities and their patches.  Patch:  Following are links for downloading patches to fix the vulnerabilities:   CVE-2024-37320 (https://msrc.microsoft.com/update-guide/en-US/advisory/CVE-2024-37320)
 
-          if ($Results -like "*oledbsql*" -and $Results -like "*19*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2248728"; $LicenseTerms="IACCEPTMSOLEDBSQLLICENSETERMS=YES"; $OLEODBC="19.3.2 OLE"; $ProductCheck = "Microsoft OLE DB Driver" } else { #19.3.2 OLE
-            if ($Results -like "*oledbsql*" -and $Results -like "*18*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2266757"; $LicenseTerms="IACCEPTMSOLEDBSQLLICENSETERMS=YES"; $OLEODBC="18.7.2 OLE"; $ProductCheck = "Microsoft OLE DB Driver"  } else { #18.7.2 OLE
+# 03-24-2025 - 18.7.4 is newest: https://download.microsoft.com/download/2/6/1/2613c841-cf12-4ba3-b0f8-50dcc195faa4/en-US/18.7.4.0/x64/msoledbsql.msi
+
+          if ($Results -like "*oledbsql*" -and $Results -like "*19*") { $OLEODBCUrl="https://download.microsoft.com/download/f/1/3/f13ce329-0835-44e7-b110-44decd29b0ad/en-US/19.3.5.0/x64/msoledbsql.msi"; $LicenseTerms="IACCEPTMSOLEDBSQLLICENSETERMS=YES"; $OLEODBC="19.3.5 OLE"; $ProductCheck = "Microsoft OLE DB Driver" } else { #19.3.2 OLE
+            if ($Results -like "*oledbsql*" -and $Results -like "*18*") { $OLEODBCUrl="https://download.microsoft.com/download/2/6/1/2613c841-cf12-4ba3-b0f8-50dcc195faa4/en-US/18.7.4.0/x64/msoledbsql.msi"; $LicenseTerms="IACCEPTMSOLEDBSQLLICENSETERMS=YES"; $OLEODBC="18.7.4 OLE"; $ProductCheck = "Microsoft OLE DB Driver"  } else { #18.7.4 OLE
               if ($Results -like "*odbcsql*") { $OLEODBCUrl="https://go.microsoft.com/fwlink/?linkid=2266640"; $LicenseTerms="IACCEPTMSODBCDBSQLLICENSETERMS=YES"; $OLEODBC="18.3.3.1 ODBC"; $ProductCheck = "Microsoft ODBC DB Driver" } else { #18.3.3.1 ODBC
                 $OLEODBCUrl="NOPE"
               }
@@ -5531,6 +5501,14 @@ foreach ($CurrentQID in $QIDs) {
                       New-Item -Path $registryPath -Force | Out-Null
                       New-ItemProperty -Path $registryPath -Name $valueName -Value 1 -PropertyType DWord -Force | Out-Null
                       Write-Host "The registry key $registryPath has been created and the 'AllowOptionalContent' value has been set to 1."
+                      $RegistryPath = "HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate\AU"
+                      New-ItemProperty -Path "HKLM:\Software\Policies\Microsoft\Windows\WindowsUpdate\AU" `
+                      -Name "AllowMUUpdateService" `
+                      -PropertyType DWORD `
+                      -Value 1 `
+                      -Force
+
+                      Write-Host "The registry key $registryPath \ 'AllowMuUpdateService' value has been set to 1."
                       $AlreadySetOptionalUpdates = $true
                     }
                   }

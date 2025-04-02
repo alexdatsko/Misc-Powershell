@@ -10,6 +10,7 @@ Write-Host "# Sort-BothQualysCSVs.ps1  --  Sorts Qualys reports into preferred f
 Write-Host "# Alex Datkso MME Consulting Inc "
 Write-Host "#   v0.2 - 5-9-2024 - Initial working script"
 Write-Host "#   v0.3 - 1-20-2025 - Added further automation"
+Write-Host "#   v0.4 - 04-02-2025 - Rename CSV files with dates as this is annoying to not have them"
 Write-Host "# "
 Write-Host "#        Picks most recent Internal and External CSV file in the folder the script is run from, arranges them, and opens them both as their XLSX form."
 Write-Host "#        NOTE: This process takes about 30 seconds per file!"
@@ -18,18 +19,23 @@ function Select-BothFiles {
   param (
     $ScriptRoot
   )
+  $date = get-date -format "yyyy-MM-dd"
   # Get the newest Internal and External file in the current folder.
   $internalFile = Get-ChildItem -Path $ScriptRoot -Filter "*Internal*.csv" | 
     Sort-Object -Property LastWriteTime -Descending | 
     Select-Object -First 1 |
     Select-Object -ExpandProperty FullName
+  $internalFileNew = $internalFile.replace("Internal_","Internal_$date")
+  Rename-Item -Path $internalFile -NewName $internalFilenew
   
   $externalFile = Get-ChildItem -Path $ScriptRoot -Filter "*External*.csv" |
     Sort-Object -Property LastWriteTime -Descending |
     Select-Object -First 1 |
     Select-Object -ExpandProperty FullName
-  
-  return $internalFile, $externalFile
+  $externalFileNew = $externalFile.replace("External_","External_$date")
+  Rename-Item -Path $externalFile -NewName $externalFilenew
+    
+  return $internalFileNew, $externalFileNew
 }
 
 function Convert-CSVtoXLSX {
@@ -69,7 +75,7 @@ function Convert-CSVtoXLSX {
   }
 
   # Populate data
-  $highlightQIDsInt = '90006','90007','91564','91565','105170','105171'      # Internal QIDs to ignore every time
+  $highlightQIDsInt = '90006','90007','91564','91565','92175','105170','105171'      # Internal QIDs to ignore every time
   $highlightQIDsExt = '82003','38169','38170','38173','38863'                # External QIDs to ignore every time
 
   $rowIndex = 2
@@ -201,7 +207,8 @@ function Convert-CSVFile {
   # Convert to XLSX and remove intermediary file
   $dateformat = get-date -format "yyyy-MM-dd"
   $datestring = "_$($dateformat)_"
-  $OutXLSXFile = ("$($OutFile).xlsx").replace('.csv','').replace('__',$datestring) # Added to change to todays date
+  #$OutXLSXFile = ("$($OutFile).xlsx").replace('.csv','').replace('__',$datestring) # Added to change to todays date
+  $OutXLSXFile = ("$($OutFile).xlsx").replace('.csv','') # Date is now renamed from the input file instead, not needed twice..
   Write-Host "[.] Converting $OutFile to XLSX : $OutXLSXFile"
   Convert-CSVtoXLSX -CSVFilePath $OutFile -XLSXFilePath $OutXLSXFile
   
