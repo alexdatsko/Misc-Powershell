@@ -66,10 +66,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.46"
-# New in this version:  Added Putty to Winget updates list
+$Version = "0.50.50"
+# New in this version:  Delimiter issues in batch import, added a little debugging around Import-CSV
 
-$VersionInfo = "v$($Version) - Last modified: 04/4/2025"
+$VersionInfo = "v$($Version) - Last modified: 7/3/2025"
 
 
 # CURRENT BUGS TO FIX:
@@ -3373,14 +3373,22 @@ if ($null -eq $CSVFilename) {
     #Write-Verbose "Splitting path for $CSVFilename to $(Split-Path $CSVFilename -leaf)"
     #$CSVFilename = Split-Path $CSVFilename -leaf  # Lets just split the damn path off here if its part of a unc path \\
   #}
-  $CSVFullpath =  $CSVFilename  # "$($oldpwd)\$(Split-Path $CSVFilename -leaf)" # Lets look in the old folder for this, where it should be..
+  $CSVFullpath = $CSVFilename  # "$($oldpwd)\$(Split-Path $CSVFilename -leaf)" # Lets look in the old folder for this, where it should be..
   try { 
     Write-Verbose "Finding delimeter for $CSVFullPath"
-    $delimiter = Find-Delimiter $CSVFullPath
+    #$delimiter = Find-Delimiter $CSVFullPath   # Removed for now, batch imports break this...
+    $delimiter = ","
     Write-Host "`n[.] Importing data from $CSVFullPath" -ForegroundColor Yellow
     $CSVData = Import-CSV $CSVFullPath -Delimiter $delimiter | Sort-Object "Vulnerability Description"
   } catch {
+    Write-Host "[X] An error occurred: $($_.Exception.Message)"
+    Write-Host "[X] Hex Content of first line: "
+    (Get-Content $CSVFullPath -First 1) | Format-Hex
+    $header = (Get-Content $CSVFullPath -First 1).Split($delimiter)
+    $header | Group-Object | Where-Object { $_.Count -gt 1 }
+    Write-Host "[X] Header line from Get-Content: $header"
     Write-Host "[X] Couldn't open CSV file : $CSVFullPath " -ForegroundColor Red
+    Write-Host 
     Set-Location $pwd
     Exit
   }
