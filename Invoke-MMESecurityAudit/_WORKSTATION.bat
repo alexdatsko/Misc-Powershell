@@ -1,33 +1,11 @@
 @echo off
 :::::::::::::::::::::::::::::::::::::  Please set the name below to the correct server hostname
+set servername=doctorpc
+set curyear=2025
 :::::::::::::::::::::::::::::::::::::
-cls
-echo.
-echo Security Audit - Workstation Script - 01/05/24
-echo Alex Datsko (alexd@mmeconsulting.com)
-echo.
-echo.
-echo (This script will attempt to delete itself after if run locally from C:\Temp. If running from a local PC, please delete the script when it is completed!!)
 c:
 cd \
-echo Please hit Ctrl-C if you make a mistake.
-set /p servername="Enter Server name i.e SERVER or TRA-SERVER etc:"
-SET /P adminpass="Please enter Administrator user LOCAL password:"
-SET /P mmepass="Please enter MME user LOCAL password:"
-echo Admin password entered: %adminpass%
-echo MME password entered: %mmepass%
-echo Please hit Ctrl-C now if you made a mistake and re-run the script!!! 
-pause
-echo.
-echo STARTING LOCAL ADMIN PASSWORD ROLL
-echo.
-net user Administrator %adminpass% /add /y /expires:never  
-net user Administrator %adminpass% /y /expires:never /active:yes
-net user MME %mmepass% /add /y /expires:never /fullname:"MME Consulting, Inc." /comment:"MME's Alternate Admin Login"
-net user MME %mmepass% /y /expires:never /active:yes /fullname:"MME Consulting, Inc." /comment:"MME's Alternate Admin Login"
 net localgroup administrators MME /add
-echo.
-pause
 cls
 echo.
 echo                       B                         
@@ -78,6 +56,7 @@ echo                       G
 echo ------------------------------------------------
 echo ------------ Windows updates: ------------------
 echo ------------------------------------------------
+wmic qfe | findstr -i %curyear%
 if exist "%windir%\system32\wuapp.exe" (
   start "%windir%\system32\wuapp.exe"
 ) else (
@@ -90,21 +69,13 @@ echo.
 pause
 echo                       H                         
 echo ------------------------------------------------
-echo -------------- Dell Command Update -------------
+echo -------- Screen lock / Account Lockout: --------
 echo ------------------------------------------------
-echo.
-echo BIOS shows the serial number is:
-echo.
-wmic bios get serialnumber
-echo.
-echo Please check for Dell Command update manually if this is a Dell workstation.
-echo.
-mkdir \\%servername%\data\secaud >nul
-mkdir c:\temp >nul
-echo Creating GPresult c:\temp\%computername%.html .. This will fail in non-domain environments obviously.
+mkdir \\%servername%\d\data\secaud\2025
+mkdir c:\temp
 gpresult /f /h c:\temp\%computername%.html
-echo Copying to \\%servername%\data\secaud .. This will fail in non-domain environments obviously.
-xcopy c:\temp\%computername%.html \\%servername%\data\secaud
+xcopy c:\temp\%computername%.html \\%servername%\data\secaud\2025 /y
+::del c:\temp\%computername%.html /s /f /q
 echo.
 echo.
 pause
@@ -118,7 +89,7 @@ powershell -exec bypass -c 'Get-CimInstance -Namespace root/SecurityCenter2 -Cla
 ::) else (
 ::  msg %username% "Check Antivirus manually!!!!"
 ::)
-msg %username% "Check Antivirus manually!!!!"
+::msg %username% "Check Antivirus manually!!!!"
 echo.
 echo.
 pause
@@ -153,15 +124,54 @@ echo ------------------------------------------------
 reg query "HKEY_LOCAL_MACHINE\Software\Microsoft\Windows\CurrentVersion\Policies\System" /v "ConsentPromptBehaviorAdmin" | find  "0x0" >NUL
 if "%ERRORLEVEL%"=="0"  ECHO UAC disabled
 if "%ERRORLEVEL%"=="1"  ECHO UAC enabled
-echo.
-IF EXIST "c:\temp\_WORKSTATION.BAT" (
-  echo Deleting script... c:\temp\_WORKSTATION.BAT
-  del c:\temp\_WORKSTATION.BAT /f /q
-) ELSE (
-    echo.
-    echo Script looks like it wasn't run from C:\Temp, skipping deletion. PLEASE DELETE FROM THE SERVER MANUALLY ONCE YOU ARE DONE!
-    echo.
-)
+
+pause
+echo                       N
+echo ------------------------------------------------
+echo -------Look for pentest/red team tools ---------
+echo ------------------------------------------------
+dir /s /b "C:\Program Files (x86)" | findstr /i "ncat metasploit mimikatz cobalt beacon"
+dir /s /b "C:\Program Files" | findstr /i "ncat metasploit mimikatz cobalt beacon"
+dir /s /b "C:\ProgramData" | findstr /i "ncat metasploit mimikatz cobalt beacon"
+
+pause
+echo                       O
+echo ------------------------------------------------
+echo -------Autoruns - services, Startup keys--------
+echo ------------------------------------------------
+:: List running services (suspicious ones may indicate persistence)
+:: sc.exe query type= service state= all | findstr SERVICE_NAME
+:: Autoruns locations - enumerate startup folders and Run keys
+reg.exe query HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+reg.exe query HKLM\Software\Microsoft\Windows\CurrentVersion\Run
+:: Show all scheduled tasks (deep look)
+::schtasks /query /fo LIST /v
+
+::pause
+::echo                       P
+::echo ------------------------------------------------
+::echo -------- List open Ports / ARP results ---------
+::echo ------------------------------------------------
+:: List open ports
+::netstat -ano
+:: Show ARP table (useful for lateral movement)
+::arp -a
+
+::pause
+::echo                       Q
+::echo ------------------------------------------------
+::echo -------- Find files with Everyone:Full ---------
+::echo ------------------------------------------------
+:: Find files with "Everyone: Full Control" on C: drive (dangerous)
+::icacls C:\ /T /C /Q | findstr /i "Everyone"
+
+
+:: Display firewall rules
+::etsh advfirewall firewall show rule name=all
+
+:: List DNS cache (shows domains previously resolved)
+::ipconfig /displaydns
+
 echo.
 echo DONE!
 echo.
