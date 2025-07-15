@@ -3,8 +3,8 @@
 
 $computer = "TRAINING2"
 
-if ((([xml](Get-GPOReport -Name "Default Domain Policy" -ReportType Xml)).GPO.Computer.ExtensionData.Extension.Account |
-            Where-Object name -eq LockoutBadCount).SettingNumber) {
+##if ((([xml](Get-GPOReport -Name "Default Domain Policy" -ReportType Xml)).GPO.Computer.ExtensionData.Extension.Account |
+            #Where-Object name -eq LockoutBadCount).SettingNumber) {
 
     $Password = ConvertTo-SecureString 'NotMyPassword' -AsPlainText -Force
 
@@ -21,4 +21,4 @@ if ((([xml](Get-GPOReport -Name "Default Domain Policy" -ReportType Xml)).GPO.Co
 
             Write-Output "$($_.SamAccountName) has been locked out"
         }
-}
+##}

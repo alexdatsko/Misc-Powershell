@@ -201,7 +201,7 @@ if (!($CACommonName)) {  # Set Default common name to "Server-CA"
   if ($hostname.length -gt 1) {   $CACommonName = "$($hostname)-CA".ToUpper()   }
 }
 
-<#
+
 Check-PreReqs
 
 Add-WindowsFeature Adcs-Cert-Authority -IncludeManagementTools   # No restart needed
@@ -223,7 +223,7 @@ if (!(Get-CATemplate)) {
   Write-Output "[-] Could not get CA Template!  $(Get-CATemplate)"
   exit
 }
-#>
+
 Create-TemplateForLDAPS
 
 $Certificate = Request-CertForLDAPS -CACommonName $CACommonName
