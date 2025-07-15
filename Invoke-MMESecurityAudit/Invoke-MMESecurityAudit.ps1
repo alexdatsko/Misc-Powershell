@@ -12,11 +12,19 @@
 ############################################################################
 
 param (
-    [string]$ServerName = "server"       # Hostname of server where output files can be written, defaults to server
+    [string]$ServerName = "server",            # Hostname of server where output files can be written, defaults to 'server'
+    [string]$ServerPath = "data\secaud"        # Share name/path output files can be written, defaults to 'Data\SecAud'
 )
+
+$date = Get-Date -Format "yyyy-MM-dd"
+
+Start-Transcript  "\\$($servername)\$($serverpath)\_$($env:computername)-results-$($date).txt"
 
 if (!(test-path "C:\Temp")) {
     mkdir C:\Temp
+}
+if (($servername) -and (!(test-path "\\$($servername)\$($serverpath)\2025"))) {
+  mkdir "\\$($servername)\$($serverpath)\2025"
 }
 
 # Shared routines
@@ -66,46 +74,52 @@ Function Get-OSInfo {
 ########################################################### MAIN ##################################################
 
  "`n###################### A - Hostname"
-hostname
+$out = (hostname)
+$out
 
  "`n###################### B - Users"
-net user
-net localgroup administrators
+$out = (net user)
+$out += (net localgroup administrators)
  "  Guest User account:"
-net user guest |findstr /i active
+$out += (net user guest |findstr /i active)
+$out
 
  "`n###################### C - Shares"
-net share
+$out = (net share)
+$out
 
  "`n###################### D - Rogue apps/EOL Software"
-(Get-WmiObject -Class Win32_Product).Name | Sort
+$out = ((Get-WmiObject -Class Win32_Product).Name | Sort)
+$out
 
  "`n###################### E - Mapped Drives"
-net use
+$out = (net use)
+$out
 
  "`n###################### F - OS Version"
-Get-OSInfo
+$out = (Get-OSInfo)
+$out
 
  "`n###################### G - Windows updates"
-wmic qfe | findstr /i 2025
+$out = (wmic qfe | findstr /i 2025)
+$out
 
  "`n###################### H - Screen lock etc"
 gpresult /f /h C:\Temp\$($env:computername).html
-if (($servername) -and (!(test-path "\\$servername\data\secaud\2025"))) {
-  mkdir "\\$($servername)\data\secaud\2025"
-}
-copy-item "c:\temp\$($env:computername).html" "\\$servername\data\secaud\2025\"
+$out = (gci "C:\Temp\$($env:computername).html")
+$out
+copy-item "c:\temp\$($env:computername).html" "\\$($servername)\$($serverpath)\2025\"
 
 
 "`n###################### I - Antivirus status"
 # 1. Defender Status (enabled/disabled)
 $defenderStatus = Get-MpComputerStatus | Select-Object -Property AMServiceEnabled, RealTimeProtectionEnabled
-"I- Windows Defender Status: $($defenderStatus | Format-List | Out-String)"
+"I.1- Windows Defender Status: $($defenderStatus | Format-List | Out-String)"
 
 # 2. SecurityCenter2 registered products (sometimes EDR shows here)
 $products = Get-CimInstance -Namespace "root/SecurityCenter2" -ClassName "AntivirusProduct" -ErrorAction SilentlyContinue
 if ($products) {
-    "I - Registered Antivirus Products:"
+    "I.2 - Registered Antivirus Products:"
     $products | Select-Object displayName, pathToSignedProductExe, productState | Format-Table -AutoSize | Out-String
 } else {
     "    No registered AV in SecurityCenter2 namespace (could be EDR-only or corrupted registration)"
@@ -118,7 +132,7 @@ $avMatches = $win32 | Where-Object {
 }
 
 if ($avMatches) {
-    "I - Installed AV/EDR Products:"
+    "I.3 - Installed AV/EDR Products:"
     $avMatches | Select-Object Name, Version, Vendor | Format-Table -AutoSize | Out-String
 } else {
     "    No matching AV/EDR products found in Win32_Product"
@@ -138,17 +152,19 @@ $FirewallProfiles | % {
 if ($FirewallProfileDisabled) {
    "J: A Windows Firewall profile is disabled!" 
 } else {
-   "J: All Windows Firewall profiles are enabled." 
+   "J.All: All Windows Firewall profiles are enabled." 
 }
 
  "`n###################### K - Scheduled Tasks/Startup check"
 "`nK: Startup Run Keys"
-reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Run"
-"`nK: Startup Run Keys (HKLM)" 
-reg query "HKLM\Software\Microsoft\Windows\CurrentVersion\Run"
-"`nK: Scheduled Tasks (Verbose)" 
+$out = (reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Run")
+"`nK.1: Startup Run Keys (HKLM)"
+$out 
+$out = (reg query "HKLM\Software\Microsoft\Windows\CurrentVersion\Run")
+"`nK.2: Scheduled Tasks (Verbose)" 
+#out
 
-Get-ScheduledTask | ForEach-Object {
+$out = (Get-ScheduledTask | ForEach-Object {
     $taskName = $_.TaskName
     $action = ($_ | Get-ScheduledTaskInfo) | Out-Null
     $definition = (Get-ScheduledTask -TaskName $_.TaskName -TaskPath $_.TaskPath).Actions
@@ -161,16 +177,19 @@ Get-ScheduledTask | ForEach-Object {
             }
         }
     }
-} | Format-Table -AutoSize
+} | Format-Table -AutoSize)
+$out
 
  "`n###################### L - Bitlocker"
- Get-BitLockerVolume
-#$bitlocker = manage-bde -status C: | findstr /i conversion
-#if ($LASTEXITCODE -eq 0) {
-#    "`nL: BitLocker Enabled`n$bitlocker"
-#} else {
-#    "`nL: BitLocker not enabled or admin required."
-#}
+$out = (Get-BitLockerVolume -ErrorAction SilentlyContinue)
+if ($out) { $out } else {
+    $bitlocker = (manage-bde -status C: | findstr /i conversion)
+    if ($LASTEXITCODE -eq 0) {
+        "`nL: BitLocker Enabled`n$bitlocker"
+    } else {
+        "`nL: BitLocker not enabled or admin required."
+    }
+}
 
  "`n###################### M - UAC Enabled"
 $uacVal = Get-ItemPropertyValue -Path "HKLM:\Software\Microsoft\Windows\CurrentVersion\Policies\System" -Name "ConsentPromptBehaviorAdmin"
@@ -182,4 +201,13 @@ if ($uacVal -eq 0) {
 
 
  "`n###################### O - Credential Vault saved items"
-cmdkey /list
+$out = (cmdkey /list)
+$out
+
+# to do: chrome/ie/etc passwords?
+
+#######################################
+
+Stop-Transcript
+
+"`n[+] Done!"
