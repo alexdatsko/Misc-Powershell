@@ -1,12 +1,23 @@
+param (
+  [int]$DaysToCheck = 90,
+  [switch]$Unique
+)
+
 $info = "
 ##################################################################
 # Get-RDGatewayConnections.ps1
 # Alex Datsko @ MME Consulting Inc.
 # This script will look through the eventlog, and log recent RD Gateway connections, disconnections and reasons quickly into a file in c:\Temp
 # v0.1 - 10/28/24 - Initial
+# v0.2 - 8/1/25 - Modified to find/show RD Gateway Sec group members, modified for Ninja platform
+
 "
 
-$Days = 7      # (Days worth of events to view)
+if (!(Test-Path "C:\Temp")) {
+  New-Item -ItemType Directory -Path "C:\Temp" -ErrorAction Continue
+}
+
+$Days = ($DaysToCheck)      # (Days worth of events to view)
 $StartDate = (Get-Date).AddDays(-$Days)
 $EndDate = Get-Date
 
@@ -16,9 +27,34 @@ $debug = 0
 
 $info
 
-if (!(Test-Path "C:\Temp")) {
-  New-Item -ItemType Directory -Path "C:\Temp" -ErrorAction Continue
+if ($Unique) { $UniqueOnly = $true } # Allow running from commandline with -Unique 
+
+Write-Output "[.] Checking for RD Gateway users groups using Get-ADGroup .."
+if (Get-Command Get-ADGroup -Erroraction SilentlyContinue) {
+  Write-Output "[+] ActiveDirectory powershell module found."
+} else {
+  Write-Output "[-] ActiveDirectory powershell module NOT found. Loading RSAT for ActiveDirectory modules"
+  try { 
+    Install-WindowsFeature -Name "RSAT-AD-PowerShell" -IncludeAllSubFeature -ErrorAction SilentlyContinue
+  } catch {
+    Write-Output "[-] ActiveDirectory RSAT tools couldn't be loaded with standard commands, trying with Add-WindowsCapability"  
+    $null =  Add-WindowsCapability -Online -Name "Rsat.ActiveDirectory.DS-LDS.Tools~~~~0.0.1.0" -ErrorAction SilentlyContinue | Out-Null
+  }
 }
+try {
+  Import-Module ActiveDirectory
+  $RDGGroup = Get-ADGroup -Filter { Name -like "*RD Gateway*" -and GroupCategory -eq "Security" } -ErrorAction SilentlyContinue | Select-Object Name, DistinguishedName
+  if ($RDGGroup) {
+    Write-Output "[+] RD Gateway group found: $RDGGroup"
+    $RDGGroupMembers = Get-ADGroupMember -Identity "$($RDGGroup.Name)" -Recursive | Where-Object { $_.objectClass -eq "user" } | Select-Object Name, SamAccountName, DistinguishedName
+    Write-Output "[+] RD Gateway group members found: $RDGGroupMembers"
+  } else {
+    Write-Output "[-] No RD Gateway group found!"
+  }
+} catch {
+  Write-Output "[-] ActiveDirectory powershell module couldn't be loaded, please add RSAT AD tools manually."
+}
+Write-Output "[.] Checking last $MonthsToCheck months, i.e: $Days days of Termserver logs for successful remote access connections."
 
 $Events = Get-WinEvent -LogName "Microsoft-Windows-TerminalServices-Gateway/Operational" |
     Where-Object {
@@ -27,9 +63,19 @@ $Events = Get-WinEvent -LogName "Microsoft-Windows-TerminalServices-Gateway/Oper
     } |
     Sort-Object TimeCreated -Descending
 
+if (!($Events)) {
+  Write-Output "[-] Apparently RD Gateway is not installed, TerminalService-Gateway/Operation logs not found!! Are we checking the correct server?"
+  Write-Output "[!] Exiting"
+  exit
+}
+
 $eventnum = ($events).Count
-"[TOTAL] $eventnum TerminalService-Gateway/Operational events [200, or 300-312] found in date range $StartDate - $EndDate" | tee $Logfile -Append
+"`n`n[TOTAL] $eventnum TerminalService-Gateway/Operational events [200, or 300-312] found in date range $StartDate - $EndDate `n`n" | tee $Logfile -Append
 $Results = @()
+$UserList = @()
+$IPList = @()
+$CSVResults = @()
+
 Foreach ($Event in $Events) {
   $Result = "" | Select Message,User,TimeCreated,Id
   $Result.TimeCreated = $Event.TimeCreated
@@ -101,7 +147,31 @@ Foreach ($Event in $Events) {
   if ($Event.Message -like "*initiated an outbound connection*")  {   #312
     $Result = "$time [Disc] $eid User: $User - Source IP: $SourceIP"
   }
-  "$Result " | tee $logfile -append
+  "$Result " | Out-File $logfile -append
+  $Results += $result
+
+  # Add users and IPs to unique list
+  if ($UserList -notcontains $User) {
+    $UserList += $User
+  }
+  if ($IPList -notcontains $SourceIP) {
+    $IPList += $SourceIP
+  }
+
+  $CSVLine = [PSCustomObject]@{
+      User               = $User
+      SessionID          = $SessionID
+      SourceIP           = $SourceIP
+      Resource           = $Resource
+      AuthMethod         = $AuthMethod
+      ConnectionProtocol = $ConnectionProtocol
+      BytesReceived      = $BytesReceived
+      BytesSent          = $BytesSent
+      Time               = $time
+  }
+
+  $CSVResults += $CSVLine
+
   $User = ""
   $SessionID= ""
   $SourceIP = ""
@@ -111,14 +181,30 @@ Foreach ($Event in $Events) {
   $BytesReceived = ""
   $BytesSent = ""
   $time = ""
-  $Results += $result
+  
 } 
-if ($Results) {
-  Write-Host "[+] Logged, exporting to CSV: $CSVFile"  -ForegroundColor Yellow
-  $Results | Export-Csv $CSVFile -NoType
-    Write-Host "[+] Results:"  -ForegroundColor Green
-  $Results
-} else {
-  Write-Host "[!] No results!!" -ForegroundColor Red
+
+########################## Output results
+
+if ($CSVResults) {
+  Write-Output "[+] Logged, exporting to CSV: $CSVFile" 
+  $CSVResults | Export-Csv $CSVFile -NoType
 }
-$null = Read-Host "[Press enter to continue]"
+
+if ($Results) {
+
+  Write-Output "`n[+] Unique values:"  | Tee-Object $logfile -Append
+  "`n##################################################################" | Tee-Object $logfile -Append
+  "Unique Users Found: $($UserList.Count)" | Tee-Object $logfile -Append
+  $UserList | Sort-Object | ForEach-Object { " - $_" | Tee-Object $logfile -Append }
+
+  "`nUnique IPs Found: $($IPList.Count)" | Tee-Object $logfile -Append
+  $IPList | Sort-Object | ForEach-Object { " - $_" | Tee-Object $logfile -Append }
+
+  Write-Output "[+] Full log Results:"  
+  $Results
+  
+} else {
+  Write-Output "[!] No results!!" 
+}
+

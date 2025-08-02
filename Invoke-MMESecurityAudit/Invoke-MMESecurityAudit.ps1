@@ -80,7 +80,7 @@ $out
  "`n###################### B - Users"
 $out = (net user)
 $out += (net localgroup administrators)
- "  Guest User account:"
+$out += "  Guest User account:"
 $out += (net user guest |findstr /i active)
 $out
 
@@ -162,8 +162,6 @@ $out = (reg query "HKCU\Software\Microsoft\Windows\CurrentVersion\Run")
 $out 
 $out = (reg query "HKLM\Software\Microsoft\Windows\CurrentVersion\Run")
 "`nK.2: Scheduled Tasks (Verbose)" 
-#out
-
 $out = (Get-ScheduledTask | ForEach-Object {
     $taskName = $_.TaskName
     $action = ($_ | Get-ScheduledTaskInfo) | Out-Null
@@ -177,7 +175,7 @@ $out = (Get-ScheduledTask | ForEach-Object {
             }
         }
     }
-} | Format-Table -AutoSize)
+} | Format-List)
 $out
 
  "`n###################### L - Bitlocker"
