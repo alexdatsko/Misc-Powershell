@@ -47,7 +47,8 @@ try {
   if ($RDGGroup) {
     Write-Output "[+] RD Gateway group found: $RDGGroup"
     $RDGGroupMembers = Get-ADGroupMember -Identity "$($RDGGroup.Name)" -Recursive | Where-Object { $_.objectClass -eq "user" } | Select-Object Name, SamAccountName, DistinguishedName
-    Write-Output "[+] RD Gateway group members found: $RDGGroupMembers"
+    Write-Output "[+] RD Gateway group members found: "
+    "$RDGGroupMembers"
   } else {
     Write-Output "[-] No RD Gateway group found!"
   }
