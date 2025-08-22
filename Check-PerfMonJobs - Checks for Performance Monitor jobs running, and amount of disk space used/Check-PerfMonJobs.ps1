@@ -1,12 +1,12 @@
 #####################################
 #
-# Check-PerfMonJobs.ps1 - 0.1
-#
-# 7/23/2020 Alex Datsko 
+# Check-PerfMonJobs.ps1
+# Alex Datsko - MME Consulting Inc
 #
 # Checks for PerfMon jobs still running.  Also checks the size of the C:\PerfLogs folder sum usage for a threshold
-# Works with DSU verions 1.5.3, 1.7.0, 1.8.0
 #
+# v0.1 - 7/23/2020 - initial
+# v0.2 - 8/21/2025 - Updated and added to Ninja
 
 $PerfLogsFolder = "C:\PerfLogs"      # where the perflogs are kept.  Also checks for D:\PerfLogs
 $ThresholdInfo = 2                   # threshold in GB to throw a info event
