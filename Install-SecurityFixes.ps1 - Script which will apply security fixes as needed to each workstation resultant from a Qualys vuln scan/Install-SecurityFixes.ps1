@@ -9,7 +9,7 @@ param (
   [int] $SkipQID,                  # Allow user to pick one QID to skip
   [switch] $Help,                  # Allow -Help to display help for parameters
   [switch] $Update,                # Allow -Update to only update the script then exit
-  [switch] $SkipAPI,               # Set this to $true to not try to make any calls to the API
+  [switch] $SkipAPI = $true,       # Set this to $true to not try to make any calls to the API
   [switch] $Risky,                 # Allows for risky behavior like kililng the ninite.exe installer when updating an Application (if Winget is not installed), this should be false for slow machines!
   [switch] $PowerOpts = $false,    # This switch will set all Power options on Windows to never fall asleep or hibernate.
   [switch] $AddScheduledTask = $false,       # This switch will install a scheduled task to run the script first thursday of each month and reboot after
@@ -66,10 +66,10 @@ $AllHelp = "########################################################
 #### VERSION ###################################################
 
 # No comments after the version number on the next line- Will screw up updates!
-$Version = "0.50.50"
-# New in this version:  Delimiter issues in batch import, added a little debugging around Import-CSV
+$Version = "0.50.51"
+# New in this version:  Got rid of API stuff for now, not used
 
-$VersionInfo = "v$($Version) - Last modified: 7/3/2025"
+$VersionInfo = "v$($Version) - Last modified: 10/17/2025"
 
 
 # CURRENT BUGS TO FIX:
@@ -4317,7 +4317,7 @@ foreach ($CurrentQID in $QIDs) {
             $Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like '*.NET Core 7*'})
           } catch {
             Write-Host "[!] Error running command: '$Products = (get-wmiobject Win32_Product | Where-Object { $_.Name -like '*.NET Core 7*' })'" -ForegroundColor Red
-            Write-Host "[!] Please remove or update .NET 5 manually." -ForegroundColor Red
+            Write-Host "[!] Please remove or update .NET 7 manually." -ForegroundColor Red
             break
           }
           if ($Products) {
