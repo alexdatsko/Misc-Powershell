@@ -8,7 +8,7 @@ $header="
 
 ###########################################################
 # Set up LDAPS (LDAP over SSL) on Windows Server 2016+
-# 02-15-2023 - Alex Datsko @ MME Consulting
+# 02-15-2023 - Alex Datsko @ 
 #
 "
 

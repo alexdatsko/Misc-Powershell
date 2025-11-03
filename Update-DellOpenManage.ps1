@@ -3,7 +3,7 @@ $info = "###############################################################
 # Updated OMSA 10.0.3.0 to 10.0.3.1, 11.0.0.0 to 11.0.0.2, or 11.0.1.0 to 11.0.1.1 to correct:
 # DSA-2024-264: Dell OpenManage Server Administrator (OMSA) Security Update for Local Privilege Escalation via XSL Hijacking Vulnerability  
 # Aka CVE-2024-37130 - https://nvd.nist.gov/vuln/detail/CVE-2024-37130
-# Alex Datsko MME Consulting 
+# Alex Datsko  
 # v0.1 - 9/6/2024 - orig
 # v0.2 - 9/9/2024 - refactor finished, move to `$temp due to possible bad profiles, test version after
 # v0.3 - 9/9/2024 - Permission issues on some servers required a take ownership + icalcs of orig OMSA version folder..

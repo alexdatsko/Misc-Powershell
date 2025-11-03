@@ -1,7 +1,7 @@
 # This script exists to copy files from ServerVM d:\Practice Documents\Clinic Camera\ to an external backup drive G: (labeled 'Images Backup 2021')
 
 # This can be used by to copy files from a folder, then delete files past X days
-# Alex Datsko @ MME Consulting (alexd@mmeconsulting.com) 916-550-5514
+# Alex Datsko @  (alexd@mmeconsulting.com) 916-550-5514
 
 # Folder to move files from
 $Folder = "\\server\d$\Practice Documents\Clinic Camera"

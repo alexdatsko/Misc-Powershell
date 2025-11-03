@@ -6,7 +6,7 @@ param (
 $banner = "
 ####################################################################
 # Reset-WindowsSearch.ps1
-# Alex Datsko @ MME Consulting - 01-27-2022
+# Alex Datsko @  - 01-27-2022
 #
 # This will reset the windows search service completely including:
 # 1) stopping and killing the service, 

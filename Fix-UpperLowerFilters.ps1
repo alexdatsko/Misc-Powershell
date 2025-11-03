@@ -12,7 +12,7 @@ $rundate = Get-Date -Format "yyyy-MM-dd HH:mm:ss K"
 $msg = '
 #################################
 # Fix-UpperLowerFilters.ps1
-# Alex Datsko @ MME Consulting 05-28-2024
+# Alex Datsko @  05-28-2024
 #
 # Fix for USB devices that have the following error message in Device Manager: 
 #   "Windows cannot start this hardware device because its configuration information (in the registry) is incomplete or damaged (Code 19)"

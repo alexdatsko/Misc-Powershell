@@ -1,6 +1,6 @@
 #####################################################################################
 # Remove-AMSILogs.ps1
-# Created 2/19/24 - Alex Datsko @ MME Consulting - alexd@mmeconsulting.com
+# Created 2/19/24 - Alex Datsko @  - alexd@mmeconsulting.com
 # This will delete the temporary files in a folder daily at 5am.  
 # This was created to fix an issue with Powershell creating AAMSI log files in %temp%\{16E3BD7B-52E2-4640-854A-0803826A1D57} that keep cropping up and making Powershell slow.
 

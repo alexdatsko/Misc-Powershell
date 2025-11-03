@@ -315,7 +315,7 @@ function ServerLocalPasswordRoll {
     Write-Host "[.] Changing local Administrator password to $LocalAdministrator"
     $resp1=cmd /c "net user Administrator $($LocalAdministrator) /y /expires:never"
     Write-Host "[.] Changing local MME password to $MME"
-    $resp2=cmd /c "net user MME $($MME) /y  /fullname:"MME Consulting, Inc." /comment:""MME''s Alternate Admin Login"" /expires:never"
+    $resp2=cmd /c "net user MME $($MME) /y  /fullname:", Inc." /comment:""MME''s Alternate Admin Login"" /expires:never"
     Write-Host "[.] Adding MME to Local Administrators group"
     $resp3=cmd /c 'net localgroup Administrators MME /add'
     
@@ -359,7 +359,7 @@ function ServerDomainPasswordRoll {
     Write-Host "[.] Changing Domain ServiceAdmin password to $ServiceAdmin"
     $resp2=cmd /c "net user ServiceAdmin $($ServiceAdmin) /y /domain /expires:never /comment:""MME''s Service Admin Login"""
     Write-Host "[.] Changing Domain MME password to $MME"
-    $resp3=cmd /c "net user MME $($MME) /y /domain /fullname:"MME Consulting, Inc." /comment:""MME''s Alternate Admin Login"" /expires:never"
+    $resp3=cmd /c "net user MME $($MME) /y /domain /fullname:", Inc." /comment:""MME''s Alternate Admin Login"" /expires:never"
     
     $resp1
     $resp2

@@ -8,7 +8,7 @@ $computer = "TRAINING2"
 
     $Password = ConvertTo-SecureString 'NotMyPassword' -AsPlainText -Force
 
-    Get-ADUser -Filter * -SearchBase "OU=Sacramento Users,OU=MME Consulting,DC=assessment,DC=local" -Properties SamAccountName, UserPrincipalName, LockedOut |
+    Get-ADUser -Filter * -SearchBase "OU=Sacramento Users,OU=,DC=assessment,DC=local" -Properties SamAccountName, UserPrincipalName, LockedOut |
         ForEach-Object {
 
             Do {

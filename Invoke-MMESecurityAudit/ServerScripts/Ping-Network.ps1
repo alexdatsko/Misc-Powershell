@@ -1,6 +1,6 @@
 #######################################
 # Ping-Network.ps1
-# Alex Datsko - MME Consulting 2020
+# Alex Datsko -  2020
 #
 # Scans the whole network range of the (first and assumed only) current IP address of the machine
 # Or, takes an argument of an IP to convert to IP range, i.e 10.1.10.100 or 10.1.10.0 will scan the full 10.1.10.0/24

@@ -1,6 +1,6 @@
 ##########################################################################
 # Backup-BitlockerKeys.ps1 - Backs up Bitlocker Keys to Active Directory
-# Alex Datsko @ MME Consulting - 2-20-2023
+# Alex Datsko @  - 2-20-2023
 #
 
 # Backup-BitLockerKeyProtector -MountPoint "C:" -KeyProtectorId (Get-BitLockerVolume -MountPoint "C:").KeyProtector[1].KeyProtectorId
