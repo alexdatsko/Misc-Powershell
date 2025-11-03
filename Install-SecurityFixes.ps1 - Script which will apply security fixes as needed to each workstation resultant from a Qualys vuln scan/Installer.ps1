@@ -1,5 +1,5 @@
 Write-Host "[.] Installing Install-SecurityFixes.ps1 - MME Qualys Vulnerability Remediation script"
-Write-Host "[.] Alex Datsko @ MME Consulting Inc. alex.datsko@mmeconsulting.com"
+Write-Host "[.] Alex Datsko @ . alex.datsko@mmeconsulting.com"
 
 if (!(Test-Path C:\Temp)) { mkdir c:\Temp }
 Set-Location c:\Temp;
@@ -31,7 +31,7 @@ while (!($path)) {
   }
 }
 Write-Host "[.] Installing Install-SecurityFixes.ps1 - MME Qualys Vulnerability Remediation script"
-Write-Host "[.] Alex Datsko @ MME Consulting Inc. alex.datsko@mmeconsulting.com"
+Write-Host "[.] Alex Datsko @ . alex.datsko@mmeconsulting.com"
 
 if (!(Test-Path C:\Temp)) { mkdir c:\Temp }
 Set-Location c:\Temp;

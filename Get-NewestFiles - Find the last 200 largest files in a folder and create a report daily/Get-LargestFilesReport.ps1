@@ -1,6 +1,6 @@
 # Get-LargestFiles.ps1 - 01-06-2021
 # Grab list of X largest files in a Drive or Folder for review, showing largest files first
-# Alex D @ MME Consulting Inc 916-550-5514
+# Alex D @  916-550-5514
 
 $date = Get-Date -format "yyyy-MM-dd HH:mm"
 

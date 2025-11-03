@@ -1,5 +1,5 @@
 # Update-Firefox.ps1
-# Alex Datsko MME Consulting Inc 10-9-2023
+# Alex Datsko  10-9-2023
 #   This script should download Firefox (via Ninite) to the users %temp% folder, kill all chrome browser windows at once, and update Firefox
 #   Meant to be run on Sundays and Wednesdays at 11pm
 

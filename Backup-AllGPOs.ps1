@@ -1,7 +1,7 @@
 #############################################
 # Backup-AllGPOs.ps1
 # Backs up all AD GPOs and Policy Store, to be restored on a new server
-# Alex Datsko @ MME Consulting Inc
+# Alex Datsko @ 
 # v0.03 - 04-24-2023
 
 $pwd = (pwd)

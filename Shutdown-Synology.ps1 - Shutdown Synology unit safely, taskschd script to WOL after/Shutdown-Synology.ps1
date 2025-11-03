@@ -1,5 +1,5 @@
 ﻿# Script to shut down the Synology during an APC Power event
-# Alex Datsko @ MME Consulting Inc. 09-28-2021
+# Alex Datsko @ . 09-28-2021
 
 $nasHostname = '192.168.1.2'
 $username = 'apc'

@@ -10,7 +10,7 @@ param(
 $info='''
  `n`n##########################################################################
  # Sort-BothQualysCSVs.ps1  --  Sorts Qualys reports into preferred format
- # v0.3 - 9-30-2024 - Alex Datkso MME Consulting Inc 
+ # v0.3 - 9-30-2024 - Alex Datkso  
  # 
  #        Picks most recent Internal and External CSV file in the folder the script is run from, arranges them, and opens them both as their XLSX form.
  #        Pops up a warning if there is a hit on the CISA KEV - Known Exploited Vulnerabilities list - if run with -Popup_Enabled 1, otherwise outputs to screen.

@@ -7,7 +7,7 @@ param(
 
 Write-Host "`n`n##########################################################################"
 Write-Host "# Sort-AllQualysCSVs.ps1  --  Sorts Qualys reports into preferred format"
-Write-Host "# Alex Datkso MME Consulting Inc "
+Write-Host "# Alex Datkso  "
 Write-Host "#   v0.1 - 10-10-2025 - Initial working script"
 Write-Host "# "
 Write-Host "#        Picks most recent Internal CSV files (for all clients) in the folder the script is run from, arranges them, and opens as their XLSX form."

@@ -6,7 +6,7 @@ param (
 $info = "
 ##################################################################
 # Get-RDGatewayConnections.ps1
-# Alex Datsko @ MME Consulting Inc.
+# Alex Datsko @ .
 # This script will look through the eventlog, and log recent RD Gateway connections, disconnections and reasons quickly into a file in c:\Temp
 # v0.1 - 10/28/24 - Initial
 # v0.2 - 8/1/25 - Modified to find/show RD Gateway Sec group members, modified for Ninja platform

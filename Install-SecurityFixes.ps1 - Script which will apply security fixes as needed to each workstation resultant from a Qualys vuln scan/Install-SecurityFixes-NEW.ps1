@@ -349,7 +349,7 @@ function Create-IfNotExists {
 
 function Set-RegistryEntry {   # STRINGS ONLY!
     param(
-        [string]$Path = "HKLM:\Software\MME Consulting Inc\Install-SecurityFixes",
+        [string]$Path = "HKLM:\Software\\Install-SecurityFixes",
         [Parameter(Mandatory=$true)][string]$Name,
         [Parameter(Mandatory=$true)][object]$Value
     )
@@ -370,7 +370,7 @@ function Set-RegistryEntry {   # STRINGS ONLY!
 
 function Get-RegistryEntry {
   param(
-      [string]$Path = "HKLM:\Software\MME Consulting Inc\Install-SecurityFixes",
+      [string]$Path = "HKLM:\Software\\Install-SecurityFixes",
       [string]$Name
   )
   $Reg = (Get-ItemProperty -Path $Path -ErrorAction SilentlyContinue)
@@ -392,7 +392,7 @@ function Get-RegistryEntry {
 
 function Show-RegistryValues {
     param(
-        [string]$Path = "HKLM:\Software\MME Consulting Inc\Install-SecurityFixes"
+        [string]$Path = "HKLM:\Software\\Install-SecurityFixes"
     )
 
     if (Test-Path -Path $Path -ErrorAction SilentlyContinue) {
@@ -413,7 +413,7 @@ function Show-RegistryValues {
 
 function Remove-RegistryEntry {
     param(
-        [string]$Path = "HKLM:\Software\MME Consulting Inc\Install-SecurityFixes",
+        [string]$Path = "HKLM:\Software\\Install-SecurityFixes",
         [string]$Name
     )
 
@@ -3549,7 +3549,7 @@ foreach ($CurrentQID in $QIDs) {
           } else {
             Write-Host "[!] Dell SupportAssist not found!" -ForegroundColor Red  | Tee-Object -Append -FilePath "$($log)/$($ThisQID)-supportassist.log"
           }     
-            $Filename = "MME Consulting Inc_Internal_2024-10-07.csv"
+            $Filename = "_Internal_2024-10-07.csv"
           $FixData = @{
             qualys_ids = "$ThisQID"
             description = "Removed Dell SupportAssist"

@@ -3,7 +3,7 @@
 $info = "
 ############################################################
 # Install-ADCSRole.ps1
-# Alex Datsko - MME Consulting Inc. 
+# Alex Datsko - . 
 # v0.1 - 11-13-2024 - Initial test
 #"
 

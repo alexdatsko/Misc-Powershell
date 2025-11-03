@@ -1,4 +1,4 @@
-# Force Install Qualys - 10/27/22 Alex Datsko MME Consulting Inc
+# Force Install Qualys - 10/27/22 Alex Datsko 
 
 $app="\\server\sysvol\smo.local\Software\Client(2592).msi"
 $CredUser = "smo.local\Administrator"

@@ -9,7 +9,7 @@ param (
 $info = '''
 ###############################################################
 # Filename:    Download-EAGLEiReports.ps1
-# Author:      Alex Datsko - MME Consulting Inc.
+# Author:      Alex Datsko - .
 # Description: This will download the latest Qualys CSV reports from Black Talons EAGLEi
 #              
 #

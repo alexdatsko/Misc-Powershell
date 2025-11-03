@@ -21,7 +21,7 @@ param (
 Write-Output "`r`n`r`n`r`n#######################################################"
 Write-Output "#"
 Write-Output "#   Invoke-PasswordRoll.ps1"
-Write-Output "#   Alex Datsko @ MME Consulting Inc. (alex.datsko@mmeconsulting.com)"
+Write-Output "#   Alex Datsko @ . (alex.datsko@mmeconsulting.com)"
 Write-Output "#"
 Write-Output "# This script will perform a server local/domain administrator/serviceadmin/mme and/or domain user password and/or DRAC password roll."
 Write-Output "# Some tests will be run before and after to see if any authentication or lockout events can be found."

@@ -1,5 +1,5 @@
 # Get-BitlockerKeys.ps1 - Pastes all Bitlocker recovery keys to txt files on Desktop
-# 2022-02-24 - Alex Datsko @ MME Consulting Inc.
+# 2022-02-24 - Alex Datsko @ .
 
 $hostname = hostname
 $OldLoc = Get-Location

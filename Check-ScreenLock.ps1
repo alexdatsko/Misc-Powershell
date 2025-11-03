@@ -1,6 +1,6 @@
 #######################################################
 # Check-ScreenLock.ps1
-# Alex Datsko - MME Consulting Inc.
+# Alex Datsko - .
 #
 #   Checks for screen lock registry settings and reports, for security audit purposes.
 #

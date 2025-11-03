@@ -1,7 +1,7 @@
 
 ##################################################################
 # Get-LocalSessionManager-Code0.ps1
-# Alex Datsko @ MME Consulting Inc.
+# Alex Datsko @ .
 # This script will look through the event log and show all Code 0's (disconnections)
 # Fixed up 10/23/23, something was very wrong with this..
 

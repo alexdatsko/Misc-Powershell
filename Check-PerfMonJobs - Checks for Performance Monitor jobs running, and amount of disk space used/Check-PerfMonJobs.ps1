@@ -1,7 +1,7 @@
 #####################################
 #
 # Check-PerfMonJobs.ps1
-# Alex Datsko - MME Consulting Inc
+# Alex Datsko - 
 #
 # Checks for PerfMon jobs still running.  Also checks the size of the C:\PerfLogs folder sum usage for a threshold
 #

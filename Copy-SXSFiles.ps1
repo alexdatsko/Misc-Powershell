@@ -1,5 +1,5 @@
 ﻿$SXSfolder = "c:\temp\SXSfiles"
-Write-host "SXS Cleanup - 2021-08-11 Alex Datsko @ MME Consulting Inc"
+Write-host "SXS Cleanup - 2021-08-11 Alex Datsko @ "
 write-host "Creating folder $SXSFolder .. "
 new-item -type directory $SXSfolder
 

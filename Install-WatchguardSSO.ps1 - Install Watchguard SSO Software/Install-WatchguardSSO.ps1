@@ -10,7 +10,7 @@ param (
 $info = '''
 ###############################################################
 # Filename:    Install-WatchguardSSO.ps1
-# Author:      Alex Datsko - MME Consulting Inc.
+# Author:      Alex Datsko - .
 # Description: This will download and install the Watchguard SSO Agent (Auth Gateway) from the Watchguard site and install it.
 #              It will create a standardized domain user, Watchguard (username: wgauth), with a password specified, and add 
 #              them to the Administrators group as needed by the SSO Agent. This user will be used in setting up the application.

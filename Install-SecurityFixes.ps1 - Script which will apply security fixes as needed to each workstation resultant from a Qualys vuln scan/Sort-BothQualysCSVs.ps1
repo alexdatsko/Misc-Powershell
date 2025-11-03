@@ -7,7 +7,7 @@ param(
 
 Write-Host "`n`n##########################################################################"
 Write-Host "# Sort-BothQualysCSVs.ps1  --  Sorts Qualys reports into preferred format"
-Write-Host "# Alex Datkso MME Consulting Inc "
+Write-Host "# Alex Datkso  "
 Write-Host "#   v0.2 - 5-9-2024 - Initial working script"
 Write-Host "#   v0.3 - 1-20-2025 - Added further automation"
 Write-Host "# "

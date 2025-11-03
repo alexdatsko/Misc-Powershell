@@ -472,7 +472,7 @@ function Get-YesNo {
 
 function Set-RegistryEntry {   # STRINGS ONLY!
     param(
-        [string]$Path = "HKLM:\Software\MME Consulting Inc\Install-SecurityFixes",
+        [string]$Path = "HKLM:\Software\\Install-SecurityFixes",
         [Parameter(Mandatory=$true)][string]$Name,
         [Parameter(Mandatory=$true)][object]$Value
     )
@@ -493,7 +493,7 @@ function Set-RegistryEntry {   # STRINGS ONLY!
 
 function Get-RegistryEntry {
   param(
-      [string]$Path = "HKLM:\Software\MME Consulting Inc\Install-SecurityFixes",
+      [string]$Path = "HKLM:\Software\\Install-SecurityFixes",
       [string]$Name
   )
   $Reg = (Get-ItemProperty -Path $Path -ErrorAction SilentlyContinue)
@@ -515,7 +515,7 @@ function Get-RegistryEntry {
 
 function Show-RegistryValues {
     param(
-        [string]$Path = "HKLM:\Software\MME Consulting Inc\Install-SecurityFixes"
+        [string]$Path = "HKLM:\Software\\Install-SecurityFixes"
     )
 
     if (Test-Path -Path $Path -ErrorAction SilentlyContinue) {
@@ -536,7 +536,7 @@ function Show-RegistryValues {
 
 function Remove-RegistryEntry {
     param(
-        [string]$Path = "HKLM:\Software\MME Consulting Inc\Install-SecurityFixes",
+        [string]$Path = "HKLM:\Software\\Install-SecurityFixes",
         [string]$Name
     )
 

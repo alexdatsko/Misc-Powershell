@@ -21,7 +21,7 @@ $info='''
                    Alex Datsko - alexd@mmeconsulting.com - 2024
  
 # Security GPO Installer - aka GPO Tools
-# Alex Datsko - MME Consulting Inc. - alex.datsko@mmeconsulting.com
+# Alex Datsko - . - alex.datsko@mmeconsulting.com
 '''
 
 $VersionMajor = "0.90"

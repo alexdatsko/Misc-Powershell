@@ -7,7 +7,7 @@ param(
 
 Write-Host "`n`n##########################################################################"
 Write-Host "# Sort-QualysCSVs.ps1  --  Sorts Qualys reports into preferred format"
-Write-Host "# v0.1 Alex Datkso MME Consulting Inc"
+Write-Host "# v0.1 Alex Datkso "
 Write-Host "# 4-10-2024"
 Write-Host "#   Usage:"
 Write-Host "#   Sort-QualysCSVs.ps1 -CSVType [Internal/External] -InFile 'Ortho DDS PLLC_Internal_2024-04-09.csv' -OutFile 'REMEDIATION-Ortho DDS PLLC_Internal_2024-04-09.csv'"

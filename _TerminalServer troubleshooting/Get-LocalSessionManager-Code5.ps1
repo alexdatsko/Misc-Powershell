@@ -1,7 +1,7 @@
 
 ##################################################################
 # Get-LocalSessionMaanger-Code5.ps1
-# Alex Datsko @ MME Consulting Inc.
+# Alex Datsko @ .
 # This script will look through the event log and corellate Code 5's (session takeover) with Usernames and IPs that are taking the session over
 # Updated - 9-14-22 to add DNS lookup of hostnames
 # Worked on this a bit further 10/23/23, date range etc

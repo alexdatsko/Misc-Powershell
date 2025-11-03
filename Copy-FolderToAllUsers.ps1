@@ -5,7 +5,7 @@ param (
 $info = '''###################################################################################################################################
 # Copy-FolderToAllUsers.ps1 
 #   Script to Copy a folder and all files recursively, in $folderpath, to all users AppData C:\Users\<username>\AppData\Local
-#   Alex Datsko @ MME Consulting Inc 8-27-24'''
+#   Alex Datsko @  8-27-24'''
 
 $info
 

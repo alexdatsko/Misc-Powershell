@@ -5,7 +5,7 @@ $script = "script.ps1"
 
 # Creating and exporting self-signed cert on server
 
-$cert = New-SelfSignedCertificate -CertStoreLocation cert:\currentuser\my -Subject "CN=MME Consulting Inc. Code Signing" -KeyAlgorithm RSA -KeyLength 2048 -Provider "Microsoft Enhanced RSA and AES Cryptographic Provider" -KeyExportPolicy Exportable -KeyUsage DigitalSignature -Type CodeSigningCert
+$cert = New-SelfSignedCertificate -CertStoreLocation cert:\currentuser\my -Subject "CN=. Code Signing" -KeyAlgorithm RSA -KeyLength 2048 -Provider "Microsoft Enhanced RSA and AES Cryptographic Provider" -KeyExportPolicy Exportable -KeyUsage DigitalSignature -Type CodeSigningCert
 
 # Export cert to $exportPath
 

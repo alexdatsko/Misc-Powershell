@@ -1,7 +1,7 @@
 ﻿# Start-DolphinScheduledJobService.ps1 - Starts the Dolphin Ocean Service each day at 12am
 #   Restarts Dolphin Scheduled Job service, then checks if it is running every 5 minutes, and starts it again if it has crashed.
 #   Import the XML file here to a scheduled task to start at 5am each day and run every 5 minutes
-# Alex Datsko @ MME Consulting Inc.
+# Alex Datsko @ .
 # v0.03 - Updated 10/6/23
 
 $BackupsDrive="D:"

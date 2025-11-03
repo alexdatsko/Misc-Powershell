@@ -13,7 +13,7 @@ $info = ''######################################################################
 #
 #   Will try $trytimes tries, every $tryseconds seconds, in case file is locked, will report an error after giving up.
 #   (Created to replace c:\windows\Twain_32.dll with the TSScan one, due to SFC replacing the file weekly)
-#   Alex Datsko @ MME Consulting Inc 
+#   Alex Datsko @  
 #   Version histroy: v0.1 - 8/27/24 - initial
 #                    v0.2 - 9/5/24 - kill process if dll in use by an app, try for 3 hours
 #                    v0.3 - 9/12/24 - logging to c:\Scripts\Logs

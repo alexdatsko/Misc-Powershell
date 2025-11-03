@@ -1,7 +1,7 @@
 
 ##################################################################
 # Get-Gateway-Code300.ps1
-# Alex Datsko @ MME Consulting Inc.
+# Alex Datsko @ .
 # This script will look through the event log and corellate Event 300's in the Gateway log to related TS events
 # Created new on 10/23/23 - to work with the other TS scripts I've created
 

@@ -4,7 +4,7 @@
 #
 # Copies all photos from F:\DCIM\<Todays date> to \\server\practice documents\Clinic Camera\<Todays date>
 #
-# Alex Datsko - MME Consulting Inc. 2021-05-26
+# Alex Datsko - . 2021-05-26
 #
 
 $todaysdate = get-date -format "yyyy-MM-dd"

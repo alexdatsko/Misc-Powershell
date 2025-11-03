@@ -2,7 +2,7 @@
 
 $info = "#######################################
 # Fix-iDRAC400.ps1
-# Alex Datsko - MME Consulting Inc - alexd@mmeconsulting.com
+# Alex Datsko -  - alexd@mmeconsulting.com
 #   Sets the racadm set idrac.webserver.hostheadercheck 0 command via Redfish, without racadm 
 # v0.1 - 01-23-2025 - initial"
 

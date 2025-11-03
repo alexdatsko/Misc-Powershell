@@ -1,7 +1,7 @@
 $info = "
 #################################################################################################
 # Update-IISSecurityHeaders.ps1
-# Alex Datsko - MME Consulting Inc.
+# Alex Datsko - .
 #
 #   This will update RD Gateway hosts IIS to include several security headers that are found as
 #   vulnerabilities on Qualys/PCI scans etc.

@@ -1,6 +1,6 @@
 # Get-NewestFiles.ps1
 # Grab list of X newest files in d:\data\dolphin\working for review, showing largest files first
-# Alex D @ MME Consulting Inc 916-550-5514
+# Alex D @  916-550-5514
 
 $date = Get-Date -format "yyyy-MM-dd"
 

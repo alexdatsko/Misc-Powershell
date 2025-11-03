@@ -1,6 +1,6 @@
 ########################################################
 # Remove-TempAttributes.ps1
-# Alex Datsko - MME Consulting Inc.
+# Alex Datsko - .
 #
 #   This script should remove Temporary Attributes from any file in a folder.
 #

@@ -4,7 +4,7 @@
 #   This script should download and install the newest version of Microsft Teams for Windows.
 #   It programmatically depends on Whatpulse.org being up to date with the latest version numbers: https://whatpulse.org/app/microsoft-teams
 #   It also assumes Microsoft will continue updating the links in the exact format: "https://statics.teams.cdn.office.net/production-windows-x64/VERSIONNUMBER/Teams_windows_x64.exe"
-# 10-10-2023 Alex Datsko MME Consulting Inc
+# 10-10-2023 Alex Datsko 
 
 $VersionURL = "https://whatpulse.org/app/microsoft-teams"
 $DownloadURL = "https://statics.teams.cdn.office.net/production-windows-x64/REPLACEME/Teams_windows_x64.exe"

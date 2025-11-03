@@ -1,7 +1,7 @@
 $info = "
 ##################################################################
 # Disable-TLS10And11.ps1
-# Alex Datsko @ MME Consulting Inc.
+# Alex Datsko @ .
 # This script will completely Disable TLS 1.0 and 1.1 from being used on a server.
 # v0.1 - 10/28/24 - Initial
 "

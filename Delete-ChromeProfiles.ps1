@@ -2,7 +2,7 @@
 # Delete-TempFiles.ps1 
 #   Script to clean up user profile temp folders, i.e "C:\Users\Reception1\AppData\Local\Temp\*.*" in all user profiles
 #   Meant to be run from a scheduled task daily 6am etc.
-#   Alex Datsko @ MME Consulting Inc 10-11-22 updated 10/5/23
+#   Alex Datsko @  10-11-22 updated 10/5/23
 
 $LogFile = "c:\Temp\Delete-TempFiles.log"
 

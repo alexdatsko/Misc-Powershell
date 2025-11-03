@@ -5,7 +5,7 @@
 #
 # Copies all photos from F:\DCIM\<Todays date> to \\server\practice documents\Clinic Camera\<Todays date>
 #
-# Alex Datsko - MME Consulting Inc. Last modified 2022-03-24
+# Alex Datsko - . Last modified 2022-03-24
 #
 
 Write-Host "`r`n`r`n# Copy-TodaysPhotos.ps1 #`r`n" -ForegroundColor Green
@@ -81,7 +81,7 @@ write-host "Done! Note: Files were not deleted, they will need to be removed man
 #
 # Copies all photos from F:\DCIM\<Todays date> to \\server\practice documents\Clinic Camera\<Todays date>
 #
-# Alex Datsko - MME Consulting Inc. 2021-05-26
+# Alex Datsko - . 2021-05-26
 #
 
 $todaysdate = get-date -format "yyyy-MM-dd"

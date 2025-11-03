@@ -2,7 +2,7 @@
 
 ######################################################################
 # Split-VulnData.ps1
-# Alex Datsko - MME Consulting Inc.
+# Alex Datsko - .
 #
 #   This will take a bulk import file of Qualys data, produced by Josh @ Black Talon, and will split it into 
 #   client-specific CSV files that will work with MME's Install-SecurityFixes.ps1 script.

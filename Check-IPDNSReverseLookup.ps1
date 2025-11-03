@@ -1,7 +1,7 @@
 ###################################################################
 # Check-IPDNSReverseLookup.ps1
 # Checks IP reverse lookup and whois information for a list of IPs
-# Alex Datsko @ MME Consulting Inc - 3/6/23
+# Alex Datsko @  - 3/6/23
 #
 
 [cmdletbinding()]  # For verbose, debug etc

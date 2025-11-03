@@ -7,7 +7,7 @@ $info = '''#####################################################################
 # Copy-FileToFolder.ps1 
 #   Script to Copy a single file to $folderpath, for example to overwrite a windows DLL file 
 #   (Created to replace c:\windows\Twain_32.dll due to automated SFC scans "fixing" the file weekly)
-#   Alex Datsko @ MME Consulting Inc 8-27-24'''
+#   Alex Datsko @  8-27-24'''
 
 $info
 
